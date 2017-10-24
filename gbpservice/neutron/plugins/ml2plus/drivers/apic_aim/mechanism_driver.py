@@ -52,9 +52,6 @@ from oslo_log import log
 import oslo_messaging
 from oslo_utils import importutils
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
-from gbpservice._i18n import _LW
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
@@ -165,10 +162,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.md.delete_link(*args, **kwargs)
 
     def __init__(self):
-        LOG.info(_LI("APIC AIM MD __init__"))
+        LOG.info("APIC AIM MD __init__")
 
     def initialize(self):
-        LOG.info(_LI("APIC AIM MD initializing"))
+        LOG.info("APIC AIM MD initializing")
         self.project_name_cache = cache.ProjectNameCache()
         self.name_mapper = apic_mapper.APICNameMapper()
         self.aim = aim_manager.AimManager()
@@ -1011,9 +1008,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     # REVISIT: Delete intf_vrf if no longer used?
                 else:
                     # This should never happen.
-                    LOG.error(_LE("Interface topology %(intf_topology)s and "
-                                  "router topology %(router_topology)s have "
-                                  "different VRFs, but neither is shared"),
+                    LOG.error("Interface topology %(intf_topology)s and "
+                              "router topology %(router_topology)s have "
+                              "different VRFs, but neither is shared",
                               {'intf_topology': intf_topology,
                                'router_topology': router_topology})
                     raise exceptions.InternalError()
@@ -1611,8 +1608,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         LOG.debug("Bound using segment: %s", segment)
                         return True
             else:
-                LOG.warning(_LW("Refusing to bind port %(port)s to dead "
-                                "agent: %(agent)s"),
+                LOG.warning("Refusing to bind port %(port)s to dead "
+                            "agent: %(agent)s",
                             {'port': current['id'], 'agent': agent})
 
     def _opflex_bind_port(self, context, segment, agent):
@@ -1691,7 +1688,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             api.PHYSICAL_NETWORK:
                             segment[api.PHYSICAL_NETWORK]}
                 dyn_seg = context.allocate_dynamic_segment(seg_args)
-                LOG.info(_LI('Allocated dynamic-segment %(s)s for port %(p)s'),
+                LOG.info('Allocated dynamic-segment %(s)s for port %(p)s',
                          {'s': dyn_seg, 'p': context.current['id']})
                 dyn_seg['aim_ml2_created'] = True
                 context.continue_binding(segment[api.ID], [dyn_seg])
@@ -1970,8 +1967,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _move_topology(self, aim_ctx, topology, old_vrf, new_vrf,
                        nets_to_notify):
-        LOG.info(_LI("Moving routed networks %(topology)s from VRF "
-                     "%(old_vrf)s to VRF %(new_vrf)s"),
+        LOG.info("Moving routed networks %(topology)s from VRF "
+                 "%(old_vrf)s to VRF %(new_vrf)s",
                  {'topology': topology.keys(),
                   'old_vrf': old_vrf,
                   'new_vrf': new_vrf})
@@ -2189,7 +2186,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=aim_utils.sanitize_display_name('CommonTenant'))
         tenant = self.aim.get(aim_ctx, attrs)
         if not tenant:
-            LOG.info(_LI("Creating common tenant"))
+            LOG.info("Creating common tenant")
             tenant = self.aim.create(aim_ctx, attrs)
         return tenant
 
@@ -2200,7 +2197,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not vrf:
             attrs.display_name = (
                 aim_utils.sanitize_display_name('CommonUnroutedVRF'))
-            LOG.info(_LI("Creating common unrouted VRF"))
+            LOG.info("Creating common unrouted VRF")
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
 
@@ -2213,7 +2210,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                      name=filter_name,
                                      display_name=dname)
         if not self.aim.get(aim_ctx, filter):
-            LOG.info(_LI("Creating common Any Filter"))
+            LOG.info("Creating common Any Filter")
             self.aim.create(aim_ctx, filter)
 
         dname = aim_utils.sanitize_display_name("AnyFilterEntry")
@@ -2222,7 +2219,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                          name=ANY_FILTER_ENTRY_NAME,
                                          display_name=dname)
         if not self.aim.get(aim_ctx, entry):
-            LOG.info(_LI("Creating common Any FilterEntry"))
+            LOG.info("Creating common Any FilterEntry")
             self.aim.create(aim_ctx, entry)
 
         return filter
@@ -2232,7 +2229,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not vrf:
             attrs.display_name = (
                 aim_utils.sanitize_display_name('DefaultRoutedVRF'))
-            LOG.info(_LI("Creating default VRF for %s"), attrs.tenant_name)
+            LOG.info("Creating default VRF for %s", attrs.tenant_name)
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
 
@@ -2504,8 +2501,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             .filter(extn_db_sn.snat_host_pool.is_(True))
                             .all())
             if not snat_subnets:
-                LOG.info(_LI('No subnet in external network %s is marked as '
-                             'SNAT-pool'),
+                LOG.info('No subnet in external network %s is marked as '
+                         'SNAT-pool',
                          ext_network['id'])
                 return
             for snat_subnet in snat_subnets:
@@ -2524,8 +2521,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         snat_ip = port['fixed_ips'][0]['ip_address']
                         break
                 except n_exceptions.IpAddressGenerationFailure:
-                    LOG.info(_LI('No more addresses available in subnet %s '
-                                 'for SNAT IP allocation'),
+                    LOG.info('No more addresses available in subnet %s '
+                             'for SNAT IP allocation',
                              snat_subnet['id'])
         else:
             snat_ip = snat_port.fixed_ips[0].ip_address
@@ -2569,8 +2566,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 try:
                     self.plugin.delete_port(e_context, p[0])
                 except n_exceptions.NeutronException as ne:
-                    LOG.warning(_LW('Failed to delete SNAT port %(port)s: '
-                                    '%(ex)s'),
+                    LOG.warning('Failed to delete SNAT port %(port)s: '
+                                '%(ex)s',
                                 {'port': p, 'ex': ne})
 
     def check_floatingip_external_address(self, context, floatingip):
@@ -2625,7 +2622,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         epg = self.get_epg_for_network(session, network)
         if not epg:
-            LOG.info(_LI('Network %s does not map to any EPG'), network['id'])
+            LOG.info('Network %s does not map to any EPG', network['id'])
             return
 
         if segment:
@@ -2682,8 +2679,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     aim_ctx, aim_infra.HostLink, host_name=host,
                     interface_name=interface)
                 if not host_link or not host_link[0].path:
-                    LOG.warning(_LW('No host link information found for host: '
-                                    '%(host)s, interface: %(interface)s'),
+                    LOG.warning('No host link information found for host: '
+                                '%(host)s, interface: %(interface)s',
                                 {'host': host, 'interface': interface})
                     continue
                 host_link = host_link[0].path
@@ -2697,7 +2694,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             host_link = self.aim.find(aim_ctx, aim_infra.HostLink,
                                       host_name=host)
             if not host_link or not host_link[0].path:
-                LOG.warning(_LW('No host link information found for host %s'),
+                LOG.warning('No host link information found for host %s',
                             host)
                 return
             host_link = host_link[0].path
@@ -2721,7 +2718,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                              port_context.current['id'])
                      .first())
             if not ports:
-                LOG.info(_LI('Releasing dynamic-segment %(s)s for port %(p)s'),
+                LOG.info('Releasing dynamic-segment %(s)s for port %(p)s',
                          {'s': btm, 'p': port_context.current['id']})
                 port_context.release_dynamic_segment(btm[api.ID])
 
@@ -2871,7 +2868,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # this could be caused by concurrent transactions
             except db_exc.DBDuplicateEntry as e:
                 LOG.debug(e)
-            LOG.info(_LI('Releasing domain %(d)s for port %(p)s'),
+            LOG.info('Releasing domain %(d)s for port %(p)s',
                      {'d': domain, 'p': port['id']})
 
     def _get_non_opflex_segments_on_host(self, context, host):

@@ -14,7 +14,6 @@
 import os
 import six
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.lib import data_filter
@@ -57,7 +56,7 @@ class VpnaasRpcSender(data_filter.Filter):
 
         Returns: Dictionary of vpn service type which matches with the filters.
         """
-        LOG.info(_LI("Sending RPC for GET VPN SERVICES with %(filters)s "),
+        LOG.info("Sending RPC for GET VPN SERVICES with %(filters)s ",
                  {'filters': filters})
         return self.call(
             context,
@@ -75,8 +74,8 @@ class VpnaasRpcSender(data_filter.Filter):
 
         Returns: dictionary of vpnservice
         """
-        LOG.info(_LI("Sending RPC for GET VPN SERVICECONTEXT with "
-                     "Filters:%(filters)s "),
+        LOG.info("Sending RPC for GET VPN SERVICECONTEXT with "
+                 "Filters:%(filters)s ",
                  {'filters': filters})
         return self.call(
             context,
@@ -88,8 +87,8 @@ class VpnaasRpcSender(data_filter.Filter):
         Get list of ipsec conns with filters
         specified.
         """
-        LOG.info(_LI("Sending RPC for GET IPSEC CONNS with Filters:"
-                     "%(filters)s "),
+        LOG.info("Sending RPC for GET IPSEC CONNS with Filters:"
+                 "%(filters)s ",
                  {'filters': filters})
         return self.call(
             context,
@@ -111,8 +110,8 @@ class VpnaasRpcSender(data_filter.Filter):
                             'notification_type': (
                                 'update_status')}}]
                }
-        LOG.info(_LI("Sending Notification 'Update Status' with "
-                     "status:%(status)s "),
+        LOG.info("Sending Notification 'Update Status' with "
+                 "status:%(status)s ",
                  {'status': status})
         self._notify._notification(msg)
 
@@ -127,8 +126,8 @@ class VpnaasRpcSender(data_filter.Filter):
                             'notification_type': (
                                 'ipsec_site_conn_deleted')}}]
                }
-        LOG.info(_LI("Sending Notification 'Ipsec Site Conn Deleted' "
-                     "for resource:%(resource_id)s "),
+        LOG.info("Sending Notification 'Ipsec Site Conn Deleted' "
+                 "for resource:%(resource_id)s ",
                  {'resource_id': resource_id})
         self._notify._notification(msg)
 
@@ -172,8 +171,8 @@ class VPNaasRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
         """
 
-        LOG.info(_LI("Received request 'VPN Service Updated'."
-                     "for API '%(api)s'"),
+        LOG.info("Received request 'VPN Service Updated'."
+                 "for API '%(api)s'",
                  {'api': resource_data.get('reason', '')})
         arg_dict = {'context': context,
                     'resource_data': resource_data}
@@ -243,8 +242,8 @@ class VPNaasEventHandler(nfp_api.NfpEventHandler):
                 service_vendor = agent_info['service_vendor']
                 service_feature = agent_info['service_feature']
                 driver = self._get_driver(service_vendor, service_feature)
-                LOG.info(_LI("Invoking driver with service vendor:"
-                             "%(service_vendor)s "),
+                LOG.info("Invoking driver with service vendor:"
+                         "%(service_vendor)s ",
                          {'service_vendor': service_vendor})
                 setattr(VPNaasEventHandler, "service_driver", driver)
                 self._vpnservice_updated(ev, driver)

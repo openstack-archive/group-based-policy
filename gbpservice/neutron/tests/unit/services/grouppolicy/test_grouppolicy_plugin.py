@@ -18,7 +18,6 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import webob.exc
 
-from gbpservice._i18n import _LW
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy import config
@@ -164,7 +163,7 @@ class GroupPolicyPluginTestCase(GroupPolicyPluginTestBase):
 
     def tearDown(self):
         policy_drivers = cfg.CONF.group_policy.policy_drivers
-        LOG.warning(_LW("PDs used in this test: %s"),
+        LOG.warning("PDs used in this test: %s",
                     policy_drivers)
         # Always reset configuration to dummy driver. Any
         # test which requires to configure a different

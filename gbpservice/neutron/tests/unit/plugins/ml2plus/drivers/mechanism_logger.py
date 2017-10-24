@@ -17,7 +17,6 @@ from neutron.tests.unit.plugins.ml2.drivers import (
     mechanism_logger as ml2_logger)
 from oslo_log import log
 
-from gbpservice._i18n import _LI
 from gbpservice.neutron.plugins.ml2plus import driver_api
 
 LOG = log.getLogger(__name__)
@@ -31,10 +30,10 @@ class LoggerPlusMechanismDriver(driver_api.MechanismDriver,
     """
 
     def initialize(self):
-        LOG.info(_LI("initialize called"))
+        LOG.info("initialize called")
 
     def ensure_tenant(self, plugin_context, tenant_id):
-        LOG.info(_LI("ensure_tenant called with tenant_id %s"), tenant_id)
+        LOG.info("ensure_tenant called with tenant_id %s", tenant_id)
 
     def _log_subnetpool_call(self, method_name, context):
         LOG.info(_("%(method)s called with subnetpool settings %(current)s "

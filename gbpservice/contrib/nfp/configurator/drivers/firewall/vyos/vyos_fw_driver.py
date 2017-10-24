@@ -16,7 +16,6 @@ import time
 
 from oslo_serialization import jsonutils
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.firewall.vyos import (
     vyos_fw_constants as const)
@@ -135,8 +134,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
                                    self.port,
                                    'change_auth')
         data = {}
-        LOG.info(_LI("Initiating POST request to configure Authentication "
-                     "service at mgmt ip:%(mgmt_ip)s"),
+        LOG.info("Initiating POST request to configure Authentication "
+                 "service at mgmt ip:%(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
         err_msg = ("Change Auth POST request to the VyOS firewall "
                    "service at %s failed. " % url)
@@ -188,8 +187,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
                                    'add_static_ip')
         data = jsonutils.dumps(static_ips_info)
 
-        LOG.info(_LI("Initiating POST request to add static IPs for primary "
-                     "service at mgmt ip:%(mgmt_ip)s"),
+        LOG.info("Initiating POST request to add static IPs for primary "
+                 "service at mgmt ip:%(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
         err_msg = ("Static IP POST request to the VyOS firewall "
                    "service at %s failed. " % url)
@@ -267,8 +266,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         url = const.request_url % (mgmt_ip,
                                    self.port, 'add_rule')
         data = jsonutils.dumps(rule_info)
-        LOG.info(_LI("Initiating POST request to add persistent rule to "
-                     "primary service at mgmt ip: %(mgmt_ip)s"),
+        LOG.info("Initiating POST request to add persistent rule to "
+                 "primary service at mgmt ip: %(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
         err_msg = ("Add persistent rule POST request to the VyOS firewall "
                    "service at %s failed. " % url)
@@ -322,8 +321,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
                                    'del_static_ip')
         data = jsonutils.dumps(static_ips_info)
 
-        LOG.info(_LI("Initiating POST request to remove static IPs for "
-                     "primary service at mgmt ip: %(mgmt_ip)s"),
+        LOG.info("Initiating POST request to remove static IPs for "
+                 "primary service at mgmt ip: %(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
 
         err_msg = ("Static IP DELETE request to the VyOS firewall "
@@ -374,8 +373,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
             if result_static_ips != common_const.STATUS_SUCCESS:
                 return result_static_ips
             else:
-                LOG.info(_LI("Successfully removed static IPs. "
-                             "Result: %(result_static_ips)s"),
+                LOG.info("Successfully removed static IPs. "
+                         "Result: %(result_static_ips)s",
                          {'result_static_ips': result_static_ips})
 
         rule_info = dict(
@@ -384,8 +383,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
 
         mgmt_ip = resource_data['mgmt_ip']
 
-        LOG.info(_LI("Initiating DELETE persistent rule for primary "
-                     "service at mgmt ip: %(mgmt_ip)s"),
+        LOG.info("Initiating DELETE persistent rule for primary "
+                 "service at mgmt ip: %(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
         url = const.request_url % (mgmt_ip, self.port, 'delete_rule')
         data = jsonutils.dumps(rule_info)
@@ -447,8 +446,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
             route_info.append({'source_cidr': source_cidr,
                                'gateway_ip': gateway_ip})
         data = jsonutils.dumps(route_info)
-        LOG.info(_LI("Initiating POST request to configure route of primary "
-                     "service at mgmt ip: %(mgmt_ip)s"),
+        LOG.info("Initiating POST request to configure route of primary "
+                 "service at mgmt ip: %(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
 
         err_msg = ("Configure routes POST request to the VyOS firewall "
@@ -497,8 +496,8 @@ class FwGenericConfigDriver(base_driver.BaseDriver):
         for source_cidr in source_cidrs:
             route_info.append({'source_cidr': source_cidr})
         data = jsonutils.dumps(route_info)
-        LOG.info(_LI("Initiating Delete route to primary "
-                     "service at mgmt ip: %(mgmt_ip)s"),
+        LOG.info("Initiating Delete route to primary "
+                 "service at mgmt ip: %(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
 
         err_msg = ("Routes DELETE request to the VyOS firewall "
@@ -558,8 +557,8 @@ class FwaasDriver(FwGenericConfigDriver):
         headers = self._parse_vm_context(context['agent_info']['context'])
         resource_data = self.parse.parse_data(common_const.FIREWALL, context)
 
-        LOG.info(_LI("Processing request 'Create Firewall'  in FWaaS Driver "
-                     "for Firewall ID: %(f_id)s"),
+        LOG.info("Processing request 'Create Firewall'  in FWaaS Driver "
+                 "for Firewall ID: %(f_id)s",
                  {'f_id': firewall['id']})
         mgmt_ip = resource_data.get('mgmt_ip')
         url = const.request_url % (mgmt_ip,
@@ -580,7 +579,7 @@ class FwaasDriver(FwGenericConfigDriver):
             return common_const.STATUS_ERROR
 
         if resp is common_const.STATUS_SUCCESS:
-            LOG.info(_LI("Configured firewall successfully at URL: %(url)s "),
+            LOG.info("Configured firewall successfully at URL: %(url)s ",
                      {'url': url})
             return common_const.STATUS_ACTIVE
 
@@ -604,8 +603,8 @@ class FwaasDriver(FwGenericConfigDriver):
 
         """
         headers = self._parse_vm_context(context['agent_info']['context'])
-        LOG.info(_LI("Processing request 'Update Firewall' in FWaaS Driver "
-                     "for Firewall ID:%(f_id)s"),
+        LOG.info("Processing request 'Update Firewall' in FWaaS Driver "
+                 "for Firewall ID:%(f_id)s",
                  {'f_id': firewall['id']})
         resource_data = self.parse.parse_data(common_const.FIREWALL, context)
         mgmt_ip = resource_data.get('mgmt_ip')
@@ -650,8 +649,8 @@ class FwaasDriver(FwGenericConfigDriver):
 
         """
         headers = self._parse_vm_context(context['agent_info']['context'])
-        LOG.info(_LI("Processing request 'Delete Firewall' in FWaaS Driver "
-                     "for Firewall ID:%(f_id)s"),
+        LOG.info("Processing request 'Delete Firewall' in FWaaS Driver "
+                 "for Firewall ID:%(f_id)s",
                  {'f_id': firewall['id']})
         resource_data = self.parse.parse_data(common_const.FIREWALL, context)
         mgmt_ip = resource_data.get('mgmt_ip')

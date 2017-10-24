@@ -86,7 +86,6 @@ def notify(resource, event, trigger, **kwargs):
 registry.notify = notify
 
 
-from neutron._i18n import _LE
 from neutron.callbacks import events
 from neutron.callbacks import exceptions
 from oslo_log import log as logging
@@ -112,12 +111,12 @@ def _notify_loop(resource, event, trigger, **kwargs):
                 event.startswith(events.PRECOMMIT)
             )
             if not abortable_event:
-                LOG.exception(_LE("Error during notification for "
-                                  "%(callback)s %(resource)s, %(event)s"),
+                LOG.exception("Error during notification for "
+                              "%(callback)s %(resource)s, %(event)s",
                               {'callback': callback_id,
                                'resource': resource, 'event': event})
             else:
-                LOG.error(_LE("Callback %(callback)s raised %(error)s"),
+                LOG.error("Callback %(callback)s raised %(error)s",
                           {'callback': callback_id, 'error': e})
             errors.append(exceptions.NotificationError(callback_id, e))
     return errors
@@ -197,11 +196,9 @@ def commit_reservation(context, reservation_id):
 quota.QUOTAS.get_driver().commit_reservation = commit_reservation
 
 
-from neutron._i18n import _LI
 from oslo_db.sqlalchemy import exc_filters
 
 
-exc_filters._LE = _LI
 exc_filters.LOG.exception = exc_filters.LOG.debug
 
 

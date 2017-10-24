@@ -26,7 +26,6 @@ from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
-from gbpservice._i18n import _LE
 from gbpservice.neutron.extensions import servicechain as schain
 from gbpservice.neutron.services.servicechain.common import exceptions as s_exc
 
@@ -153,7 +152,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         # plugins are loaded to grab and store plugin.
         grouppolicy_plugin = directory.get_plugin(pconst.GROUP_POLICY)
         if not grouppolicy_plugin:
-            LOG.error(_LE("No Grouppolicy service plugin found."))
+            LOG.error("No Grouppolicy service plugin found.")
             raise s_exc.ServiceChainDeploymentError()
         return grouppolicy_plugin
 

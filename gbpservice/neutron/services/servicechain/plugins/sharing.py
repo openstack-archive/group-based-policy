@@ -14,7 +14,6 @@ from neutron.plugins.common import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
 
-from gbpservice._i18n import _LE
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
@@ -42,7 +41,7 @@ class SharingMixin(object):
         # plugins are loaded to grab and store plugin.
         gbp_plugin = directory.get_plugin(pconst.GROUP_POLICY)
         if not gbp_plugin:
-            LOG.error(_LE("No group policy service plugin found."))
+            LOG.error("No group policy service plugin found.")
             raise gp_exc.GroupPolicyDeploymentError()
         return gbp_plugin
 

@@ -24,7 +24,6 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
-from gbpservice._i18n import _LE
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
                                                     exceptions as exc)
 from gbpservice.neutron.services.servicechain.plugins.ncp import driver_base
@@ -374,15 +373,15 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                                                 'DELETE_IN_PROGRESS']:
                     return
             except Exception:
-                LOG.exception(_LE("Retrieving the stack %(stack)s failed."),
+                LOG.exception("Retrieving the stack %(stack)s failed.",
                               {'stack': stack_id})
                 return
             else:
                 time.sleep(STACK_ACTION_RETRY_WAIT)
                 time_waited = time_waited + STACK_ACTION_RETRY_WAIT
                 if time_waited >= STACK_ACTION_WAIT_TIME:
-                    LOG.error(_LE("Stack %(action)s not completed within "
-                                  "%(wait)s seconds"),
+                    LOG.error("Stack %(action)s not completed within "
+                              "%(wait)s seconds",
                               {'action': action,
                                'wait': STACK_ACTION_WAIT_TIME,
                                'stack': stack_id})

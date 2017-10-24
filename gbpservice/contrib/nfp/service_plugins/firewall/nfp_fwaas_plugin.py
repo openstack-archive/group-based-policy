@@ -13,7 +13,6 @@
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
 
-from gbpservice._i18n import _LE
 from gbpservice.common import utils
 from gbpservice.contrib.nfp.config_orchestrator.common import topics
 from gbpservice.nfp.core import log as nfp_logging
@@ -264,10 +263,10 @@ def _resource_owner_tenant_id():
         return tenant.id
     except k_exceptions.NotFound:
         with excutils.save_and_reraise_exception(reraise=True):
-            LOG.error(_LE('No tenant with name %s exists.'), tenant)
+            LOG.error('No tenant with name %s exists.', tenant)
     except k_exceptions.NoUniqueMatch:
         with excutils.save_and_reraise_exception(reraise=True):
-            LOG.error(_LE('Multiple tenants matches found for %s'), tenant)
+            LOG.error('Multiple tenants matches found for %s', tenant)
 
 
 def _get_router_for_floatingip(self, context, internal_port,

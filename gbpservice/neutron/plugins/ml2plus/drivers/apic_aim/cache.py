@@ -20,7 +20,6 @@ from keystoneclient.v3 import client as ksc_client
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from gbpservice._i18n import _LW
 
 LOG = logging.getLogger(__name__)
 
@@ -47,7 +46,7 @@ class ProjectNameCache(object):
         auth = ksc_auth.load_from_conf_options(cfg.CONF, AUTH_GROUP)
         LOG.debug("Got auth: %s", auth)
         if not auth:
-            LOG.warning(_LW('No auth_plugin configured in %s'),
+            LOG.warning('No auth_plugin configured in %s',
                         AUTH_GROUP)
         session = ksc_session.Session.load_from_conf_options(
             cfg.CONF, AUTH_GROUP, auth=auth)

@@ -13,7 +13,6 @@
 import ast
 import copy
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.nfp.common import constants as const
 from gbpservice.nfp.common import data_formatter as df
@@ -158,8 +157,8 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         nf_id = self._fetch_nf_from_resource_desc(firewall["description"])
         nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
-        LOG.info(_LI("Received RPC CREATE FIREWALL for "
-                     "Firewall: %(firewall)s"),
+        LOG.info("Received RPC CREATE FIREWALL for "
+                 "Firewall: %(firewall)s",
                  {'firewall': firewall})
         body = self._data_wrapper(context, firewall, host, nf, 'CREATE')
         transport.send_request_to_configurator(self._conf,
@@ -172,8 +171,8 @@ class FwAgent(firewall_db.Firewall_db_mixin):
         nf_id = self._fetch_nf_from_resource_desc(firewall["description"])
         nfp_context['log_context']['meta_id'] = nf_id
         nf = common.get_network_function_details(context, nf_id)
-        LOG.info(_LI("Received RPC DELETE FIREWALL for "
-                     "Firewall: %(firewall)s"),
+        LOG.info("Received RPC DELETE FIREWALL for "
+                 "Firewall: %(firewall)s",
                  {'firewall': firewall})
         body = self._data_wrapper(context, firewall, host, nf, 'DELETE')
         transport.send_request_to_configurator(self._conf,

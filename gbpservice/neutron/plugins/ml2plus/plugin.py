@@ -16,8 +16,6 @@
 # The following is imported at the beginning to ensure
 # that the patches are applied before any of the
 # modules save a reference to the functions being patched
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as gbp_extensions
 from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
@@ -135,7 +133,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         security_group=securitygroups_db.SecurityGroup,
         security_group_rule=securitygroups_db.SecurityGroupRule)
     def __init__(self):
-        LOG.info(_LI("Ml2Plus initializing"))
+        LOG.info("Ml2Plus initializing")
         registry._get_callback_manager()._notify_loop = (
             patch_neutron._notify_loop)
         # First load drivers, then initialize DB, then initialize drivers
@@ -179,9 +177,9 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             registry.subscribe(self._subnet_delete_after_delete_handler,
                     resources.SUBNET, events.AFTER_DELETE)
         except AttributeError:
-            LOG.info(_LI("Detected older version of Neutron, ML2Plus plugin "
-                         "is not subscribed to subnet_precommit_delete and "
-                         "subnet_after_delete events"))
+            LOG.info("Detected older version of Neutron, ML2Plus plugin "
+                     "is not subscribed to subnet_precommit_delete and "
+                     "subnet_after_delete events")
         self._setup_dhcp()
         self._start_rpc_notifiers()
         self.add_agent_status_check_worker(self.agent_health_check)
@@ -193,7 +191,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             cfg.CONF.ml2plus.refresh_subnetpool_db_obj)
         self.refresh_address_scope_db_obj = (
             cfg.CONF.ml2plus.refresh_address_scope_db_obj)
-        LOG.info(_LI("Modular L2 Plugin (extended) initialization complete"))
+        LOG.info("Modular L2 Plugin (extended) initialization complete")
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
                attributes.SUBNETPOOLS, ['_ml2_md_extend_subnetpool_dict'])
@@ -412,8 +410,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.mechanism_manager.create_subnetpool_postcommit(mech_context)
         except ml2_exc.MechanismDriverError:
             with excutils.save_and_reraise_exception():
-                LOG.error(_LE("mechanism_manager.create_subnetpool_postcommit "
-                              "failed, deleting subnetpool '%s'"),
+                LOG.error("mechanism_manager.create_subnetpool_postcommit "
+                          "failed, deleting subnetpool '%s'",
                           result['id'])
                 self.delete_subnetpool(context, result['id'])
         return result
@@ -476,9 +474,9 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 mech_context)
         except ml2_exc.MechanismDriverError:
             with excutils.save_and_reraise_exception():
-                LOG.error(_LE("mechanism_manager.create_address_scope_"
-                              "postcommit failed, deleting address_scope"
-                              " '%s'"),
+                LOG.error("mechanism_manager.create_address_scope_"
+                          "postcommit failed, deleting address_scope"
+                          " '%s'",
                           result['id'])
                 self.delete_address_scope(context, result['id'])
         return result

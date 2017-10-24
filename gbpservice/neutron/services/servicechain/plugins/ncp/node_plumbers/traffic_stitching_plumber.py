@@ -15,9 +15,6 @@ from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
-from gbpservice._i18n import _LW
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.extensions import group_policy
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -47,8 +44,8 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
 
         # Verify that proxy_group extension is loaded
         if pg_ext.PROXY_GROUP not in cfg.CONF.group_policy.extension_drivers:
-            LOG.error(_LE("proxy_group GBP driver extension is mandatory for "
-                          "traffic stitching plumber."))
+            LOG.error("proxy_group GBP driver extension is mandatory for "
+                      "traffic stitching plumber.")
             raise exc.GroupPolicyDeploymentError()
 
     @property
@@ -82,7 +79,7 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
                     management, 'management')
                 # Create proper PTs based on the service type
                 jump_ptg = None
-                LOG.info(_LI("Plumbing service of type '%s'"),
+                LOG.info("Plumbing service of type '%s'",
                          info['plumbing_type'])
                 if info['plumbing_type'] == common.PLUMBING_TYPE_ENDPOINT:
                     # No stitching needed, only provider side PT is created.
@@ -124,7 +121,7 @@ class TrafficStitchingPlumber(plumber_base.NodePlumberBase):
                         context, part_context, info['consumer'],
                         jump_ptg, 'consumer')
                 else:
-                    LOG.warning(_LW("Unsupported plumbing type %s"),
+                    LOG.warning("Unsupported plumbing type %s",
                                 info['plumbing_type'])
                 # Replace current "provider" with jump ptg if needed
                 provider = jump_ptg or provider

@@ -18,9 +18,6 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
-from gbpservice._i18n import _LW
 from gbpservice.common import utils
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
@@ -66,7 +63,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         self.plumber = utils.load_plugin(
             PLUMBER_NAMESPACE, plumber_klass)
         self.plumber.initialize()
-        LOG.info(_LI("Initialized node plumber '%s'"), plumber_klass)
+        LOG.info("Initialized node plumber '%s'", plumber_klass)
 
     @log.log_method_call
     def create_servicechain_instance(self, context, servicechain_instance):
@@ -96,8 +93,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             except Exception:
                 # Some node could not be deployed
                 with excutils.save_and_reraise_exception():
-                    LOG.error(_LE("Node deployment failed, "
-                                  "deleting servicechain_instance %s"),
+                    LOG.error("Node deployment failed, "
+                              "deleting servicechain_instance %s",
                               instance['id'])
                     self.delete_servicechain_instance(context, instance['id'])
 
@@ -127,8 +124,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         except Exception:
             # Some node could not be deployed
             with excutils.save_and_reraise_exception():
-                LOG.error(_LE("Node deployment failed, "
-                              "servicechain_instance %s is in ERROR state"),
+                LOG.error("Node deployment failed, "
+                          "servicechain_instance %s is in ERROR state",
                           instance['id'])
 
     @log.log_method_call
@@ -257,7 +254,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
             try:
                 update['driver'].update(update['context'])
             except exc.NodeDriverError as ex:
-                LOG.error(_LE("Node Update failed, %s"),
+                LOG.error("Node Update failed, %s",
                           ex.message)
 
         return updated_sc_node
@@ -398,8 +395,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                         old_policy_target_group,
                         current_policy_target_group)
             except exc.NodeDriverError as ex:
-                LOG.error(_LE("Node Update on policy target group modification"
-                              " failed, %s"), ex.message)
+                LOG.error("Node Update on policy target group modification"
+                          " failed, %s", ex.message)
 
     def _update_chains_pt_modified(self, context, policy_target, instance_id,
                                    action):
@@ -412,8 +409,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                         'update_policy_target_' + action)(
                             update['context'], policy_target)
             except exc.NodeDriverError as ex:
-                LOG.error(_LE("Node Update on policy target modification "
-                              "failed, %s"), ex.message)
+                LOG.error("Node Update on policy target modification "
+                          "failed, %s", ex.message)
 
     def _update_chains_consumer_modified(self, context, policy_target_group,
                                          instance_id, action):
@@ -426,9 +423,9 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                         'update_node_consumer_ptg_' + action)(
                             update['context'], policy_target_group)
             except exc.NodeDriverError as ex:
-                LOG.error(_LE(
+                LOG.error(
                     "Node Update on policy target group modification "
-                    "failed, %s"), ex.message)
+                    "failed, %s", ex.message)
 
     def notify_chain_parameters_updated(self, context,
                                         servicechain_instance_id):
@@ -447,8 +444,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 getattr(update['driver'],
                         'notify_chain_parameters_updated')(update['context'])
             except exc.NodeDriverError as ex:
-                LOG.error(_LE("Node Update on GBP parameter update "
-                              "failed, %s"), ex.message)
+                LOG.error("Node Update on GBP parameter update "
+                          "failed, %s", ex.message)
 
     def _get_instance_nodes(self, context, instance):
         context = utils.admin_context(context)
@@ -500,7 +497,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                     deployers = self._get_scheduled_drivers(context, resource,
                                                         'get')
                 except Exception:
-                    LOG.warning(_LW("Failed to get node driver"))
+                    LOG.warning("Failed to get node driver")
 
         # Invoke drivers only if status attributes are requested
         if not fields or STATUS_SET.intersection(set(fields)):
@@ -548,8 +545,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                         result['status'] = 'ACTIVE'
                         result['status_details'] = 'node deployment completed'
                 except Exception as exc:
-                    LOG.error(_LE("Failed to get servicechain instance status "
-                        "from node driver, Error: %(exc)s"), {'exc': exc})
+                    LOG.error("Failed to get servicechain instance status "
+                        "from node driver, Error: %(exc)s", {'exc': exc})
                     return
                 return result
         result = {'status': 'ACTIVE', 'status_details': ''}
@@ -574,7 +571,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 try:
                     driver.delete(destroy['context'])
                 except exc.NodeDriverError:
-                    LOG.error(_LE("Node destroy failed, for node %s "),
+                    LOG.error("Node destroy failed, for node %s ",
                               driver['context'].current_node['id'])
                 except Exception as e:
                     if db_api.is_retriable(e):

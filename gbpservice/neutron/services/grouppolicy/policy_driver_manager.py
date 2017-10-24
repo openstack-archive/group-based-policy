@@ -18,8 +18,6 @@ from oslo_policy import policy as oslo_policy
 from oslo_utils import excutils
 import stevedore
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbpservice.neutron.services.grouppolicy import group_policy_driver_api
 
@@ -69,14 +67,14 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         self.ordered_policy_drivers = []
         self.reverse_ordered_policy_drivers = []
 
-        LOG.info(_LI("Configured policy driver names: %s"),
+        LOG.info("Configured policy driver names: %s",
                  cfg.CONF.group_policy.policy_drivers)
         super(PolicyDriverManager,
               self).__init__('gbpservice.neutron.group_policy.policy_drivers',
                              cfg.CONF.group_policy.policy_drivers,
                              invoke_on_load=True,
                              name_order=True)
-        LOG.info(_LI("Loaded policy driver names: %s"), self.names())
+        LOG.info("Loaded policy driver names: %s", self.names())
         self._register_policy_drivers()
 
     def _register_policy_drivers(self):
@@ -90,7 +88,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
             self.ordered_policy_drivers.append(ext)
 
         self.reverse_ordered_policy_drivers = self.ordered_policy_drivers[::-1]
-        LOG.info(_LI("Registered policy drivers: %s"),
+        LOG.info("Registered policy drivers: %s",
                  [driver.name for driver in self.ordered_policy_drivers])
 
     def initialize(self):
@@ -100,7 +98,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         # set it to True such that the drivers can override it.
         self.native_bulk_support = False
         for driver in self.ordered_policy_drivers:
-            LOG.info(_LI("Initializing policy driver '%s'"), driver.name)
+            LOG.info("Initializing policy driver '%s'", driver.name)
             driver.obj.initialize()
             self.native_bulk_support &= getattr(driver.obj,
                                                 'native_bulk_support', True)
@@ -143,15 +141,15 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
                         e, oslo_policy.PolicyNotAuthorized):
                     with excutils.save_and_reraise_exception():
                         LOG.exception(
-                            _LE("Policy driver '%(name)s' failed in"
-                                " %(method)s"),
+                            "Policy driver '%(name)s' failed in"
+                            " %(method)s",
                             {'name': driver.name, 'method': method_name}
                         )
                 else:
                     error = True
                     # We are eating a non-GBP/non-Neutron exception here
                     LOG.exception(
-                        _LE("Policy driver '%(name)s' failed in %(method)s"),
+                        "Policy driver '%(name)s' failed in %(method)s",
                         {'name': driver.name, 'method': method_name})
                     if not continue_on_failure:
                         break
@@ -173,8 +171,8 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
                                       "ensure_tenant, operation will "
                                       "be retried", {'driver': driver.name})
                     else:
-                        LOG.exception(_LE("Policy driver '%s' failed in "
-                                          "ensure_tenant"), driver.name)
+                        LOG.exception("Policy driver '%s' failed in "
+                                      "ensure_tenant", driver.name)
                         raise gp_exc.GroupPolicyDriverError(
                                 method="ensure_tenant")
 

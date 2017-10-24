@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
 from gbpservice.neutron.plugins.ml2plus import driver_api
 
 from neutron.db import api as db_api
@@ -62,8 +60,8 @@ class MechanismManager(managers.MechanismManager):
                                        'method': method_name},
                                       exc_info=e)
                     LOG.exception(
-                        _LE("Mechanism driver '%(name)s' failed in "
-                            "%(method)s"),
+                        "Mechanism driver '%(name)s' failed in "
+                        "%(method)s",
                         {'name': driver.name, 'method': method_name}
                     )
                     errors.append(e)
@@ -81,8 +79,8 @@ class MechanismManager(managers.MechanismManager):
                 try:
                     driver.obj.ensure_tenant(plugin_context, tenant_id)
                 except Exception:
-                    LOG.exception(_LE("Mechanism driver '%s' failed in "
-                                      "ensure_tenant"), driver.name)
+                    LOG.exception("Mechanism driver '%s' failed in "
+                                  "ensure_tenant", driver.name)
                     raise ml2_exc.MechanismDriverError(method="ensure_tenant")
 
     def create_subnetpool_precommit(self, context):
@@ -197,8 +195,8 @@ class ExtensionManager(managers.ExtensionManager):
                                                      result)
                 except Exception:
                     with excutils.save_and_reraise_exception():
-                        LOG.info(_LI("Extension driver '%(name)s' failed in "
-                                     "%(method)s"),
+                        LOG.info("Extension driver '%(name)s' failed in "
+                                 "%(method)s",
                                  {'name': driver.name, 'method': method_name})
 
     # Overrides ML2 implementation to avoid eating retriable

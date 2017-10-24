@@ -16,11 +16,11 @@ from neutron.api import extensions as neutron_extensions
 from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron.plugins.common import constants
-from neutron.services import service_base
 from neutron_lib.api import converters as conv
 from neutron_lib.api import extensions
 from neutron_lib.api import validators as valid
 from neutron_lib import exceptions as nexc
+from neutron_lib.services import base as service_base
 from oslo_config import cfg
 from oslo_log import log as logging
 import six

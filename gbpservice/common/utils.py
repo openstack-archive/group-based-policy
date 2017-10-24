@@ -17,7 +17,6 @@ from oslo_utils import importutils
 from stevedore import driver
 
 from gbpservice._i18n import _
-from gbpservice._i18n import _LE
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
@@ -42,8 +41,8 @@ def load_plugin(namespace, plugin):
         try:
             plugin_class = importutils.import_class(plugin)
         except ImportError as e2:
-            LOG.exception(_LE("Error loading plugin by name, %s"), e1)
-            LOG.exception(_LE("Error loading plugin by class, %s"), e2)
+            LOG.exception("Error loading plugin by name, %s", e1)
+            LOG.exception("Error loading plugin by class, %s", e2)
             raise ImportError(_("Plugin not found."))
     return plugin_class()
 

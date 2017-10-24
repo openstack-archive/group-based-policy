@@ -13,7 +13,6 @@
 import ast
 import copy
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.contrib.nfp.config_orchestrator.common import lbv2_constants
 from gbpservice.nfp.common import constants as const
@@ -277,7 +276,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     def create_loadbalancer(self, context, loadbalancer, driver_name,
                             allocate_vip=True):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC CREATE LOADBALANCER for LB:%(lb)s"),
+        LOG.info("Received RPC CREATE LOADBALANCER for LB:%(lb)s",
                  {'lb': loadbalancer})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
@@ -306,8 +305,8 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     def delete_loadbalancer(self, context, loadbalancer,
                             delete_vip_port=True):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC DELETE LOADBALANCER for LB:"
-                     "%(lb)s"), {'lb': loadbalancer})
+        LOG.info("Received RPC DELETE LOADBALANCER for LB:"
+                 "%(lb)s", {'lb': loadbalancer})
         # Fetch nf_id from description of the resource
         nf_id = self._fetch_nf_from_resource_desc(loadbalancer["description"])
         nfp_context['log_context']['meta_id'] = nf_id
@@ -320,7 +319,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def create_listener(self, context, listener):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC CREATE LISTENER for Listener:%(listener)s"),
+        LOG.info("Received RPC CREATE LISTENER for Listener:%(listener)s",
                  {'listener': listener})
         loadbalancer = listener['loadbalancer']
         # Fetch nf_id from description of the resource
@@ -348,7 +347,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def delete_listener(self, context, listener):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC DELETE LISTENER for Listener:%(listener)s"),
+        LOG.info("Received RPC DELETE LISTENER for Listener:%(listener)s",
                  {'listener': listener})
         loadbalancer = listener['loadbalancer']
         # Fetch nf_id from description of the resource
@@ -363,7 +362,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def create_pool(self, context, pool):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC CREATE POOL for Pool:%(pool)s"),
+        LOG.info("Received RPC CREATE POOL for Pool:%(pool)s",
                  {'pool': pool})
         loadbalancer = pool['loadbalancer']
         # Fetch nf_id from description of the resource
@@ -391,7 +390,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def delete_pool(self, context, pool):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC DELETE POOL for Pool:%(pool)s"),
+        LOG.info("Received RPC DELETE POOL for Pool:%(pool)s",
                  {'pool': pool})
         loadbalancer = pool['loadbalancer']
         # Fetch nf_id from description of the resource
@@ -406,7 +405,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def create_member(self, context, member):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC CREATE MEMBER for Member:%(member)s"),
+        LOG.info("Received RPC CREATE MEMBER for Member:%(member)s",
                  {'member': member})
         loadbalancer = member['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
@@ -434,7 +433,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def delete_member(self, context, member):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC DELETE MEMBER for Member:%(member)s"),
+        LOG.info("Received RPC DELETE MEMBER for Member:%(member)s",
                  {'member': member})
         loadbalancer = member['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
@@ -449,7 +448,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def create_healthmonitor(self, context, healthmonitor):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC CREATE HEALTH MONITOR for HM:%(hm)s"),
+        LOG.info("Received RPC CREATE HEALTH MONITOR for HM:%(hm)s",
                  {'hm': healthmonitor})
         loadbalancer = healthmonitor['pool']['loadbalancer']
         # Fetch nf_id from description of the resource
@@ -478,7 +477,7 @@ class Lbv2Agent(loadbalancer_dbv2.LoadBalancerPluginDbv2):
     @log_helpers.log_method_call
     def delete_healthmonitor(self, context, healthmonitor):
         nfp_context = module_context.init()
-        LOG.info(_LI("Received RPC DELETE HEALTH MONITOR for HM:%(hm)s"),
+        LOG.info("Received RPC DELETE HEALTH MONITOR for HM:%(hm)s",
                  {'hm': healthmonitor})
         loadbalancer = healthmonitor['pool']['loadbalancer']
         # Fetch nf_id from description of the resource

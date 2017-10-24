@@ -17,8 +17,6 @@ from neutron.plugins.ml2 import rpc as ml2_rpc
 from opflexagent import rpc as o_rpc
 from oslo_log import log
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
@@ -65,8 +63,8 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return self._retrieve_vrf_details(context, **kwargs)
         except Exception as e:
             vrf = kwargs.get('vrf_id')
-            LOG.error(_LE("An exception has occurred while retrieving vrf "
-                          "gbp details for %s"), vrf)
+            LOG.error("An exception has occurred while retrieving vrf "
+                      "gbp details for %s", vrf)
             LOG.exception(e)
             return {'l3_policy_id': vrf}
 
@@ -82,8 +80,8 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return self._get_gbp_details(context, kwargs, kwargs.get('host'))
         except Exception as e:
             device = kwargs.get('device')
-            LOG.error(_LE("An exception has occurred while retrieving device "
-                          "gbp details for %s"), device)
+            LOG.error("An exception has occurred while retrieving device "
+                      "gbp details for %s", device)
             LOG.exception(e)
             return {'device': device}
 
@@ -101,8 +99,8 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                           None, None).get_device_details(context, **request)}
             return result
         except Exception as e:
-            LOG.error(_LE("An exception has occurred while requesting device "
-                          "gbp details for %s"), request.get('device'))
+            LOG.error("An exception has occurred while requesting device "
+                      "gbp details for %s", request.get('device'))
             LOG.exception(e)
             return None
 
@@ -137,8 +135,8 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             port_context = core_plugin.get_bound_port_context(context, port_id,
                                                               host)
             if not port_context:
-                LOG.warning(_LW("Device %(device)s requested by agent "
-                                "%(agent_id)s not found in database"),
+                LOG.warning("Device %(device)s requested by agent "
+                            "%(agent_id)s not found in database",
                             {'device': port_id,
                              'agent_id': request.get('agent_id')})
                 return {'device': request.get('device')}

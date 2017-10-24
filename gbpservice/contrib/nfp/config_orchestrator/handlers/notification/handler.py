@@ -13,7 +13,6 @@
 import sys
 import traceback
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.config_orchestrator.common import (
     lbv2_constants as lbv2_const)
 from gbpservice.contrib.nfp.config_orchestrator.common import (
@@ -41,8 +40,8 @@ class RpcHandler(object):
     def network_function_notification(self, context, notification_data):
         module_context.init()
         try:
-            LOG.info(_LI("Received NETWORK FUNCTION NOTIFICATION:"
-                         "%(notification)s"),
+            LOG.info("Received NETWORK FUNCTION NOTIFICATION:"
+                     "%(notification)s",
                      {'notification': notification_data['notification']})
             if notification_data['info']['service_type'] is not None:
                 handler = NaasNotificationHandler(self.conf, self.sc)
@@ -78,9 +77,9 @@ class FirewallNotifier(object):
         firewall_id = resource_data['firewall_id']
         status = resource_data['status']
 
-        LOG.info(_LI("Received firewall configuration create complete API, "
-                     "making an RPC call set firewall status for "
-                     "firewall:%(firewall)s and status: %(status)s"),
+        LOG.info("Received firewall configuration create complete API, "
+                 "making an RPC call set firewall status for "
+                 "firewall:%(firewall)s and status: %(status)s",
                  {'firewall': firewall_id,
                   'status': status})
 
@@ -103,9 +102,9 @@ class FirewallNotifier(object):
         resource_data = notification['data']
         firewall_id = resource_data['firewall_id']
 
-        LOG.info(_LI("Received firewall_configuration_delete_complete API, "
-                     "making an RPC call firewall_deleted  for firewall:"
-                     "%(firewall)s "),
+        LOG.info("Received firewall_configuration_delete_complete API, "
+                 "making an RPC call firewall_deleted  for firewall:"
+                 "%(firewall)s ",
                  {'firewall': firewall_id})
 
         # RPC call to plugin to update firewall deleted
@@ -143,9 +142,9 @@ class LoadbalancerV2Notifier(object):
         obj_p_status = resource_data['provisioning_status']
         obj_o_status = resource_data['operating_status']
 
-        LOG.info(_LI("Received LB's update_status API. Making an "
-                     "update_status RPC call to plugin for %(obj_type)s:"
-                     "%(obj_id)s with status: %(status)s"),
+        LOG.info("Received LB's update_status API. Making an "
+                 "update_status RPC call to plugin for %(obj_type)s:"
+                 "%(obj_id)s with status: %(status)s",
                  {'obj_type': obj_type,
                   'obj_id': obj_id,
                   'status': obj_p_status})
@@ -192,9 +191,9 @@ class VpnNotifier(object):
         nfp_context['log_context'] = logging_context
 
         status = resource_data['status']
-        LOG.info(_LI("Received VPN's update_status API. "
-                     "Making an update_status RPC cast to plugin for object"
-                     "with status: %(status)s"),
+        LOG.info("Received VPN's update_status API. "
+                 "Making an update_status RPC cast to plugin for object"
+                 "with status: %(status)s",
                  {'status': status})
         rpcClient = transport.RPCClient(a_topics.VPN_NFP_PLUGIN_TOPIC)
         rpcClient.cctxt.cast(context, 'update_status',

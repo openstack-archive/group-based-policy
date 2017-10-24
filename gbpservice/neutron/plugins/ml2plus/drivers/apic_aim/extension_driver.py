@@ -22,7 +22,6 @@ from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
 
-from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
@@ -38,11 +37,11 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                           extn_db.ExtensionDbMixin):
 
     def __init__(self):
-        LOG.info(_LI("APIC AIM ED __init__"))
+        LOG.info("APIC AIM ED __init__")
         self._mechanism_driver = None
 
     def initialize(self):
-        LOG.info(_LI("APIC AIM ED initializing"))
+        LOG.info("APIC AIM ED initializing")
         extensions.append_api_extensions_path(extensions_pkg.__path__)
 
     @property

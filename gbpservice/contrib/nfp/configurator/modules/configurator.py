@@ -12,7 +12,6 @@
 
 from oslo_log import helpers as log_helpers
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.contrib.nfp.configurator.lib import demuxer
 from gbpservice.contrib.nfp.configurator.lib import utils
@@ -139,9 +138,9 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context'].get('logging_context', {})
             nfp_context['log_context'] = logging_context
-            LOG.info(_LI("Received RPC CREATE NETWORK FUNCTION DEVICE CONFIG "
-                         "for %(service_type)s, NFI: %(nfi)s, "
-                         "NF_ID: %(nf_id)s"),
+            LOG.info("Received RPC CREATE NETWORK FUNCTION DEVICE CONFIG "
+                     "for %(service_type)s, NFI: %(nfi)s, "
+                     "NF_ID: %(nf_id)s",
                      {'service_type': request_data['info']['service_type'],
                       'nfi': request_data['info']['context']['nfi_id'],
                       'nf_id': request_data['info']['context']['nf_id']})
@@ -173,9 +172,9 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context'].get('logging_context', {})
             nfp_context['log_context'] = logging_context
-            LOG.info(_LI("Received RPC DELETE NETWORK FUNCTION DEVICE CONFIG "
-                         "for %(service_type)s, NFI: %(nfi)s, "
-                         "NF_ID: %(nf_id)s"),
+            LOG.info("Received RPC DELETE NETWORK FUNCTION DEVICE CONFIG "
+                     "for %(service_type)s, NFI: %(nfi)s, "
+                     "NF_ID: %(nf_id)s",
                      {'service_type': request_data['info']['service_type'],
                       'nfi': request_data['info']['context']['nfi_id'],
                       'nf_id': request_data['info']['context']['nf_id']})
@@ -207,9 +206,9 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context'].get('logging_context', {})
             nfp_context['log_context'] = logging_context
-            LOG.info(_LI("Received RPC UPDATE NETWORK FUNCTION DEVICE CONFIG "
-                         "for %(service_type)s, NFI: %(nfi)s, "
-                         "NF_ID: %(nf_id)s"),
+            LOG.info("Received RPC UPDATE NETWORK FUNCTION DEVICE CONFIG "
+                     "for %(service_type)s, NFI: %(nfi)s, "
+                     "NF_ID: %(nf_id)s",
                      {'service_type': request_data['info']['service_type'],
                       'nfi': request_data['info']['context']['nfi_id'],
                       'nf_id': request_data['info']['context']['nf_id']})
@@ -241,8 +240,8 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context'].get('logging_context', {})
             nfp_context['log_context'] = logging_context
-            LOG.info(_LI("Received RPC CREATE NETWORK FUNCTION CONFIG "
-                         "for %(service_type)s "),
+            LOG.info("Received RPC CREATE NETWORK FUNCTION CONFIG "
+                     "for %(service_type)s ",
                      {'service_type': request_data['info']['service_type']})
 
             self._invoke_service_agent('create', request_data)
@@ -272,8 +271,8 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context'].get('logging_context', {})
             nfp_context['log_context'] = logging_context
-            LOG.info(_LI("Received RPC DELETE NETWORK FUNCTION CONFIG "
-                         "for %(service_type)s "),
+            LOG.info("Received RPC DELETE NETWORK FUNCTION CONFIG "
+                     "for %(service_type)s ",
                      {'service_type': request_data['info']['service_type']})
 
             self._invoke_service_agent('delete', request_data)
@@ -303,8 +302,8 @@ class ConfiguratorRpcManager(object):
             log_info = request_data.get('info')
             logging_context = log_info['context'].get('logging_context', {})
             nfp_context['log_context'] = logging_context
-            LOG.info(_LI("Received RPC UPDATE NETWORK FUNCTION CONFIG "
-                         "for %(service_type)s "),
+            LOG.info("Received RPC UPDATE NETWORK FUNCTION CONFIG "
+                     "for %(service_type)s ",
                      {'service_type': request_data['info']['service_type']})
 
             self._invoke_service_agent('update', request_data)
@@ -326,7 +325,7 @@ class ConfiguratorRpcManager(object):
 
         """
         module_context.init()
-        LOG.info(_LI("Received RPC GET NOTIFICATIONS "))
+        LOG.info("Received RPC GET NOTIFICATIONS ")
         events = self.sc.get_stashed_events()
         notifications = []
         for event in events:

@@ -16,7 +16,6 @@ import requests
 import six
 import time
 
-from neutron._i18n import _LI
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
 from gbpservice.contrib.nfp.configurator.drivers.vpn.vyos import (
@@ -354,8 +353,8 @@ class VpnGenericConfigDriver(base_driver.BaseDriver):
                                    'change_auth')
         data = {}
 
-        LOG.info(_LI("Initiating POST request to configure Authentication "
-                     "service at mgmt ip:%(mgmt_ip)s"),
+        LOG.info("Initiating POST request to configure Authentication "
+                 "service at mgmt ip:%(mgmt_ip)s",
                  {'mgmt_ip': mgmt_ip})
         err_msg = ("Change Auth POST request to the VyOS firewall "
                    "service at %s failed. " % url)

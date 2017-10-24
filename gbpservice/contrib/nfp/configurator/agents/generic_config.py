@@ -14,7 +14,6 @@ import copy
 import os
 import six
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import (
     generic_config_constants as gen_cfg_const)
@@ -142,8 +141,8 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
-        LOG.info(_LI("Received configure health monitor api for nfds:"
-                     "%(nfds)s"),
+        LOG.info("Received configure health monitor api for nfds:"
+                 "%(nfds)s",
                  {'nfds': resource_data['nfds']})
         resource_data['fail_count'] = 0
         self._send_event(context,
@@ -161,8 +160,8 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
         Returns: None
 
         """
-        LOG.info(_LI("Received clear health monitor api for nfds:"
-                     "%(nfds)s"),
+        LOG.info("Received clear health monitor api for nfds:"
+                 "%(nfds)s",
                  {'nfds': resource_data['nfds']})
         event_key = resource_data['nfds'][0]['vmid']
         poll_event_id = gen_cfg_const.EVENT_CONFIGURE_HEALTHMONITOR
@@ -470,8 +469,8 @@ def load_drivers(conf):
     for service_type, driver_name in six.iteritems(drivers):
         driver_obj = driver_name(conf=conf)
         drivers[service_type] = driver_obj
-    LOG.info(_LI("Generic config agent loaded drivers drivers:"
-                 "%(drivers)s"),
+    LOG.info("Generic config agent loaded drivers drivers:"
+             "%(drivers)s",
              {'drivers': drivers})
     return drivers
 
