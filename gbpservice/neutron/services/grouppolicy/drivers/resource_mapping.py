@@ -15,11 +15,12 @@ import operator
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron.api.v2 import attributes
 from neutron.common import exceptions as neutron_exc
+from neutron.db import api as db_api
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
+from neutron_lib.api.definitions import port as port_def
 from neutron_lib import constants as n_const
 from neutron_lib import context as n_context
 from neutron_lib.db import model_base
@@ -1062,7 +1063,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 fip_ids = self._allocate_floating_ips(
                     context, ptg['l2_policy_id'], context.current['port_id'])
                 self._set_pt_floating_ips_mapping(
-                    context._plugin_context.session,
+                    context._plugin_context,
                     context.current['id'],
                     fip_ids)
                 return
@@ -1175,29 +1176,29 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                         ipaddress=None, fip_maps=None):
         if not ipaddress:
             ipaddress = self._get_ptg_policy_ipaddress_mapping(
-                context._plugin_context.session, ptg['id'])
+                context._plugin_context, ptg['id'])
         if ipaddress and ptg['subnets']:
             # TODO(rkukura): Loop on subnets?
             self._restore_ip_to_allocation_pool(
                 context, ptg['subnets'][0], ipaddress.ipaddress)
         self._delete_policy_ipaddress_mapping(
-            context._plugin_context.session, ptg['id'])
+            context._plugin_context, ptg['id'])
         if not fip_maps:
             fip_maps = self._get_ptg_policy_fip_mapping(
-                context._plugin_context.session, ptg['id'])
+                context._plugin_context, ptg['id'])
         for fip_map in fip_maps:
             self._delete_fip(context._plugin_context, fip_map.floatingip_id)
         self._delete_ptg_policy_fip_mapping(
-            context._plugin_context.session, ptg['id'])
+            context._plugin_context, ptg['id'])
 
         for pt in ptg['policy_targets']:
             pt_fip_maps = self._get_pt_floating_ip_mapping(
-                    context._plugin_context.session, pt)
+                    context._plugin_context, pt)
             for pt_fip_map in pt_fip_maps:
                 self._delete_fip(context._plugin_context,
                                  pt_fip_map.floatingip_id)
             self._delete_pt_floating_ip_mapping(
-                context._plugin_context.session, pt)
+                context._plugin_context, pt)
 
     def _handle_nsp_update_on_ptg(self, context):
         old_nsp = context.original.get("network_service_policy_id")
@@ -1290,7 +1291,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 self._remove_ip_from_allocation_pool(
                     context, context.current['subnets'][0], free_ip)
                 self._set_policy_ipaddress_mapping(
-                    context._plugin_context.session,
+                    context._plugin_context,
                     network_service_policy_id,
                     context.current['id'],
                     free_ip)
@@ -1302,7 +1303,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     context, context.current['l2_policy_id'])
                 for fip_id in fip_ids:
                     self._set_ptg_policy_fip_mapping(
-                        context._plugin_context.session,
+                        context._plugin_context,
                         network_service_policy_id,
                         context.current['id'],
                         fip_id)
@@ -1324,7 +1325,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                         pt_fip_map[policy_target['id']] = fip_ids
                 if pt_fip_map:
                     self._set_pts_floating_ips_mapping(
-                        context._plugin_context.session, pt_fip_map)
+                        context._plugin_context, pt_fip_map)
 
     def _restore_ip_to_allocation_pool(self, context, subnet_id, ip_address):
         # TODO(Magesh):Pass subnets and loop on subnets. Better to add logic
@@ -1620,12 +1621,12 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
                 # get QoS Policy associated to NSP
                 mapping = self._get_nsp_qos_mapping(
-                    context._plugin_context.session,
+                    context._plugin_context,
                     network_service_policy_id)
 
                 # apply QoS policy to PT's Neutron port
                 port_id = context.current['port_id']
-                port = {attributes.PORT:
+                port = {port_def.RESOURCE_NAME:
                         {'qos_policy_id': mapping['qos_policy_id']}}
                 self._core_plugin.update_port(context._plugin_context,
                                               port_id, port)
@@ -1639,7 +1640,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             LOG.warning("Attempted to fetch deleted Service Target (QoS)")
         else:
             port_id = policy_target['port_id']
-            port = {attributes.PORT: {'qos_policy_id': None}}
+            port = {port_def.RESOURCE_NAME: {'qos_policy_id': None}}
             self._core_plugin.update_port(context._plugin_context,
                                           port_id, port)
 
@@ -1672,12 +1673,12 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                     context._plugin_context, filters={'id': policy_targets})
                 # get QoS Policy associated to NSP
                 mapping = self._get_nsp_qos_mapping(
-                    context._plugin_context.session,
+                    context._plugin_context,
                     nsp['id'])
                 # apply QoS policy to each PT's Neutron port
                 for pt in policy_targets:
                     port_id = pt['port_id']
-                    port = {attributes.PORT:
+                    port = {port_def.RESOURCE_NAME:
                             {'qos_policy_id': mapping['qos_policy_id']}}
                     self._core_plugin.update_port(context._plugin_context,
                                                   port_id, port)
@@ -1773,7 +1774,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     def delete_policy_target_precommit(self, context):
         self._validate_pt_in_use_by_cluster(context)
         context.fips = self._get_pt_floating_ip_mapping(
-                    context._plugin_context.session,
+                    context._plugin_context,
                     context.current['id'])
 
     @log.log_method_call
@@ -1924,9 +1925,9 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
     @log.log_method_call
     def delete_policy_target_group_precommit(self, context):
         context.nsp_cleanup_ipaddress = self._get_ptg_policy_ipaddress_mapping(
-            context._plugin_context.session, context.current['id'])
+            context._plugin_context, context.current['id'])
         context.nsp_cleanup_fips = self._get_ptg_policy_fip_mapping(
-            context._plugin_context.session, context.current['id'])
+            context._plugin_context, context.current['id'])
 
     @log.log_method_call
     def delete_policy_target_group_postcommit(self, context):
@@ -2299,14 +2300,14 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             qos_policy_id = self._create_implicit_qos_policy(context)
             nsp_id = context.current['id']
             self._create_implicit_qos_rule(context, qos_policy_id, max, burst)
-            self._set_nsp_qos_mapping(context._plugin_context.session,
+            self._set_nsp_qos_mapping(context._plugin_context,
                                       nsp_id,
                                       qos_policy_id)
 
     @log.log_method_call
     def delete_network_service_policy_precommit(self, context):
         nsp = context.current
-        mapping = self._get_nsp_qos_mapping(context._plugin_context.session,
+        mapping = self._get_nsp_qos_mapping(context._plugin_context,
                                             nsp['id'])
         if mapping:
             qos_policy_id = mapping['qos_policy_id']
@@ -3342,7 +3343,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     def _delete_ptg_qos_policy(self, context, qos_policy_id):
         qos_rules = self._get_qos_rules(context._plugin_context, qos_policy_id)
-        with context._plugin_context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context._plugin_context):
             for qos_rule in qos_rules:
                 self._delete_qos_rule(context._plugin_context,
                                       qos_rule['id'], qos_policy_id)
