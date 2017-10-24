@@ -19,6 +19,7 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent.linux import dhcp
+from neutron.db import api as db_api
 from neutron import policy
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
@@ -29,6 +30,7 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice.common import utils as gbp_utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
@@ -603,9 +605,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         plugin_context = context._plugin_context
         auto_ptg_id = self._get_auto_ptg_id(context.current['l2_policy_id'])
         context.nsp_cleanup_ipaddress = self._get_ptg_policy_ipaddress_mapping(
-            context._plugin_context.session, context.current['id'])
+            context._plugin_context, context.current['id'])
         context.nsp_cleanup_fips = self._get_ptg_policy_fip_mapping(
-            context._plugin_context.session, context.current['id'])
+            context._plugin_context, context.current['id'])
         if context.current['id'] == auto_ptg_id:
             raise AutoPTGDeleteNotSupported(id=context.current['id'])
         ptg_db = context._plugin._get_policy_target_group(
@@ -707,7 +709,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     @log.log_method_call
     def delete_policy_target_precommit(self, context):
         fips = self._get_pt_floating_ip_mapping(
-            context._plugin_context.session, context.current['id'])
+            context._plugin_context, context.current['id'])
         for fip in fips:
             self._delete_fip(context._plugin_context, fip.floatingip_id)
         pt_db = context._plugin._get_policy_target(
@@ -2270,21 +2272,25 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return default_epg_name
 
     def apic_epg_name_for_policy_target_group(self, session, ptg_id,
-                                              name=None):
-        ptg_db = session.query(gpmdb.PolicyTargetGroupMapping).filter_by(
-            id=ptg_id).first()
-        if ptg_db and self._is_auto_ptg(ptg_db):
-            l2p_db = session.query(gpmdb.L2PolicyMapping).filter_by(
-                id=ptg_db['l2_policy_id']).first()
-            network_id = l2p_db['network_id']
-            admin_context = self._get_admin_context_reuse_session(session)
-            net = self._get_network(admin_context, network_id)
-            default_epg_dn = net[cisco_apic.DIST_NAMES][cisco_apic.EPG]
-            default_epg_name = self._get_epg_name_from_dn(
-                admin_context, default_epg_dn)
-            return default_epg_name
-        else:
-            return ptg_id
+                                              name=None, context=None):
+        if not context:
+            context = gbp_utils.get_current_context()
+        # get_network can do DB write, hence we use a writer
+        with db_api.context_manager.writer.using(context):
+            ptg_db = session.query(gpmdb.PolicyTargetGroupMapping).filter_by(
+                id=ptg_id).first()
+            if ptg_db and self._is_auto_ptg(ptg_db):
+                l2p_db = session.query(gpmdb.L2PolicyMapping).filter_by(
+                    id=ptg_db['l2_policy_id']).first()
+                network_id = l2p_db['network_id']
+                admin_context = n_context.get_admin_context()
+                net = self._get_network(admin_context, network_id)
+                default_epg_dn = net[cisco_apic.DIST_NAMES][cisco_apic.EPG]
+                default_epg_name = self._get_epg_name_from_dn(
+                    admin_context, default_epg_dn)
+                return default_epg_name
+            else:
+                return ptg_id
 
     def apic_ap_name_for_application_policy_group(self, session, apg_id):
         if apg_id:
@@ -2347,11 +2353,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _get_dns_domain(self, context, port):
         network = self._get_network(context, port['network_id'])
         return network.get('dns_domain')
-
-    def _get_admin_context_reuse_session(self, session):
-        admin_context = n_context.get_admin_context()
-        admin_context._session = session
-        return admin_context
 
     def _create_per_l3p_implicit_contracts(self):
         admin_context = n_context.get_admin_context()
