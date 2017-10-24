@@ -25,13 +25,13 @@ from aim import context as aim_context
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
-from neutron.callbacks import registry
 from neutron.common import utils as n_utils
 from neutron.db import api as db_api
 from neutron.extensions import dns
 from neutron.notifiers import nova
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
+from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib.plugins import directory
@@ -741,7 +741,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             ptg_show = self.show_policy_target_group(
                 ptg_id, expected_res_status=200)['policy_target_group']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg_id)
+            self._neutron_context.session, ptg_id,
+            context=self._neutron_context)
         aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -1764,7 +1765,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                        'scope'})['policy_target_group']
         self._test_policy_target_group_aim_mappings(
             ptg, prs_lists, l2p)
-        # the test policy.json restricts auto-ptg access to admin
+        # Shared status cannot be updated
         self.update_policy_target_group(
             ptg['id'], is_admin_context=True, shared=(not shared),
             expected_res_status=webob.exc.HTTPBadRequest.code)
@@ -1774,7 +1775,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self.assertEqual('AutoPTGDeleteNotSupported',
                          res['NeutronError']['type'])
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'])
+            self._neutron_context.session, ptg['id'],
+            context=self._neutron_context)
         aim_epg = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup,
             name=aim_epg_name)[0]
@@ -1813,7 +1815,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
 
     def _test_epg_policy_enforcement_attr(self, ptg):
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            db_api.get_session(), ptg['id'])
+            db_api.get_session(), ptg['id'],
+            context=self._neutron_context)
         aim_epg = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup,
             name=aim_epg_name)[0]
@@ -2164,7 +2167,8 @@ class TestPolicyTargetGroupVmmDomains(AIMBaseTestCase):
             'policy_target_group']
 
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'])
+            self._neutron_context.session, ptg['id'],
+            context=self._neutron_context)
         aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -2285,7 +2289,8 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
 
         ptg_name = ptg['name']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg_id, ptg_name)
+            self._neutron_context.session, ptg_id, ptg_name,
+            context=self._neutron_context)
         aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_app_profiles = self.aim_mgr.find(
@@ -2320,7 +2325,8 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
             consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
                                        'scope'})['policy_target_group']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg_id, new_name)
+            self._neutron_context.session, ptg_id, new_name,
+            context=self._neutron_context)
         aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
@@ -2454,7 +2460,8 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
             intra_ptg_allow=False)['policy_target_group']
         self.assertFalse(ptg['intra_ptg_allow'])
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'])
+            self._neutron_context.session, ptg['id'],
+            context=self._neutron_context)
         aim_epgs = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
@@ -2669,7 +2676,8 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._bind_port_to_host(pt['port_id'], 'h1')
 
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'])
+            self._neutron_context.session, ptg['id'],
+            context=self._neutron_context)
         aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_epg = self.aim_mgr.get(
@@ -2721,7 +2729,8 @@ class TestPolicyTarget(AIMBaseTestCase):
                 port_id=port_id)['policy_target']
 
             aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-                self._neutron_context.session, ptg['id'])
+                self._neutron_context.session, ptg['id'],
+                context=self._neutron_context)
             aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
             aim_app_profile_name = self.driver.aim_mech_driver.ap_name
             aim_epg = self.aim_mgr.get(
@@ -2783,7 +2792,8 @@ class TestPolicyTarget(AIMBaseTestCase):
         self._bind_port_to_host(pt['port_id'], 'opflex-1')
 
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'])
+            self._neutron_context.session, ptg['id'],
+            context=self._neutron_context)
         aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
         aim_app_profile_name = self.driver.aim_mech_driver.ap_name
         aim_epg = self.aim_mgr.get(
@@ -2861,7 +2871,8 @@ class TestPolicyTarget(AIMBaseTestCase):
                 port_id=port_id)['policy_target']
 
             aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-                self._neutron_context.session, ptg['id'])
+                self._neutron_context.session, ptg['id'],
+                context=self._neutron_context)
             aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
             aim_app_profile_name = self.driver.aim_mech_driver.ap_name
             aim_epg = self.aim_mgr.get(
@@ -3034,7 +3045,8 @@ class TestPolicyTarget(AIMBaseTestCase):
                      'timestamp': 0, 'request_id': 'request_id'},
             host='h1')
         epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg['id'], ptg['name'])
+            self._neutron_context.session, ptg['id'], ptg['name'],
+            context=self._neutron_context)
         epg_tenant = ptg['tenant_id']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
 
@@ -3831,6 +3843,8 @@ class TestPolicyRuleSetRollback(AIMBaseTestCase):
 
 
 class NotificationTest(AIMBaseTestCase):
+
+    block_dhcp_notifier = False
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, **kwargs):
