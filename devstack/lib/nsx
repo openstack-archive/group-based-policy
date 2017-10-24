@@ -5,7 +5,7 @@ function prepare_nsx_policy {
     NSXLIB_NAME='vmware-nsxlib'
     GITDIR[$NSXLIB_NAME]=/opt/stack/vmware-nsxlib
     GITREPO[$NSXLIB_NAME]=${NSXLIB_REPO:-${GIT_BASE}/openstack/vmware-nsxlib.git}
-    GITBRANCH[$NSXLIB_NAME]=${NSXLIB_BRANCH:-stable/ocata}
+    GITBRANCH[$NSXLIB_NAME]=${NSXLIB_BRANCH:-stable/pike}
 
     if use_library_from_git $NSXLIB_NAME; then
         git_clone_by_name $NSXLIB_NAME
