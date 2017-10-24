@@ -12,7 +12,7 @@
 
 from gbpservice.nfp.proxy_agent.notifications import pull
 import mock
-from neutron import context as ctx
+from neutron_lib import context as ctx
 import unittest2
 
 from neutron.common import rpc as n_rpc

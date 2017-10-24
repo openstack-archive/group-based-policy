@@ -12,7 +12,7 @@
 
 import mock
 from neutron.common import config  # noqa
-from neutron import context as n_context
+from neutron_lib import context as n_context
 from neutron_lib.plugins import directory
 from oslo_config import cfg
 
