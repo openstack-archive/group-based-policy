@@ -12,6 +12,7 @@
 
 import netaddr
 
+from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron_lib.api import validators
 from neutron_lib import constants
@@ -1098,7 +1099,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
         tenant_id = self._get_tenant_id_for_create(context, pt)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pt_db = PolicyTarget(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=pt['name'], description=pt['description'],
@@ -1112,14 +1113,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def update_policy_target(self, context, policy_target_id, policy_target):
         pt = policy_target['policy_target']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pt_db = self._get_policy_target(context, policy_target_id)
             pt_db.update(pt)
         return self._make_policy_target_dict(pt_db)
 
     @log.log_method_call
     def delete_policy_target(self, context, policy_target_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pt_db = self._get_policy_target(context, policy_target_id)
             context.session.delete(pt_db)
 
@@ -1150,7 +1151,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_policy_target_group(self, context, policy_target_group):
         ptg = policy_target_group['policy_target_group']
         tenant_id = self._get_tenant_id_for_create(context, ptg)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             if ptg['service_management']:
                 self._validate_service_management_ptg(context, tenant_id)
             ptg_db = PolicyTargetGroup(
@@ -1172,7 +1173,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def update_policy_target_group(self, context, policy_target_group_id,
                                    policy_target_group):
         ptg = policy_target_group['policy_target_group']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             ptg_db = self._get_policy_target_group(
                 context, policy_target_group_id)
             ptg = self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
@@ -1181,7 +1182,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_policy_target_group(self, context, policy_target_group_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             ptg_db = self._get_policy_target_group(
                 context, policy_target_group_id)
             # REVISIT(rkukura): An exception should be raised here if
@@ -1226,7 +1227,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                         application_policy_group):
         apg = application_policy_group['application_policy_group']
         tenant_id = self._get_tenant_id_for_create(context, apg)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             apg_db = ApplicationPolicyGroup(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=apg['name'], description=apg['description'],
@@ -1241,7 +1242,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                         application_policy_group_id,
                                         application_policy_group):
         apg = application_policy_group['application_policy_group']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             apg_db = self._get_application_policy_group(
                 context, application_policy_group_id)
             apg_db.update(apg)
@@ -1250,7 +1251,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def delete_application_policy_group(self, context,
                                         application_policy_group_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             apg_db = self._get_application_policy_group(
                 context, application_policy_group_id)
             context.session.delete(apg_db)
@@ -1284,7 +1285,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_l2_policy(self, context, l2_policy):
         l2p = l2_policy['l2_policy']
         tenant_id = self._get_tenant_id_for_create(context, l2p)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             l2p_db = L2Policy(id=uuidutils.generate_uuid(),
                               tenant_id=tenant_id, name=l2p['name'],
                               description=l2p['description'],
@@ -1300,14 +1301,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def update_l2_policy(self, context, l2_policy_id, l2_policy):
         l2p = l2_policy['l2_policy']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             l2p_db = self._get_l2_policy(context, l2_policy_id)
             l2p_db.update(l2p)
         return self._make_l2_policy_dict(l2p_db)
 
     @log.log_method_call
     def delete_l2_policy(self, context, l2_policy_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             l2p_db = self._get_l2_policy(context, l2_policy_id)
             # When delete_l2_policy is called implicitly (as a
             # side effect of the last PTG deletion), the L2P's
@@ -1350,7 +1351,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         self.validate_subnet_prefix_length(
             l3p['ip_version'], l3p['subnet_prefix_length'],
             l3p.get('ip_pool', None))
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             l3p_db = L3Policy(
                 id=uuidutils.generate_uuid(),
                 tenant_id=tenant_id, name=l3p['name'],
@@ -1370,7 +1371,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
         l3p = l3_policy['l3_policy']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             l3p_db = self._get_l3_policy(context, l3_policy_id)
             if 'subnet_prefix_length' in l3p:
                 self.validate_subnet_prefix_length(
@@ -1385,7 +1386,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_l3_policy(self, context, l3_policy_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             l3p_db = self._get_l3_policy(context, l3_policy_id)
             if l3p_db.l2_policies:
                 raise gpolicy.L3PolicyInUse(l3_policy_id=l3_policy_id)
@@ -1418,7 +1419,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_network_service_policy(self, context, network_service_policy):
         nsp = network_service_policy['network_service_policy']
         tenant_id = self._get_tenant_id_for_create(context, nsp)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             nsp_db = NetworkServicePolicy(id=uuidutils.generate_uuid(),
                                           tenant_id=tenant_id,
                                           name=nsp['name'],
@@ -1436,7 +1437,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def update_network_service_policy(
         self, context, network_service_policy_id, network_service_policy):
         nsp = network_service_policy['network_service_policy']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             nsp_db = self._get_network_service_policy(
                 context, network_service_policy_id)
             if 'network_service_params' in network_service_policy:
@@ -1448,7 +1449,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def delete_network_service_policy(
         self, context, network_service_policy_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             nsp_db = self._get_network_service_policy(
                 context, network_service_policy_id)
             if nsp_db.policy_target_groups:
@@ -1487,7 +1488,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         tenant_id = self._get_tenant_id_for_create(context, pc)
         port_min, port_max = GroupPolicyDbPlugin._get_min_max_ports_from_range(
             pc['port_range'])
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pc_db = PolicyClassifier(id=uuidutils.generate_uuid(),
                                      tenant_id=tenant_id,
                                      name=pc['name'],
@@ -1507,7 +1508,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def update_policy_classifier(self, context, policy_classifier_id,
                                  policy_classifier):
         pc = policy_classifier['policy_classifier']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pc_db = self._get_policy_classifier(context, policy_classifier_id)
             if 'port_range' in pc:
                 port_min, port_max = (GroupPolicyDbPlugin.
@@ -1521,7 +1522,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_policy_classifier(self, context, policy_classifier_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pc_db = self._get_policy_classifier(context, policy_classifier_id)
             pc_ids = self._get_policy_classifier_rules(context,
                                                        policy_classifier_id)
@@ -1558,7 +1559,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_policy_action(self, context, policy_action):
         pa = policy_action['policy_action']
         tenant_id = self._get_tenant_id_for_create(context, pa)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pa_db = PolicyAction(id=uuidutils.generate_uuid(),
                                  tenant_id=tenant_id,
                                  name=pa['name'],
@@ -1575,14 +1576,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def update_policy_action(self, context, policy_action_id, policy_action):
         pa = policy_action['policy_action']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pa_db = self._get_policy_action(context, policy_action_id)
             pa_db.update(pa)
         return self._make_policy_action_dict(pa_db)
 
     @log.log_method_call
     def delete_policy_action(self, context, policy_action_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pa_db = self._get_policy_action(context, policy_action_id)
             pa_ids = self._get_policy_action_rules(context, policy_action_id)
             if pa_ids:
@@ -1617,7 +1618,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_policy_rule(self, context, policy_rule):
         pr = policy_rule['policy_rule']
         tenant_id = self._get_tenant_id_for_create(context, pr)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pr_db = PolicyRule(id=uuidutils.generate_uuid(),
                                tenant_id=tenant_id, name=pr['name'],
                                description=pr['description'],
@@ -1634,7 +1635,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def update_policy_rule(self, context, policy_rule_id, policy_rule):
         pr = policy_rule['policy_rule']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pr_db = self._get_policy_rule(context, policy_rule_id)
             if 'policy_actions' in pr:
                 self._set_actions_for_rule(context, pr_db,
@@ -1645,7 +1646,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_policy_rule(self, context, policy_rule_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             pr_db = self._get_policy_rule(context, policy_rule_id)
             prs_ids = self._get_policy_rule_policy_rule_sets(context,
                                                              policy_rule_id)
@@ -1680,7 +1681,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_policy_rule_set(self, context, policy_rule_set):
         prs = policy_rule_set['policy_rule_set']
         tenant_id = self._get_tenant_id_for_create(context, prs)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             prs_db = PolicyRuleSet(id=uuidutils.generate_uuid(),
                                    tenant_id=tenant_id,
                                    name=prs['name'],
@@ -1699,7 +1700,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def update_policy_rule_set(self, context, policy_rule_set_id,
                                policy_rule_set):
         prs = policy_rule_set['policy_rule_set']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             prs_db = self._get_policy_rule_set(context, policy_rule_set_id)
             if 'policy_rules' in prs:
                 self._set_rules_for_policy_rule_set(
@@ -1714,7 +1715,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_policy_rule_set(self, context, policy_rule_set_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             prs_db = self._get_policy_rule_set(context, policy_rule_set_id)
             prs_ids = (
                 self._get_ptgs_for_providing_policy_rule_set(
@@ -1758,7 +1759,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_external_policy(self, context, external_policy):
         ep = external_policy['external_policy']
         tenant_id = self._get_tenant_id_for_create(context, ep)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             ep_db = ExternalPolicy(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=ep['name'], description=ep['description'],
@@ -1776,7 +1777,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def update_external_policy(self, context, external_policy_id,
                                external_policy):
         ep = external_policy['external_policy']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             ep_db = self._get_external_policy(
                 context, external_policy_id)
             if 'external_segments' in ep:
@@ -1813,7 +1814,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_external_policy(self, context, external_policy_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             ep_db = self._get_external_policy(
                 context, external_policy_id)
             context.session.delete(ep_db)
@@ -1822,7 +1823,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_external_segment(self, context, external_segment):
         es = external_segment['external_segment']
         tenant_id = self._get_tenant_id_for_create(context, es)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             es_db = ExternalSegment(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=es['name'], description=es['description'],
@@ -1840,7 +1841,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def update_external_segment(self, context, external_segment_id,
                                 external_segment):
         es = external_segment['external_segment']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             es_db = self._get_external_segment(
                 context, external_segment_id)
             if 'external_routes' in es:
@@ -1875,7 +1876,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_external_segment(self, context, external_segment_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             es_db = self._get_external_segment(
                 context, external_segment_id)
             context.session.delete(es_db)
@@ -1884,7 +1885,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def create_nat_pool(self, context, nat_pool):
         np = nat_pool['nat_pool']
         tenant_id = self._get_tenant_id_for_create(context, np)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             np_db = NATPool(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=np['name'], description=np['description'],
@@ -1899,7 +1900,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     @log.log_method_call
     def update_nat_pool(self, context, nat_pool_id, nat_pool):
         np = nat_pool['nat_pool']
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             np_db = self._get_nat_pool(
                 context, nat_pool_id)
             np_db.update(np)
@@ -1929,6 +1930,6 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     @log.log_method_call
     def delete_nat_pool(self, context, nat_pool_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             np_db = self._get_nat_pool(context, nat_pool_id)
             context.session.delete(np_db)
