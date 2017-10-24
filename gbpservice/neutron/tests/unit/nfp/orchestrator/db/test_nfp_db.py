@@ -14,9 +14,9 @@
 import copy
 import fixtures
 import mock
-from neutron import context
 from neutron.db import api as db_api
 from neutron.tests import base
+from neutron_lib import context
 
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions as nfp_exc

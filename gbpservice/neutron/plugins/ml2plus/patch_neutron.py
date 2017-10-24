@@ -35,7 +35,7 @@ extensions.get_extensions_path = get_extensions_path
 
 import sys
 
-from neutron import context as n_context
+from neutron_lib import context as n_context
 
 from gbpservice.network.neutronv2 import local_api
 

@@ -13,7 +13,7 @@
 from gbpservice.nfp.lib import transport
 import mock
 from neutron.common import rpc as n_rpc
-from neutron import context as ctx
+from neutron_lib import context as ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 import six

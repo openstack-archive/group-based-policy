@@ -20,7 +20,7 @@ from oslo_service import service as oslo_service
 from neutron.agent import rpc as n_agent_rpc
 from neutron.common import rpc as n_rpc
 
-from neutron import context as n_context
+from neutron_lib import context as n_context
 
 from gbpservice.nfp.core import log as nfp_logging
 

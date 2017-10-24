@@ -12,8 +12,8 @@
 
 import sys
 
-from neutron import context as n_context
 from neutron.db import models_v2
+from neutron_lib import context as n_context
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as nexc
 from oslo_log import helpers as log
