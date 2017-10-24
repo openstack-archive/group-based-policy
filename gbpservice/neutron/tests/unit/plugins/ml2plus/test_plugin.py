@@ -17,11 +17,11 @@ import mock
 import testtools
 
 from neutron.api import extensions
-from neutron.plugins.ml2 import config
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron_lib.plugins import directory
+from oslo_config import cfg
 
 from gbpservice.neutron.db import all_models  # noqa
 import gbpservice.neutron.extensions
@@ -40,12 +40,10 @@ class Ml2PlusPluginV2TestCase(test_address_scope.AddressScopeTestCase):
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
         # driver apis.
-        config.cfg.CONF.set_override('mechanism_drivers',
-                                     ['logger_plus', 'test'],
-                                     'ml2')
-        config.cfg.CONF.set_override('network_vlan_ranges',
-                                     ['physnet1:1000:1099'],
-                                     group='ml2_type_vlan')
+        cfg.CONF.set_override('mechanism_drivers',
+                ['logger_plus', 'test'], group='ml2')
+        cfg.CONF.set_override('network_vlan_ranges',
+                ['physnet1:1000:1099'], group='ml2_type_vlan')
 
         extensions.append_api_extensions_path(
             gbpservice.neutron.extensions.__path__)
