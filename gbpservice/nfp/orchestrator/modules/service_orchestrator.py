@@ -11,8 +11,8 @@
 #    under the License.
 
 from neutron.common import rpc as n_rpc
-from neutron import context as n_context
 from neutron.db import api as db_api
+from neutron_lib import context as n_context
 from oslo_log import helpers as log_helpers
 import oslo_messaging
 
