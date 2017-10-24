@@ -10,7 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import context as n_ctx
+import sys
+
+from neutron import context as old_context
+from neutron_lib import context as n_context
 from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import importutils
@@ -20,6 +23,33 @@ from gbpservice._i18n import _
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
+
+
+def get_current_context():
+    i = 1
+    not_found = True
+    try:
+        while not_found:
+            for val in sys._getframe(i).f_locals.itervalues():
+                # REVISIT (Sumit); In Ocata, neutron is still
+                # using the neutron_lib context, hence we need
+                # to check for both. This should be changed in
+                # Pike to only check for the neutron_lib context.
+                if isinstance(val, n_context.Context) or (
+                        isinstance(val, old_context.Context)):
+                    ctx = val
+                    not_found = False
+                    break
+            i = i + 1
+        return ctx
+    except Exception:
+        return
+
+
+def get_current_session():
+    ctx = get_current_context()
+    if ctx:
+        return ctx.session
 
 
 def get_resource_plural(resource):
@@ -48,7 +78,7 @@ def load_plugin(namespace, plugin):
 
 
 def admin_context(context):
-    admin_context = n_ctx.get_admin_context()
+    admin_context = n_context.get_admin_context()
     admin_context._session = context.session
     return admin_context
 
