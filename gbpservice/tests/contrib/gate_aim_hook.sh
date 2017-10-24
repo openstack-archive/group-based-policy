@@ -8,6 +8,9 @@ set -x
 
 trap prepare_logs ERR
 
+# Make the workspace owned by the stack user
+sudo chown -R $STACK_USER:$STACK_USER $BASE
+
 # temporary fix for bug 1693689
 export IPV4_ADDRS_SAFE_TO_USE=${DEVSTACK_GATE_IPV4_ADDRS_SAFE_TO_USE:-${DEVSTACK_GATE_FIXED_RANGE:-10.1.0.0/20}}
 
