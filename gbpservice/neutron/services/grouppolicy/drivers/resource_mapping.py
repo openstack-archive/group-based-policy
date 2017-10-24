@@ -15,11 +15,11 @@ import operator
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
-from neutron.api.v2 import attributes
 from neutron.common import exceptions as neutron_exc
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
+from neutron_lib.api.definitions import port as port_def
 from neutron_lib import constants as n_const
 from neutron_lib import context as n_context
 from neutron_lib.db import model_base
@@ -1625,7 +1625,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
                 # apply QoS policy to PT's Neutron port
                 port_id = context.current['port_id']
-                port = {attributes.PORT:
+                port = {port_def.RESOURCE_NAME:
                         {'qos_policy_id': mapping['qos_policy_id']}}
                 self._core_plugin.update_port(context._plugin_context,
                                               port_id, port)
@@ -1639,7 +1639,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             LOG.warning("Attempted to fetch deleted Service Target (QoS)")
         else:
             port_id = policy_target['port_id']
-            port = {attributes.PORT: {'qos_policy_id': None}}
+            port = {port_def.RESOURCE_NAME: {'qos_policy_id': None}}
             self._core_plugin.update_port(context._plugin_context,
                                           port_id, port)
 
@@ -1677,7 +1677,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                 # apply QoS policy to each PT's Neutron port
                 for pt in policy_targets:
                     port_id = pt['port_id']
-                    port = {attributes.PORT:
+                    port = {port_def.RESOURCE_NAME:
                             {'qos_policy_id': mapping['qos_policy_id']}}
                     self._core_plugin.update_port(context._plugin_context,
                                                   port_id, port)
