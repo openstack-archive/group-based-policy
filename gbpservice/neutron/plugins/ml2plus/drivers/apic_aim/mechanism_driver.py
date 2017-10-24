@@ -32,13 +32,14 @@ from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db.models import l3 as l3_db
 from neutron.db.models import securitygroup as sg_models
+from neutron.db.models import segment as segments_model
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
-from neutron.extensions import portbindings
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
+from neutron_lib.api.definitions import portbindings
 from neutron_lib.api.definitions import provider_net as provider
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
@@ -308,8 +309,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # TODO(rkukura): Move the following to calls made from
         # precommit methods so AIM Tenants, ApplicationProfiles, and
         # Filters are [re]created whenever needed.
-        session = plugin_context.session
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(plugin_context):
+            session = plugin_context.session
             tenant_aname = self.name_mapper.project(session, project_id)
             project_name = self.project_name_cache.get_project_name(project_id)
             if project_name is None:
@@ -466,7 +467,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         dist_names = {}
         aim_ctx = aim_context.AimContext(session)
 
-        mapping = network_db.aim_mapping
+        # REVISIT: Check and revert the following to:
+        # mapping = network_db.aim_mapping
+        mapping = self._get_network_mapping(session, network_db['id'])
         if mapping:
             bd = self._get_network_bd(mapping)
             dist_names[cisco_apic.BD] = bd.dn
@@ -2993,10 +2996,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _get_non_opflex_segments_on_host(self, context, host):
         session = context.session
-        segments = (session.query(segments_db.NetworkSegment)
+        segments = (session.query(segments_model.NetworkSegment)
                     .join(models.PortBindingLevel,
                           models.PortBindingLevel.segment_id ==
-                          segments_db.NetworkSegment.id)
+                          segments_model.NetworkSegment.id)
                     .filter(models.PortBindingLevel.host == host)
                     .all())
         net_ids = set([])
