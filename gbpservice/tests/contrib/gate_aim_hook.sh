@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# REVISIT: Temporarily disabling this job until its updated to run with Pike
+exit 1
+
 CONTRIB_DIR="$BASE/new/group-based-policy/gbpservice/tests/contrib"
 cp $CONTRIB_DIR/functions-gbp .
 source functions-gbp
