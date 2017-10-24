@@ -9,6 +9,13 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+
+# The following two are required when running tox since the nsx packages
+# have a foreign key dependency on LBaaS tables. Those tables are not
+# getting loaded without these explicit imports.
+from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2  # noqa
+from neutron_lbaas.db.loadbalancer import models  # noqa
+
 from neutron.agent import securitygroups_rpc
 from neutron.api import extensions
 from neutron.quota import resource
