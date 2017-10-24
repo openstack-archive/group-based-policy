@@ -19,9 +19,9 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent.linux import dhcp
-from neutron import context as n_context
 from neutron import policy
 from neutron_lib import constants as n_constants
+from neutron_lib import context as n_context
 from neutron_lib import exceptions as n_exc
 from oslo_concurrency import lockutils
 from oslo_config import cfg
