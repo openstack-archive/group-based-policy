@@ -19,7 +19,7 @@ from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.lib import rest_client_over_unix as unix_rc
 
 from neutron.common import rpc as n_rpc
-from neutron import context as n_context
+from neutron_lib import context as n_context
 
 from oslo_config import cfg
 from oslo_config import cfg as oslo_config
