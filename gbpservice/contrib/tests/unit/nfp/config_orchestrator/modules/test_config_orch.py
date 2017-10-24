@@ -21,8 +21,8 @@ from gbpservice.contrib.nfp.config_orchestrator.handlers.notification import (
     handler as notif_handler)
 from gbpservice.nfp.lib import transport
 
-from neutron import context as ctx
 from neutron.tests import base
+from neutron_lib import context as ctx
 
 
 class TestContext(object):

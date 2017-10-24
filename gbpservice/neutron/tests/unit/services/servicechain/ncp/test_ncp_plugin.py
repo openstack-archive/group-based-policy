@@ -15,15 +15,16 @@ import webob.exc
 
 import mock
 from neutron.common import config  # noqa
-from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
+from neutron_lib import context as n_context
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 
+from gbpservice.common import utils
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db  # noqa
 from gbpservice.neutron.services.grouppolicy import config as gpconfig  # noqa
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
@@ -139,6 +140,8 @@ class NodeCompositionPluginTestCase(
                                      ['implicit_policy', 'resource_mapping',
                                       'chain_mapping'],
                                      group='group_policy')
+        utils.get_keystone_creds = mock.MagicMock(
+            return_value=('', '', '', ''))
         super(NodeCompositionPluginTestCase, self).setUp(
             core_plugin=core_plugin or CORE_PLUGIN,
             gp_plugin=gp_plugin or GP_PLUGIN_KLASS,
