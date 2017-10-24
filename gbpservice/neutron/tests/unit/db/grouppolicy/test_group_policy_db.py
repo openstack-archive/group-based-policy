@@ -19,13 +19,13 @@ import webob.exc
 import mock
 from neutron.api import extensions
 from neutron.api.rpc.callbacks.producer import registry
-from neutron import context
 from neutron.db import api as db_api
 from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from neutron_lib import constants as nl_constants
+from neutron_lib import context
 from neutron_lib.db import model_base
 from neutron_lib.plugins import directory
 from oslo_utils import importutils
@@ -91,7 +91,7 @@ class ApiManagerMixin(object):
         data[type].update(defaults)
 
         req = self.new_create_request(plural, data, self.fmt)
-        req.environ['neutron.context'] = context.Context(
+        req.environ['neutron_lib.context'] = context.Context(
             '', kwargs.get('tenant_id', self._tenant_id) if not
             is_admin_context else self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
@@ -111,7 +111,7 @@ class ApiManagerMixin(object):
         tenant_id = kwargs.pop('tenant_id', self._tenant_id)
         # Create PT with bound port
         req = self.new_update_request(plural, data, id, self.fmt)
-        req.environ['neutron.context'] = context.Context(
+        req.environ['neutron_lib.context'] = context.Context(
             '', tenant_id if not is_admin_context else self._tenant_id,
             is_admin_context)
         res = req.get_response(api or self.ext_api)
@@ -125,7 +125,7 @@ class ApiManagerMixin(object):
     def _show_resource(self, id, plural, expected_res_status=None,
                        is_admin_context=False, tenant_id=None):
         req = self.new_show_request(plural, id, fmt=self.fmt)
-        req.environ['neutron.context'] = context.Context(
+        req.environ['neutron_lib.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
 
@@ -138,7 +138,7 @@ class ApiManagerMixin(object):
     def _delete_resource(self, id, plural, is_admin_context=False,
                          expected_res_status=None, tenant_id=None):
         req = self.new_delete_request(plural, id)
-        req.environ['neutron.context'] = context.Context(
+        req.environ['neutron_lib.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
         if expected_res_status:
@@ -165,7 +165,7 @@ class ApiManagerMixin(object):
                               for k, v in six.iteritems(kwargs)])
         req = self.new_list_request(plural, self.fmt,
                                     params=param_str or None)
-        req.environ['neutron.context'] = context.Context(
+        req.environ['neutron_lib.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
         res = req.get_response(api)
 

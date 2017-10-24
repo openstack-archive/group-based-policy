@@ -15,9 +15,9 @@
 import sqlalchemy as sa
 from sqlalchemy import orm
 
-from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron.db import models_v2
+from neutron_lib import context as nctx
 from oslo_db import exception as db_exc
 from oslo_log import log as logging
 

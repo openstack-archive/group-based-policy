@@ -28,13 +28,13 @@ from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.callbacks import registry
 from neutron.common import utils as n_utils
-from neutron import context as nctx
 from neutron.db import api as db_api
 from neutron.extensions import dns
 from neutron.notifiers import nova
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron_lib import constants as n_constants
+from neutron_lib import context as nctx
 from neutron_lib.plugins import directory
 from opflexagent import constants as ocst
 from oslo_config import cfg
@@ -245,7 +245,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                       {'address_scope': attrs}, self.fmt)
         neutron_context = nctx.Context('', kwargs.get('tenant_id',
                                                       self._tenant_id))
-        req.environ['neutron.context'] = neutron_context
+        req.environ['neutron_lib.context'] = neutron_context
 
         res = req.get_response(self.ext_api)
         if expected_status:
