@@ -11,8 +11,8 @@
 #    under the License.
 
 import mock
-from neutron import context
 from neutron.tests.unit import testlib_api
+from neutron_lib import context
 from oslo_db import exception as exc
 from oslo_utils import importutils
 

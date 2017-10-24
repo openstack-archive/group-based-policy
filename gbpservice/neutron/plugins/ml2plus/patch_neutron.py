@@ -33,27 +33,11 @@ def get_extensions_path(service_plugins=None):
 extensions.get_extensions_path = get_extensions_path
 
 
-import sys
-
-from neutron import context as n_context
-
-from gbpservice.network.neutronv2 import local_api
+from gbpservice.common import utils as gbp_utils
 
 
 def get_current_session():
-    i = 1
-    not_found = True
-    try:
-        while not_found:
-            for val in sys._getframe(i).f_locals.itervalues():
-                if isinstance(val, n_context.Context):
-                    ctx = val
-                    not_found = False
-                    break
-            i = i + 1
-        return ctx.session
-    except Exception:
-        return
+    return gbp_utils.get_current_session()
 
 
 from neutron.plugins.ml2 import ovo_rpc
@@ -68,6 +52,8 @@ ovo_rpc.LOG.error = ovo_rpc.LOG.debug
 
 
 from neutron.callbacks import registry
+
+from gbpservice.network.neutronv2 import local_api
 
 
 def notify(resource, event, trigger, **kwargs):
