@@ -12,10 +12,10 @@
 
 import netaddr
 
-from neutron import context
 from neutron.db import common_db_mixin
 from neutron_lib.api import validators
 from neutron_lib import constants
+from neutron_lib import context
 from neutron_lib.db import model_base
 from oslo_log import helpers as log
 from oslo_utils import uuidutils

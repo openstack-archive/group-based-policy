@@ -12,8 +12,8 @@
 # limitations under the License.
 
 import mock
-from neutron import context
 from neutron.tests.unit.plugins.ml2 import test_plugin
+from neutron_lib import context
 from oslo_config import cfg
 from oslo_log import log as logging
 import webob.exc

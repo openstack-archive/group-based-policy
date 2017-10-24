@@ -12,8 +12,8 @@
 #
 
 import mock
-from neutron import context
 from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron_lib import context
 from neutronclient.common import exceptions
 from neutronclient.v2_0 import client
 from oslo_config import cfg
