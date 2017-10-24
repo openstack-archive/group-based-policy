@@ -12,7 +12,7 @@
 
 from gbpservice.nfp.proxy_agent.notifications import pull
 import mock
-from neutron import context as ctx
+from neutron_lib import context as ctx
 import unittest2
 
 from neutron.common import rpc as n_rpc
@@ -25,9 +25,11 @@ class TestContext(object):
 
     def get_context_dict(self):
         try:
-            context = ctx.Context('some_user', 'some_tenant')
+            context = ctx.Context(user_id='some_user',
+                    tenant_id='some_tenant', is_advsvc=True)
         except Exception:
-            context = ctx.Context('some_user', 'some_tenant')
+            context = ctx.Context(user_id='admin',
+                    tenant_id='admin', is_advsvc=True, is_admin=True)
         return context.to_dict()
 
 """Common class for pull notification tests"""

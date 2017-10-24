@@ -16,7 +16,7 @@ from gbpservice.nfp.core import module as nfp_api
 from gbpservice.nfp.lib import transport as transport
 from gbpservice.nfp.proxy_agent.lib import topics as a_topics
 
-from neutron import context as n_context
+from neutron_lib import context as n_context
 
 import sys
 import traceback
