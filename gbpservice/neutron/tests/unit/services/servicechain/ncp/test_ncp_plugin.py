@@ -15,9 +15,9 @@ import webob.exc
 
 import mock
 from neutron.common import config  # noqa
-from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
+from neutron_lib import context as n_context
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory
