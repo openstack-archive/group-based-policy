@@ -27,11 +27,8 @@ if not hasattr(sa_utils, '_get_unique_keys'):
     sa_utils._get_unique_keys = sa_utils.get_unique_keys
 
 
-from neutron._i18n import _LI
-
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 
 
 # The following is to avoid excessive logging in the UTs
-cache._LW = _LI
 cache.LOG.warning = cache.LOG.info

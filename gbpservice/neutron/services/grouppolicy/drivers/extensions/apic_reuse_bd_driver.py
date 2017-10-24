@@ -12,7 +12,6 @@
 
 from oslo_log import log as logging
 
-from gbpservice._i18n import _LI
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_reuse_bd_db as db)
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gp_db
@@ -30,7 +29,7 @@ class ApicReuseBdExtensionDriver(api.ExtensionDriver,
     _extension_dict = ext.EXTENDED_ATTRIBUTES_2_0
 
     def __init__(self):
-        LOG.info(_LI("ApicReuseBdExtensionDriver __init__"))
+        LOG.info("ApicReuseBdExtensionDriver __init__")
 
     def initialize(self):
         pass

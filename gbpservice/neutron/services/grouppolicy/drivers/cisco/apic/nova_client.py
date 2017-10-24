@@ -14,8 +14,6 @@ from neutron.notifiers import nova as n_nova
 from novaclient import exceptions as nova_exceptions
 from oslo_log import log as logging
 
-from gbpservice._i18n import _LW
-
 
 LOG = logging.getLogger(__name__)
 
@@ -39,7 +37,7 @@ class NovaClient(object):
         try:
             return self.client.servers.get(server_id)
         except nova_exceptions.NotFound:
-            LOG.warning(_LW("Nova returned NotFound for server: %s"),
+            LOG.warning("Nova returned NotFound for server: %s",
                         server_id)
         except Exception as e:
             LOG.exception(e)

@@ -12,7 +12,6 @@
 from heatclient import client as heat_client
 from heatclient import exc as heat_exc
 
-from gbpservice._i18n import _LW
 from gbpservice.nfp.core import log as nfp_logging
 LOG = nfp_logging.getLogger(__name__)
 
@@ -64,8 +63,8 @@ class HeatClient(object):
         try:
             self.stacks.delete(stack_id)
         except heat_exc.HTTPNotFound:
-            LOG.warning(_LW("Stack %(stack)s created by service chain driver "
-                            "is not found at cleanup"), {'stack': stack_id})
+            LOG.warning("Stack %(stack)s created by service chain driver "
+                        "is not found at cleanup", {'stack': stack_id})
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)

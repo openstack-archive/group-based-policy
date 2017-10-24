@@ -21,9 +21,6 @@ from oslo_config import cfg
 from oslo_serialization import jsonutils
 import yaml
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
-from gbpservice._i18n import _LW
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
 from gbpservice.nfp.common import constants as nfp_constants
@@ -205,7 +202,7 @@ class HeatDriver(object):
             try:
                 self._assign_admin_user_to_project(tenant_id)
             except Exception:
-                LOG.exception(_LE("Failed to assign admin user to project"))
+                LOG.exception("Failed to assign admin user to project")
                 return None
         '''
         nfp_context = module_context.get()
@@ -223,7 +220,7 @@ class HeatDriver(object):
                 auth_token=auth_token,
                 timeout_mins=timeout_mins)
         except Exception:
-            LOG.exception(_LE("Failed to create heatclient object"))
+            LOG.exception("Failed to create heatclient object")
             return None
 
         return heat_client
@@ -318,8 +315,8 @@ class HeatDriver(object):
                 provider_subnet = subnet
                 break
         if not provider_subnet:
-            LOG.error(_LE("Unable to get provider subnet for provider "
-                          "policy target group %(provider_ptg)s"),
+            LOG.error("Unable to get provider subnet for provider "
+                      "policy target group %(provider_ptg)s",
                       {"provider_ptg": provider})
             return lb_vip, lb_vip_name
         if service_type == pconst.LOADBALANCERV2:
@@ -520,8 +517,8 @@ class HeatDriver(object):
                     break
 
         if not redirect_prs:
-            LOG.error(_LE("Redirect rule doesn't exist in policy target rule "
-                          " set"))
+            LOG.error("Redirect rule doesn't exist in policy target rule "
+                      " set")
             return None, None
         return (redirect_prs['consuming_policy_target_groups'],
                 redirect_prs['consuming_external_policies'])
@@ -663,8 +660,8 @@ class HeatDriver(object):
                 provider_cidr = subnet['cidr']
                 break
         if not provider_cidr:
-            LOG.error(_LE("Unable to get provider cidr for provider "
-                          "policy target group %(provider_ptg)s"),
+            LOG.error("Unable to get provider cidr for provider "
+                      "policy target group %(provider_ptg)s",
                       {"provider_ptg": provider})
             return None
 
@@ -747,7 +744,7 @@ class HeatDriver(object):
             svc_mgmt_ptgs = gcm.retry(self.gbp_client.get_policy_target_groups,
                                       auth_token, filters)
         if not svc_mgmt_ptgs:
-            LOG.error(_LE("Service Management Group is not created by Admin"))
+            LOG.error("Service Management Group is not created by Admin")
             return None
         else:
             mgmt_subnet_id = svc_mgmt_ptgs[0]['subnets'][0]
@@ -843,8 +840,8 @@ class HeatDriver(object):
                     auth_token,
                     filters={'port_id': [consumer_port['id']]})
             if not stitching_pts:
-                LOG.error(_LE("Policy target is not created for the "
-                              "stitching port"))
+                LOG.error("Policy target is not created for the "
+                          "stitching port")
                 return None
             stitching_ptg_id = (
                 stitching_pts[0]['policy_target_group_id'])
@@ -901,9 +898,9 @@ class HeatDriver(object):
                               stack_template_str.startswith('{') else
                               yaml.load(stack_template_str))
         except Exception:
-            LOG.error(_LE(
+            LOG.error(
                 "Unable to load stack template for service chain "
-                "node:  %(node_id)s"), {'node_id': service_chain_node})
+                "node:  %(node_id)s", {'node_id': service_chain_node})
             return None, None
         config_param_values = service_chain_instance.get(
             'config_param_values', '{}')
@@ -911,7 +908,7 @@ class HeatDriver(object):
         try:
             config_param_values = jsonutils.loads(config_param_values)
         except Exception:
-            LOG.error(_LE("Unable to load config parameters"))
+            LOG.error("Unable to load config parameters")
             return None, None
 
         is_template_aws_version = stack_template.get(
@@ -1010,8 +1007,8 @@ class HeatDriver(object):
             if parameter in config_param_values:
                 stack_params[parameter] = config_param_values[parameter]
 
-        LOG.info(_LI('Final stack_template : %(stack_data)s, '
-                     'stack_params : %(params)s'),
+        LOG.info('Final stack_template : %(stack_data)s, '
+                 'stack_params : %(params)s',
                  {'stack_data': stack_template, 'params': stack_params})
         return (stack_template, stack_params)
 
@@ -1021,9 +1018,9 @@ class HeatDriver(object):
                 self.neutron_client.get_networks,
                 token, filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
         if not ext_net:
-            LOG.error(_LE("'internet_out_network_name' not configured"
-                          " in [heat_driver] or Network %(network)s is"
-                          " not found"),
+            LOG.error("'internet_out_network_name' not configured"
+                      " in [heat_driver] or Network %(network)s is"
+                      " not found",
                       {'network': INTERNET_OUT_EXT_NET_NAME})
             return None
         # There is a case where consumer port has multiple fips
@@ -1035,8 +1032,8 @@ class HeatDriver(object):
                 return ncm.retry(self.neutron_client.get_floating_ips, token,
                                  **filters)[0]['floating_ip_address']
         except Exception:
-            LOG.error(_LE("Floating IP for VPN Service has either exhausted"
-                          " or has been disassociated Manually"))
+            LOG.error("Floating IP for VPN Service has either exhausted"
+                      " or has been disassociated Manually")
             return None
 
     def _update_node_config(self, auth_token, tenant_id, service_profile,
@@ -1057,7 +1054,7 @@ class HeatDriver(object):
                 provider_subnet = subnet
                 break
         if not provider_cidr:
-            LOG.error(_LE("No provider cidr availabale"))
+            LOG.error("No provider cidr availabale")
             return None, None
         service_type = service_profile['service_type']
         service_details = transport.parse_service_flavor_string(
@@ -1072,9 +1069,9 @@ class HeatDriver(object):
                               stack_template_str.startswith('{') else
                               yaml.load(stack_template_str))
         except Exception:
-            LOG.error(_LE(
+            LOG.error(
                 "Unable to load stack template for service chain "
-                "node:  %(node_id)s"), {'node_id': service_chain_node})
+                "node:  %(node_id)s", {'node_id': service_chain_node})
             return None, None
         config_param_values = service_chain_instance.get(
             'config_param_values', '{}')
@@ -1082,7 +1079,7 @@ class HeatDriver(object):
         try:
             config_param_values = jsonutils.loads(config_param_values)
         except Exception:
-            LOG.error(_LE("Unable to load config parameters"))
+            LOG.error("Unable to load config parameters")
             return None, None
 
         is_template_aws_version = stack_template.get(
@@ -1200,8 +1197,8 @@ class HeatDriver(object):
                             auth_token,
                             filters={'port_id': [consumer_port['id']]})
                     if not stitching_pts:
-                        LOG.error(_LE("Policy target is not created for the "
-                                      "stitching port"))
+                        LOG.error("Policy target is not created for the "
+                                  "stitching port")
                         return None, None
                     stitching_ptg_id = (
                         stitching_pts[0]['policy_target_group_id'])
@@ -1219,9 +1216,9 @@ class HeatDriver(object):
                         auth_token,
                         filters={'name': [INTERNET_OUT_EXT_NET_NAME]})
                 if not ext_net:
-                    LOG.error(_LE("'internet_out_network_name' not configured"
-                                  " in [heat_driver] or Network %(network)s is"
-                                  " not found"),
+                    LOG.error("'internet_out_network_name' not configured"
+                              " in [heat_driver] or Network %(network)s is"
+                              " not found",
                               {'network': INTERNET_OUT_EXT_NET_NAME})
                     return None, None
                 filters = {'port_id': [consumer_port['id']],
@@ -1231,8 +1228,8 @@ class HeatDriver(object):
                         self.neutron_client.get_floating_ips,
                         auth_token, filters=filters)
                 if not floatingips:
-                    LOG.error(_LE("Floating IP for VPN Service has been "
-                                  "disassociated Manually"))
+                    LOG.error("Floating IP for VPN Service has been "
+                              "disassociated Manually")
                     return None, None
                 for fip in floatingips:
                     if consumer_port['fixed_ips'][0]['ip_address'] == fip[
@@ -1253,9 +1250,9 @@ class HeatDriver(object):
                             ';mgmt_gw_ip=' + mgmt_gw_ip +
                             ';network_function_id=' + network_function['id'])
                 except Exception as e:
-                    LOG.error(_LE("Problem in preparing description, some of "
-                                  "the fields might not have initialized. "
-                                  "Error: %(error)s"), {'error': e})
+                    LOG.error("Problem in preparing description, some of "
+                              "the fields might not have initialized. "
+                              "Error: %(error)s", {'error': e})
                     return None, None
                 siteconn_keys = self._get_site_conn_keys(
                     stack_template[resources_key],
@@ -1287,8 +1284,8 @@ class HeatDriver(object):
             if parameter in config_param_values:
                 stack_params[parameter] = config_param_values[parameter]
 
-        LOG.info(_LI('Final stack_template : %(stack_data)s, '
-                     'stack_params : %(params)s'),
+        LOG.info('Final stack_template : %(stack_data)s, '
+                 'stack_params : %(params)s',
                  {'stack_data': stack_template, 'params': stack_params})
         return (stack_template, stack_params)
 
@@ -1392,7 +1389,7 @@ class HeatDriver(object):
                                     admin_token,
                                     policy_target['policy_target_group_id']))
                 elif port_classification == nfp_constants.PROVIDER:
-                    LOG.info(_LI("provider info: %(p_info)s"),
+                    LOG.info("provider info: %(p_info)s",
                              {'p_info': port_id})
                     with nfp_ctx_mgr.NeutronContextManager as ncm:
                         provider_port = ncm.retry(self.neutron_client.get_port,
@@ -1438,7 +1435,7 @@ class HeatDriver(object):
                 elif stack.stack_status == 'CREATE_COMPLETE':
                     return
                 elif stack.stack_status == 'DELETE_COMPLETE':
-                    LOG.info(_LI("Stack %(stack)s is deleted"),
+                    LOG.info("Stack %(stack)s is deleted",
                              {'stack': stack_id})
                     if action == "delete":
                         return
@@ -1453,17 +1450,17 @@ class HeatDriver(object):
                         'DELETE_IN_PROGRESS']:
                     return
             except heat_exc.HTTPNotFound:
-                LOG.warning(_LW(
+                LOG.warning(
                     "Stack %(stack)s created by service chain "
                     "driver is not found while waiting for %(action)s "
-                    "to complete"),
+                    "to complete",
                     {'stack': stack_id, 'action': action})
                 if action == "create" or action == "update":
                     operation_failed = True
                 else:
                     return
             except Exception:
-                LOG.exception(_LE("Retrieving the stack %(stack)s failed."),
+                LOG.exception("Retrieving the stack %(stack)s failed.",
                               {'stack': stack_id})
                 if action == "create" or action == "update":
                     operation_failed = True
@@ -1474,8 +1471,8 @@ class HeatDriver(object):
                 if ignore_error:
                     return
                 else:
-                    LOG.error(_LE("Stack %(stack_name)s %(action)s failed for "
-                                  "tenant %(stack_owner)s"),
+                    LOG.error("Stack %(stack_name)s %(action)s failed for "
+                              "tenant %(stack_owner)s",
                               {'stack_name': stack.stack_name,
                                'stack_owner': stack.stack_owner,
                                'action': action})
@@ -1484,8 +1481,8 @@ class HeatDriver(object):
                 time.sleep(STACK_ACTION_RETRY_WAIT)
                 time_waited = time_waited + STACK_ACTION_RETRY_WAIT
                 if time_waited >= wait_timeout:
-                    LOG.error(_LE("Stack %(action)s not completed within "
-                                  "%(wait)s seconds"),
+                    LOG.error("Stack %(action)s not completed within "
+                              "%(wait)s seconds",
                               {'action': action,
                                'wait': wait_timeout,
                                'stack': stack_id})
@@ -1499,10 +1496,10 @@ class HeatDriver(object):
                             pass
                         return
                     else:
-                        LOG.error(_LE(
+                        LOG.error(
                             "Stack %(stack_name)s %(action)s not "
                             "completed within %(time)s seconds where "
-                            "stack owner is %(stack_owner)s"),
+                            "stack owner is %(stack_owner)s",
                             {'stack_name': stack.stack_name,
                              'action': action,
                              'time': wait_timeout,
@@ -1529,7 +1526,7 @@ class HeatDriver(object):
             elif stack.stack_status == 'UPDATE_COMPLETE':
                 return success_status
             elif stack.stack_status == 'DELETE_COMPLETE':
-                LOG.info(_LI("Stack %(stack)s is deleted"),
+                LOG.info("Stack %(stack)s is deleted",
                          {'stack': stack_id})
                 return failure_status
             elif stack.stack_status == 'CREATE_FAILED':
@@ -1562,7 +1559,7 @@ class HeatDriver(object):
         elif stack.stack_status == 'UPDATE_COMPLETE':
             return success_status
         elif stack.stack_status == 'DELETE_COMPLETE':
-            LOG.info(_LI("Stack %(stack)s is deleted"),
+            LOG.info("Stack %(stack)s is deleted",
                      {'stack': stack_id})
             return failure_status
         elif stack.stack_status == 'CREATE_FAILED':
@@ -1589,7 +1586,7 @@ class HeatDriver(object):
             elif stack.stack_status == 'CREATE_COMPLETE':
                 return failure_status
             elif stack.stack_status == 'DELETE_COMPLETE':
-                LOG.info(_LI("Stack %(stack)s is deleted"),
+                LOG.info("Stack %(stack)s is deleted",
                          {'stack': stack_id})
                 if network_function:
                     self._post_stack_cleanup(network_function)
@@ -1683,8 +1680,8 @@ class HeatDriver(object):
             stack = hcm.retry(heatclient.create, stack_name,
                               stack_template, stack_params)
         stack_id = stack['stack']['id']
-        LOG.info(_LI("Created stack with ID %(stack_id)s and "
-                     "name %(stack_name)s for provider PTG %(provider)s"),
+        LOG.info("Created stack with ID %(stack_id)s and "
+                 "name %(stack_name)s for provider PTG %(provider)s",
                  {'stack_id': stack_id, 'stack_name': stack_name,
                   'provider': provider['id']})
 
@@ -1735,8 +1732,8 @@ class HeatDriver(object):
                               stack_template, stack_params)
 
         stack_id = stack['stack']['id']
-        LOG.info(_LI("Created stack with ID %(stack_id)s and "
-                     "name %(stack_name)s for provider PTG %(provider)s"),
+        LOG.info("Created stack with ID %(stack_id)s and "
+                 "name %(stack_name)s for provider PTG %(provider)s",
                  {'stack_id': stack_id, 'stack_name': stack_name,
                   'provider': provider['id']})
 
@@ -1755,8 +1752,8 @@ class HeatDriver(object):
         except Exception as err:
             # Log the error and continue with VM delete in case of *aas
             # cleanup failure
-            LOG.exception(_LE("Cleaning up the service chain stack failed "
-                              "with Error: %(error)s"), {'error': err})
+            LOG.exception("Cleaning up the service chain stack failed "
+                          "with Error: %(error)s", {'error': err})
             return None
 
         return stack_id
@@ -1783,8 +1780,8 @@ class HeatDriver(object):
             return None
 
         if not base_mode_support and not mgmt_ip:
-            LOG.error(_LE("Service information is not available with Service "
-                          "Orchestrator on node update"))
+            LOG.error("Service information is not available with Service "
+                      "Orchestrator on node update")
             return None
 
         stack_template, stack_params = self._update_node_config(
@@ -1866,8 +1863,8 @@ class HeatDriver(object):
                                         pt_added_or_removed=True)
                 return stack_id
             except Exception:
-                LOG.exception(_LE("Processing policy target %(operation)s "
-                                  " failed"), {'operation': operation})
+                LOG.exception("Processing policy target %(operation)s "
+                              " failed", {'operation': operation})
                 return None
 
     def notify_chain_parameters_updated(self, network_function_details):
@@ -1902,7 +1899,7 @@ class HeatDriver(object):
                     return None
                 return stack_id
             except Exception:
-                LOG.exception(_LE(
+                LOG.exception(
                     "Processing policy target group "
-                    "%(operation)s failed"), {'operation': operation})
+                    "%(operation)s failed", {'operation': operation})
                 return None

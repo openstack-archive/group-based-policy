@@ -17,8 +17,6 @@ from oslo_log import log
 from oslo_utils import excutils
 import stevedore
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 
 
@@ -33,14 +31,14 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         # the order in which the drivers are called.
         self.ordered_ext_drivers = []
 
-        LOG.info(_LI("Configured extension driver names: %s"),
+        LOG.info("Configured extension driver names: %s",
                  cfg.CONF.group_policy.extension_drivers)
         super(ExtensionManager, self).__init__(
             'gbpservice.neutron.group_policy.extension_drivers',
             cfg.CONF.group_policy.extension_drivers,
             invoke_on_load=True,
             name_order=True)
-        LOG.info(_LI("Loaded extension driver names: %s"), self.names())
+        LOG.info("Loaded extension driver names: %s", self.names())
         self._register_drivers()
 
     def _register_drivers(self):
@@ -51,13 +49,13 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         """
         for ext in self:
             self.ordered_ext_drivers.append(ext)
-        LOG.info(_LI("Registered extension drivers: %s"),
+        LOG.info("Registered extension drivers: %s",
                  [driver.name for driver in self.ordered_ext_drivers])
 
     def initialize(self):
         # Initialize each driver in the list.
         for driver in self.ordered_ext_drivers:
-            LOG.info(_LI("Initializing extension driver '%s'"), driver.name)
+            LOG.info("Initializing extension driver '%s'", driver.name)
             driver.obj.initialize()
 
     def extension_aliases(self):
@@ -65,7 +63,7 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
         for driver in self.ordered_ext_drivers:
             alias = driver.obj.extension_alias
             exts.append(alias)
-            LOG.info(_LI("Got %(alias)s extension from driver '%(drv)s'"),
+            LOG.info("Got %(alias)s extension from driver '%(drv)s'",
                      {'alias': alias, 'drv': driver.name})
         return exts
 
@@ -77,13 +75,13 @@ class ExtensionManager(stevedore.named.NamedExtensionManager):
             except (gp_exc.GroupPolicyException, n_exc.NeutronException):
                 with excutils.save_and_reraise_exception():
                     LOG.exception(
-                        _LE("Extension driver '%(name)s' "
-                            "failed in %(method)s"),
+                        "Extension driver '%(name)s' "
+                        "failed in %(method)s",
                         {'name': driver.name, 'method': method_name}
                     )
             except Exception:
-                LOG.exception(_LE("Extension driver '%(name)s' "
-                                  "failed in %(method)s"),
+                LOG.exception("Extension driver '%(name)s' "
+                              "failed in %(method)s",
                               {'name': driver.name, 'method': method_name})
                 # We are replacing a non-GBP/non-Neutron exception here
                 raise gp_exc.GroupPolicyDriverError(method=method_name)

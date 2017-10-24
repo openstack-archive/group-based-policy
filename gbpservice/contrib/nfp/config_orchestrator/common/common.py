@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from gbpservice._i18n import _LE
 from gbpservice.contrib.nfp.config_orchestrator.common import (
     topics as a_topics)
 from gbpservice.nfp.core import log as nfp_logging
@@ -115,7 +114,7 @@ def get_dhcp_agent_host(config):
         if agents:
             return agents[0].get('host', None)
     except Exception as exc:
-        LOG.error(_LE("Failed to get dhcp agent host : %(exc)s"),
+        LOG.error("Failed to get dhcp agent host : %(exc)s",
                   {'exc': exc})
 
 
@@ -168,8 +167,8 @@ def get_network_function_details(context, network_function_id):
         return network_function_details['network_function']
 
     except Exception as e:
-        LOG.error(_LE("Failed to get network function details of "
-                      "network_function_id %(network_function_id)s : %(ex)s "),
+        LOG.error("Failed to get network function details of "
+                  "network_function_id %(network_function_id)s : %(ex)s ",
                   {'ex': e, 'network_function_id': network_function_id})
 
 
@@ -193,7 +192,7 @@ def get_network_function_map(context, network_function_id):
         LOG.debug(msg)
         return request_data
     except Exception as e:
-        LOG.error(_LE("Failed to get network function map of "
-                      "network_function_id %(network_function_id)s : %(ex)s "),
+        LOG.error("Failed to get network function map of "
+                  "network_function_id %(network_function_id)s : %(ex)s ",
                   {'ex': e, 'network_function_id': network_function_id})
         return request_data

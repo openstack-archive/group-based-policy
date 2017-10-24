@@ -29,8 +29,6 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 from sqlalchemy import inspect
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
@@ -61,7 +59,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
     @resource_registry.tracked_resources(router=l3_db.Router,
                                          floatingip=l3_db.FloatingIP)
     def __init__(self):
-        LOG.info(_LI("APIC AIM L3 Plugin __init__"))
+        LOG.info("APIC AIM L3 Plugin __init__")
         extensions.append_api_extensions_path(extensions_pkg.__path__)
         self._mechanism_driver = None
         super(ApicL3Plugin, self).__init__()
@@ -84,7 +82,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             self._include_router_extn_attr(session, router_res)
         except Exception:
             with excutils.save_and_reraise_exception():
-                LOG.exception(_LE("APIC AIM extend_router_dict failed"))
+                LOG.exception("APIC AIM extend_router_dict failed")
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
         l3.ROUTERS, ['_extend_router_dict_apic'])
@@ -257,8 +255,8 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                       .create_floatingip(context, floatingip))
                         break
                     except exceptions.IpAddressGenerationFailure:
-                        LOG.info(_LI('No more floating IP addresses available '
-                                     'in subnet %s'),
+                        LOG.info('No more floating IP addresses available '
+                                 'in subnet %s',
                                  ext_sn)
 
                 if not result:

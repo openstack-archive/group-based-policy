@@ -12,8 +12,6 @@
 
 import ast
 from collections import defaultdict
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LW
 
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import data_formatter as df
@@ -131,8 +129,8 @@ class OrchestrationDriver(object):
                 network_handler)
             device_data['interfaces'] = [mgmt_interface]
         except Exception as e:
-            LOG.exception(_LE('Failed to get interfaces for device creation.'
-                              'Error: %(error)s'), {'error': e})
+            LOG.exception('Failed to get interfaces for device creation.'
+                          'Error: %(error)s', {'error': e})
 
     def _delete_interfaces(self, device_data, interfaces,
                            network_handler=None):
@@ -148,8 +146,8 @@ class OrchestrationDriver(object):
                 if attr in nfp_constants.METADATA_SUPPORTED_ATTRIBUTES:
                     provider_metadata[attr] = ast.literal_eval(metadata[attr])
         except Exception as e:
-            LOG.error(_LE('Wrong metadata: %(metadata)s provided for '
-                          'image name: %(image_name)s. Error: %(error)s'),
+            LOG.error('Wrong metadata: %(metadata)s provided for '
+                      'image name: %(image_name)s. Error: %(error)s',
                       {'image_name': image_name, 'metadata': metadata,
                        'error': e})
             return None
@@ -211,8 +209,8 @@ class OrchestrationDriver(object):
                 LOG.debug("No provider metadata specified in image,"
                           " proceeding with default values")
         except Exception:
-            LOG.error(_LE("Error while getting metadata for image name:"
-                          "%(image_name)s, proceeding with default values"),
+            LOG.error("Error while getting metadata for image name:"
+                      "%(image_name)s, proceeding with default values",
                       {'image_name': image_name})
         return provider_metadata
 
@@ -235,8 +233,8 @@ class OrchestrationDriver(object):
                 LOG.debug("No provider metadata specified in image,"
                           " proceeding with default values")
         except Exception:
-            LOG.error(_LE("Error while getting metadata for image name: "
-                          "%(image_name)s, proceeding with default values"),
+            LOG.error("Error while getting metadata for image name: "
+                      "%(image_name)s, proceeding with default values",
                       {'image_name': image_name})
         return provider_metadata
 
@@ -274,8 +272,8 @@ class OrchestrationDriver(object):
             image_id = nova.get_image_id(token, admin_tenant_id, image_name)
             return image_id
         except Exception as e:
-            LOG.error(_LE('Failed to get image id for device creation.'
-                          ' image name: %(image_name)s. Error: %(error)s'),
+            LOG.error('Failed to get image id for device creation.'
+                      ' image name: %(image_name)s. Error: %(error)s',
                       {'image_name': image_name, 'error': e})
 
     def create_instance(self, nova, token, admin_tenant_id,
@@ -291,8 +289,8 @@ class OrchestrationDriver(object):
                 server_grp_id=server_grp_id)
             return instance_id
         except Exception as e:
-            LOG.error(_LE('Failed to create instance.'
-                          'Error: %(error)s'), {'error': e})
+            LOG.error('Failed to create instance.'
+                      'Error: %(error)s', {'error': e})
 
     def get_neutron_port_details(self, network_handler, token, port_id):
         try:
@@ -314,8 +312,8 @@ class OrchestrationDriver(object):
             exc_type, exc_value, exc_traceback = sys.exc_info()
             LOG.error(traceback.format_exception(exc_type, exc_value,
                                                  exc_traceback))
-            LOG.error(_LE('Failed to get management port details. '
-                          'Error: %(error)s'), {'error': e})
+            LOG.error('Failed to get management port details. '
+                      'Error: %(error)s', {'error': e})
 
     @_set_network_handler
     def create_network_function_device(self, device_data,
@@ -383,8 +381,8 @@ class OrchestrationDriver(object):
                     interfaces_to_attach,
                     device_data)
         except Exception as e:
-            LOG.error(_LE('Failed to fetch list of interfaces to attach'
-                          ' for device creation %(error)s'), {'error': e})
+            LOG.error('Failed to fetch list of interfaces to attach'
+                      ' for device creation %(error)s', {'error': e})
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
             return None
@@ -479,25 +477,25 @@ class OrchestrationDriver(object):
                                               server_grp_id_result=None):
         interfaces = device_data.pop('interfaces', None)
         if not interfaces:
-            LOG.exception(_LE('Failed to get interfaces for device creation.'))
+            LOG.exception('Failed to get interfaces for device creation.')
             return None, _, _
 
         image_id = image_id_result.get('result', None)
         if not image_id:
-            LOG.error(_LE('Failed to get image id for device creation.'))
+            LOG.error('Failed to get image id for device creation.')
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
             return None, _, _
 
         if server_grp_id_result and not server_grp_id_result.get('result'):
-            LOG.error(_LE('Validation failed for Nova anti-affinity '
-                          'server group.'))
+            LOG.error('Validation failed for Nova anti-affinity '
+                      'server group.')
             return None, _, _
 
         provider_metadata = provider_metadata_result.get('result', None)
         if not provider_metadata:
-            LOG.warning(_LW('Failed to get provider metadata for'
-                            ' device creation.'))
+            LOG.warning('Failed to get provider metadata for'
+                        ' device creation.')
             provider_metadata = {}
 
         return interfaces, image_id, provider_metadata
@@ -559,8 +557,8 @@ class OrchestrationDriver(object):
         admin_tenant_id = device_data['admin_tenant_id']
         instance_id = instance_id_result.get('result', None)
         if not instance_id:
-            LOG.error(_LE('Failed to create instance with device data:'
-                          '%(data)s.'),
+            LOG.error('Failed to create instance with device data:'
+                      '%(data)s.',
                       {'data': device_data})
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
@@ -569,7 +567,7 @@ class OrchestrationDriver(object):
         mgmt_neutron_port_info = port_details_result.get('result', None)
 
         if not mgmt_neutron_port_info:
-            LOG.error(_LE('Failed to get management port details. '))
+            LOG.error('Failed to get management port details. ')
             with nfp_ctx_mgr.NovaContextManager as ncm:
                 ncm.retry(self.compute_handler_nova.delete_instance,
                           token,
@@ -646,8 +644,8 @@ class OrchestrationDriver(object):
                                         interfaces,
                                         network_handler=network_handler)
             except Exception as e:
-                LOG.error(_LE('Failed to delete the management data port(s). '
-                              'Error: %(error)s'), {'error': e})
+                LOG.error('Failed to delete the management data port(s). '
+                          'Error: %(error)s', {'error': e})
 
     def get_network_function_device_status(self, device_data,
                                            ignore_failure=False):
@@ -789,8 +787,8 @@ class OrchestrationDriver(object):
             executor.fire()
 
         except Exception as e:
-            LOG.error(_LE('Failed to plug interface(s) to the device.'
-                          'Error: %(error)s'), {'error': e})
+            LOG.error('Failed to plug interface(s) to the device.'
+                      'Error: %(error)s', {'error': e})
             return None
         else:
             return True
@@ -924,7 +922,7 @@ class OrchestrationDriver(object):
             network_handler = self.network_handlers[nfp_constants.NEUTRON_MODE]
             network_handler.delete_port(token, port_id)
         except Exception as exc:
-            LOG.error(_LE("Failed to delete port %(port_id)s. Error: %(exc)s"),
+            LOG.error("Failed to delete port %(port_id)s. Error: %(exc)s",
                     {"port_id": port_id, 'exc': exc})
 
     def _get_port_from_pt(self, device_data, pt_id):
@@ -942,7 +940,7 @@ class OrchestrationDriver(object):
         for pt in device_data['consumer']['pt']:
             if pt['id'] == pt_id:
                 return pt['port_id']
-        LOG.error(_LE('Policy Target %(pt_id) not found in provided data'),
+        LOG.error('Policy Target %(pt_id) not found in provided data',
                 {'pt_id': pt_id})
         return port_id
 
@@ -1003,8 +1001,8 @@ class OrchestrationDriver(object):
                             'port_classification',
                             'port_model'])
         ):
-            LOG.error(_LE('Incomplete device data received for delete '
-                          'network function device.'))
+            LOG.error('Incomplete device data received for delete '
+                      'network function device.')
             return None
 
         token = self._get_token(device_data.get('token'))
@@ -1027,8 +1025,8 @@ class OrchestrationDriver(object):
                             devices_data['provider'])
                     )
                 except Exception:
-                    LOG.error(_LE('Failed to get provider port details'
-                                  ' for get device config info operation'))
+                    LOG.error('Failed to get provider port details'
+                              ' for get device config info operation')
                     return None
             elif port['port_classification'] == nfp_constants.CONSUMER:
                 try:
@@ -1038,8 +1036,8 @@ class OrchestrationDriver(object):
                             devices_data['consumer'])
                     )
                 except Exception:
-                    LOG.error(_LE('Failed to get consumer port details'
-                                  ' for get device config info operation'))
+                    LOG.error('Failed to get consumer port details'
+                              ' for get device config info operation')
                     return None
 
         device_data.update({

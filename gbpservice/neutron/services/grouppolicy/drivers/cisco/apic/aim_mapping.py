@@ -29,9 +29,6 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
-from gbpservice._i18n import _LW
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
@@ -154,7 +151,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def initialize(self):
-        LOG.info(_LI("APIC AIM Policy Driver initializing"))
+        LOG.info("APIC AIM Policy Driver initializing")
         super(AIMMappingDriver, self).initialize()
         self._apic_aim_mech_driver = None
         self._apic_segmentation_label_driver = None
@@ -163,16 +160,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._name_mapper = None
         self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
         if self.create_auto_ptg:
-            LOG.info(_LI('Auto PTG creation configuration set, '
-                         'this will result in automatic creation of a PTG '
-                         'per L2 Policy'))
+            LOG.info('Auto PTG creation configuration set, '
+                     'this will result in automatic creation of a PTG '
+                     'per L2 Policy')
         self.create_per_l3p_implicit_contracts = (
                 cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
         self.advertise_mtu = cfg.CONF.aim_mapping.advertise_mtu
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         if self.create_per_l3p_implicit_contracts:
-            LOG.info(_LI('Implicit AIM contracts will be created '
-                         'for l3_policies which do not have them.'))
+            LOG.info('Implicit AIM contracts will be created '
+                     'for l3_policies which do not have them.')
             self._create_per_l3p_implicit_contracts()
 
     @log.log_method_call
@@ -453,11 +450,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context._plugin).delete_policy_target_group(
                     context._plugin_context, auto_ptg['id'])
         except gpolicy.PolicyTargetGroupNotFound:
-            LOG.info(_LI("Auto PTG with ID %(id)s for "
-                         "for L2P %(l2p)s not found. If create_auto_ptg "
-                         "configuration was not set at the time of the L2P "
-                         "creation, you can safely ignore this, else this "
-                         "could potentially be indication of an error."),
+            LOG.info("Auto PTG with ID %(id)s for "
+                     "for L2P %(l2p)s not found. If create_auto_ptg "
+                     "configuration was not set at the time of the L2P "
+                     "creation, you can safely ignore this, else this "
+                     "could potentially be indication of an error.",
                      {'id': auto_ptg_id, 'l2p': l2p_id})
         super(AIMMappingDriver, self).delete_l2_policy_precommit(context)
 
@@ -1062,9 +1059,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         ok_to_bind = True
                         break
         if not ok_to_bind:
-            LOG.warning(_LW("Failed to bind the port due to "
-                            "allowed_vm_names rules %(rules)s "
-                            "for VM: %(vm)s"),
+            LOG.warning("Failed to bind the port due to "
+                        "allowed_vm_names rules %(rules)s "
+                        "for VM: %(vm)s",
                         {'rules': l3p['allowed_vm_names'],
                          'vm': vm.name})
         return ok_to_bind
@@ -1548,9 +1545,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # default EPG and delete them
         # create=True, delete=True is not a valid combination
         if create and delete:
-            LOG.error(_LE("Incorrect use of internal method "
-                          "_process_contracts_for_default_epg(), create and "
-                          "delete cannot be True at the same time"))
+            LOG.error("Incorrect use of internal method "
+                      "_process_contracts_for_default_epg(), create and "
+                      "delete cannot be True at the same time")
             raise
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
@@ -1792,8 +1789,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             if not epg:
                 # Something is wrong, default EPG doesn't exist.
                 # TODO(ivar): should rise an exception
-                LOG.error(_LE("Default EPG doesn't exist for "
-                              "port %s"), port['id'])
+                LOG.error("Default EPG doesn't exist for "
+                          "port %s", port['id'])
             return epg
 
     def _get_subnet_details(self, plugin_context, port, details):
@@ -2155,9 +2152,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     intf_port = self._create_port(plugin_context, attrs)
                 except n_exc.NeutronException:
                     with excutils.save_and_reraise_exception():
-                        LOG.exception(_LE('Failed to create explicit router '
-                                          'interface port in subnet '
-                                          '%(subnet)s'),
+                        LOG.exception('Failed to create explicit router '
+                                      'interface port in subnet '
+                                      '%(subnet)s',
                                       {'subnet': subnet['id']})
                 interface_info = {'port_id': intf_port['id'],
                                   NO_VALIDATE: True}
@@ -2167,9 +2164,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 except n_exc.BadRequest:
                     self._delete_port(plugin_context, intf_port['id'])
                     with excutils.save_and_reraise_exception():
-                        LOG.exception(_LE('Attaching router %(router)s to '
-                                          '%(subnet)s with explicit port '
-                                          '%(port) failed'),
+                        LOG.exception('Attaching router %(router)s to '
+                                      '%(subnet)s with explicit port '
+                                      '%(port) failed',
                                       {'subnet': subnet['id'],
                                        'router': router_id,
                                        'port': intf_port['id']})
@@ -2185,8 +2182,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 self._add_router_interface(plugin_context, router_id,
                                            interface_info)
             except n_exc.BadRequest as e:
-                LOG.exception(_LE("Adding subnet to router failed, exception:"
-                                  "%s"), e)
+                LOG.exception("Adding subnet to router failed, exception:"
+                              "%s", e)
                 raise exc.GroupPolicyInternalError()
 
     def _detach_router_from_subnets(self, plugin_context, router_id, sn_ids):

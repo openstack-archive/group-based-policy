@@ -33,9 +33,6 @@ from oslo_utils import excutils
 import sqlalchemy as sa
 from sqlalchemy.orm import exc as sa_exc
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
-from gbpservice._i18n import _LW
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
@@ -318,9 +315,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                              filters={'address_scope_id':
                                                       [address_scope_id]})
             if subpools:
-                LOG.warning(_LW("Cannot delete implicitly created "
-                                "address_scope %(id)s since it has "
-                                "associated subnetpools: %(pools)s"),
+                LOG.warning("Cannot delete implicitly created "
+                            "address_scope %(id)s since it has "
+                            "associated subnetpools: %(pools)s",
                             {'id': address_scope_id, 'pools': subpools})
             else:
                 self._delete_address_scope(plugin_context, address_scope_id)
@@ -358,9 +355,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                         filters={'subnetpool_id':
                                                  [subnetpool_id]})
             if subnets:
-                LOG.warning(_LW("Cannot delete implicitly created "
-                                "subnetpool %(id)s since it has "
-                                "associated subnets: %(subnets)s"),
+                LOG.warning("Cannot delete implicitly created "
+                            "subnetpool %(id)s since it has "
+                            "associated subnets: %(subnets)s",
                             {'id': subnetpool_id, 'subnets': subnets})
             else:
                 self._delete_subnetpool(plugin_context, subnetpool_id)
@@ -631,10 +628,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 except Exception as e:
                     if isinstance(e, oslo_db_excp.RetryRequest):
                         raise e
-                    LOG.info(_LI("Allocating subnet from subnetpool %(sp)s "
-                                 "failed. Allocation will be attempted "
-                                 "from any other configured "
-                                 "subnetpool(s). Exception: %(excp)s"),
+                    LOG.info("Allocating subnet from subnetpool %(sp)s "
+                             "failed. Allocation will be attempted "
+                             "from any other configured "
+                             "subnetpool(s). Exception: %(excp)s",
                              {'sp': pool['id'], 'excp': type(e)})
                     last = e
                     continue
@@ -725,7 +722,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     context.set_port_id(port_id)
                     return
                 except n_exc.IpAddressGenerationFailure as ex:
-                    LOG.warning(_LW("No more address available in subnet %s"),
+                    LOG.warning("No more address available in subnet %s",
                                 subnet['id'])
                     last = ex
         raise last
@@ -735,7 +732,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             try:
                 self._delete_port(plugin_context, port_id)
             except n_exc.PortNotFound:
-                LOG.warning(_LW("Port %s is missing"), port_id)
+                LOG.warning("Port %s is missing", port_id)
 
     def _reject_invalid_router_access(self, context):
         # Validate if the explicit router(s) belong to the tenant.
@@ -782,8 +779,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 self._add_router_interface(plugin_context, router_id,
                                            interface_info)
             except n_exc.BadRequest as e:
-                LOG.exception(_LE("Adding subnet to router failed, exception:"
-                                  "%s"), e)
+                LOG.exception("Adding subnet to router failed, exception:"
+                              "%s", e)
                 raise exc.GroupPolicyInternalError()
 
     def _add_router_interface_for_subnet(self, context, router_id, subnet_id):
@@ -1109,9 +1106,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                             context, l2_policy_id)
         fip_ids = []
         if not external_segments:
-            LOG.error(_LE("Network Service Policy to allocate Floating IP "
-                          "could not be applied because l3policy does "
-                          "not have an attached external segment"))
+            LOG.error("Network Service Policy to allocate Floating IP "
+                      "could not be applied because l3policy does "
+                      "not have an attached external segment")
             return fip_ids
         tenant_id = context.current['tenant_id']
 
@@ -1153,7 +1150,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     # FIP allocated, no need to try further allocation
                     break
                 except n_exc.IpAddressGenerationFailure as ex:
-                    LOG.warning(_LW("Floating allocation failed: %s"),
+                    LOG.warning("Floating allocation failed: %s",
                                 ex.message)
             if fip_id:
                 fip_ids.append(fip_id)
@@ -1261,10 +1258,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                 filters={'name': [
                                         gpip.default_external_segment_name]}))
                 if not external_segments:
-                    LOG.error(_LE(
+                    LOG.error(
                         "Network Service Policy to allocate Floating "
                         "IP could not be associated because l3policy "
-                        "does not have an attached external segment"))
+                        "does not have an attached external segment")
                     raise exc.NSPRequiresES()
                 for es in external_segments:
                     if not es['nat_pools']:
@@ -1286,9 +1283,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 free_ip = self._get_last_free_ip(context._plugin_context,
                                                  context.current['subnets'])
                 if not free_ip:
-                    LOG.error(_LE("Reserving IP Addresses failed for Network "
-                                  "Service Policy. No more IP Addresses on "
-                                  "subnet"))
+                    LOG.error("Reserving IP Addresses failed for Network "
+                              "Service Policy. No more IP Addresses on "
+                              "subnet")
                     return
                 # TODO(Magesh):Fetch subnet from PTG to which NSP is attached
                 self._remove_ip_from_allocation_pool(
@@ -1640,7 +1637,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             policy_target = context._plugin.get_policy_target(
                 context._plugin_context, pt_id)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warning(_LW("Attempted to fetch deleted Service Target (QoS)"))
+            LOG.warning("Attempted to fetch deleted Service Target (QoS)")
         else:
             port_id = policy_target['port_id']
             port = {attributes.PORT: {'qos_policy_id': None}}
@@ -1703,16 +1700,16 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             return tenant.id
         except k_exceptions.NotFound:
             with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('No tenant with name %s exists.'), tenant)
+                LOG.error('No tenant with name %s exists.', tenant)
         except k_exceptions.NoUniqueMatch:
             with excutils.save_and_reraise_exception(reraise=True):
-                LOG.error(_LE('Multiple tenants matches found for %s'), tenant)
+                LOG.error('Multiple tenants matches found for %s', tenant)
         except k_exceptions.AuthorizationFailure:
-            LOG.error(_LE("User: %(user)s dont have permissions"),
+            LOG.error("User: %(user)s dont have permissions",
                      {'user': user})
         except k_exceptions.Unauthorized:
-            LOG.error(_LE("Wrong credentials provided: user: %(user)s, "
-                        "password: %(pwd)s, tenant: %(tenant)s"),
+            LOG.error("Wrong credentials provided: user: %(user)s, "
+                      "password: %(pwd)s, tenant: %(tenant)s",
                      {'user': user, 'pwd': pwd, 'tenant': tenant})
 
     @log.log_method_call
@@ -1940,7 +1937,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                                                  context.nsp_cleanup_ipaddress,
                                                  context.nsp_cleanup_fips)
         except sa_exc.ObjectDeletedError as err:
-            LOG.warning(_LW("Object already got deleted. Error: %(err)s"),
+            LOG.warning("Object already got deleted. Error: %(err)s",
                     {'err': err})
         # Cleanup SGs
         self._unset_sg_rules_for_subnets(
@@ -2549,7 +2546,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                             context._plugin_context, subnet_id, router_id)
                 except n_exc.InvalidInput:
                     # This exception is not expected.
-                    LOG.exception(_LE("adding subnet to router failed"))
+                    LOG.exception("adding subnet to router failed")
                     for subnet_id in subnet_ids:
                         self._delete_subnet(context._plugin_context, subnet_id)
                     raise exc.GroupPolicyInternalError()
@@ -2598,7 +2595,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         except n_exc.InvalidInput:
             # This exception is not expected.
             # TODO(ivar): find a better way to rollback
-            LOG.exception(_LE("adding subnet to router failed"))
+            LOG.exception("adding subnet to router failed")
             for subnet_id in subnet_ids:
                 self._delete_subnet(context._plugin_context, subnet_id)
                 raise exc.GroupPolicyInternalError()
@@ -2688,7 +2685,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             pt = context._plugin.get_policy_target(context._plugin_context,
                                                    pt_id)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warning(_LW("PT %s doesn't exist anymore"), pt_id)
+            LOG.warning("PT %s doesn't exist anymore", pt_id)
             return
         try:
             port_id = pt['port_id']
@@ -2702,14 +2699,14 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(context._plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warning(_LW("Port %s is missing"), port_id)
+            LOG.warning("Port %s is missing", port_id)
 
     def _disassoc_sgs_from_pt(self, context, pt_id, sg_list):
         try:
             pt = context._plugin.get_policy_target(context._plugin_context,
                                                    pt_id)
         except gp_ext.PolicyTargetNotFound:
-            LOG.warning(_LW("PT %s doesn't exist anymore"), pt_id)
+            LOG.warning("PT %s doesn't exist anymore", pt_id)
             return
         port_id = pt['port_id']
         self._disassoc_sgs_from_port(context._plugin_context, port_id, sg_list)
@@ -2726,7 +2723,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             port[ext_sg.SECURITYGROUPS] = new_sg_list
             self._update_port(plugin_context, port_id, port)
         except n_exc.PortNotFound:
-            LOG.warning(_LW("Port %s is missing"), port_id)
+            LOG.warning("Port %s is missing", port_id)
 
     def _generate_list_of_sg_from_ptg(self, context, ptg_id):
         ptg = context._plugin.get_policy_target_group(

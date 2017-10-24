@@ -16,7 +16,6 @@ import oslo_messaging as messaging
 import requests
 import six
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.agents import agent_base
 from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import fw_constants as const
@@ -62,9 +61,9 @@ class FwaasRpcSender(agent_base.AgentBaseEventHandler):
                             'notification_type': (
                                 'set_firewall_status')}}]
                }
-        LOG.info(_LI("Sending Notification 'Set Firewall Status' to "
-                     "Orchestrator for firewall: %(fw_id)s with status:"
-                     "%(status)s"),
+        LOG.info("Sending Notification 'Set Firewall Status' to "
+                 "Orchestrator for firewall: %(fw_id)s with status:"
+                 "%(status)s",
                  {'fw_id': firewall_id,
                   'status': status})
         self.notify._notification(msg)
@@ -86,8 +85,8 @@ class FwaasRpcSender(agent_base.AgentBaseEventHandler):
                             'notification_type': (
                                 'firewall_deleted')}}]
                }
-        LOG.info(_LI("Sending Notification 'Firewall Deleted' to "
-                     "Orchestrator for firewall: %(fw_id)s "),
+        LOG.info("Sending Notification 'Firewall Deleted' to "
+                 "Orchestrator for firewall: %(fw_id)s ",
                  {'fw_id': firewall_id})
         self.notify._notification(msg)
 
@@ -153,7 +152,7 @@ class FWaasRpcManager(agent_base.AgentBaseRPCManager):
 
         """
 
-        LOG.info(_LI("Received request 'Create Firewall'."))
+        LOG.info("Received request 'Create Firewall'.")
         self._create_event(context, firewall,
                            host, const.FIREWALL_CREATE_EVENT)
 
@@ -161,7 +160,7 @@ class FWaasRpcManager(agent_base.AgentBaseRPCManager):
         """ Receives request to update firewall from configurator
 
         """
-        LOG.info(_LI("Received request 'Update Firewall'."))
+        LOG.info("Received request 'Update Firewall'.")
         self._create_event(context, firewall,
                            host, const.FIREWALL_UPDATE_EVENT)
 
@@ -169,7 +168,7 @@ class FWaasRpcManager(agent_base.AgentBaseRPCManager):
         """ Receives request to delete firewall from configurator
 
         """
-        LOG.info(_LI("Received request 'Delete Firewall'."))
+        LOG.info("Received request 'Delete Firewall'.")
         self._create_event(context, firewall,
                            host, const.FIREWALL_DELETE_EVENT)
 
@@ -256,8 +255,8 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
             service_vendor = agent_info['service_vendor']
             service_feature = agent_info.get('service_feature', '')
             driver = self._get_driver(service_vendor, service_feature)
-            LOG.info(_LI("Invoking driver with service vendor:"
-                         "%(service_vendor)s "),
+            LOG.info("Invoking driver with service vendor:"
+                     "%(service_vendor)s ",
                      {'service_vendor': service_vendor})
             self.method = getattr(driver, "%s" % (ev.id.lower()))
             self.invoke_driver_for_plugin_api(ev)
@@ -435,7 +434,7 @@ def load_drivers(conf):
         driver_obj = driver_name(conf=conf)
         drivers[service_type] = driver_obj
 
-    LOG.info(_LI("Firewall loaded drivers:%(drivers)s"),
+    LOG.info("Firewall loaded drivers:%(drivers)s",
              {'drivers': drivers})
     return drivers
 

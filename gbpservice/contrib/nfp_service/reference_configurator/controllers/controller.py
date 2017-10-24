@@ -18,9 +18,6 @@ import subprocess
 import time
 import yaml
 
-from gbpservice._i18n import _LE
-from gbpservice._i18n import _LI
-
 from oslo_log import log as logging
 import oslo_serialization.jsonutils as jsonutils
 
@@ -54,7 +51,7 @@ class Controller(rest.RestController):
             out2 = subprocess.Popen('dhclient eth0', shell=True,
                                     stdout=subprocess.PIPE).stdout.read()
             output = "%s\n%s\n%s" % (ip_a, out1, out2)
-            LOG.info(_LI("Dhclient on eth0, result: %(output)s"),
+            LOG.info("Dhclient on eth0, result: %(output)s",
                      {'output': output})
         except Exception as err:
             msg = (
@@ -161,8 +158,8 @@ class Controller(rest.RestController):
         return {'failure_desc': {'msg': msg}}
 
     def _configure_healthmonitor(self, config_data):
-        LOG.info(_LI("Configures healthmonitor with configuration "
-                 "data : %(healthmonitor_data)s "),
+        LOG.info("Configures healthmonitor with configuration "
+                 "data : %(healthmonitor_data)s ",
                  {'healthmonitor_data': config_data})
 
     def _configure_interfaces(self, config_data):
@@ -173,10 +170,10 @@ class Controller(rest.RestController):
         out3 = subprocess.Popen('cat /etc/network/interfaces', shell=True,
                                 stdout=subprocess.PIPE).stdout.read()
         output = "%s\n%s\n%s" % (out1, out2, out3)
-        LOG.info(_LI("Dhclient on eth0, result: %(initial_data)s"),
+        LOG.info("Dhclient on eth0, result: %(initial_data)s",
                  {'initial_data': output})
-        LOG.info(_LI("Configures interfaces with configuration "
-                 "data : %(interface_data)s "),
+        LOG.info("Configures interfaces with configuration "
+                 "data : %(interface_data)s ",
                  {'interface_data': config_data})
 
     def get_source_cidrs_and_gateway_ip(self, route_info):
@@ -190,8 +187,8 @@ class Controller(rest.RestController):
         return source_cidrs, gateway_ip
 
     def _add_routes(self, route_info):
-        LOG.info(_LI("Configuring routes with configuration "
-                 "data : %(route_data)s "),
+        LOG.info("Configuring routes with configuration "
+                 "data : %(route_data)s ",
                  {'route_data': route_info['resource_data']})
         source_cidrs, gateway_ip = self.get_source_cidrs_and_gateway_ip(
                                         route_info)
@@ -205,8 +202,8 @@ class Controller(rest.RestController):
             try:
                 interface_number_string = source_interface.split("eth", 1)[1]
             except IndexError:
-                LOG.error(_LE("Retrieved wrong interface %(interface)s for "
-                          "configuring routes"),
+                LOG.error("Retrieved wrong interface %(interface)s for "
+                          "configuring routes",
                           {'interface': source_interface})
             try:
                 routing_table_number = 20 + int(interface_number_string)
@@ -222,7 +219,7 @@ class Controller(rest.RestController):
                                         routing_table_number, gateway_ip)
                 default_route_commands.append(ip_route_command)
                 output = "%s\n%s" % (out1, out2)
-                LOG.info(_LI("Static route configuration result: %(output)s"),
+                LOG.info("Static route configuration result: %(output)s",
                          {'output': output})
             except Exception as ex:
                 raise Exception(_("Failed to add static routes: %(ex)s") % {
@@ -231,7 +228,7 @@ class Controller(rest.RestController):
             try:
                 out = subprocess.Popen(command, shell=True,
                                        stdout=subprocess.PIPE).stdout.read()
-                LOG.info(_LI("Static route configuration result: %(output)s"),
+                LOG.info("Static route configuration result: %(output)s",
                          {'output': out})
             except Exception as ex:
                 raise Exception(_("Failed to add static routes: %(ex)s") % {
@@ -269,9 +266,9 @@ class Controller(rest.RestController):
                                       "IP Address"))
 
     def _apply_user_config(self, config_data):
-        LOG.info(_LI("Applying user config with configuration "
-                     "type : %(config_type)s and "
-                     "configuration data : %(config_data)s "),
+        LOG.info("Applying user config with configuration "
+                 "type : %(config_type)s and "
+                 "configuration data : %(config_data)s ",
                  {'config_type': config_data['resource'],
                   'config_data': config_data['resource_data']})
         service_config = config_data['resource_data'][

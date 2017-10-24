@@ -15,7 +15,6 @@
 
 from oslo_log import log
 
-from gbpservice._i18n import _LE
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 
 LOG = log.getLogger(__name__)
@@ -108,6 +107,6 @@ class APICNameMapper(object):
         if self._map(session, "", type_tag, prefix) == name[:pos]:
             return name[pos:]
         elif enforce:
-            LOG.error(_LE("Attempted to reverse-map invalid APIC name '%s'"),
+            LOG.error("Attempted to reverse-map invalid APIC name '%s'",
                       name)
             raise exceptions.InternalError()

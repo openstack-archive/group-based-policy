@@ -11,7 +11,6 @@
 #    under the License.
 
 
-from gbpservice._i18n import _LI
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
@@ -105,7 +104,7 @@ class AgentBaseRPCManager(object):
         # Multiple request data blobs needs batch processing. Send batch
         # processing event or do direct processing of single request data blob
         if (len(sa_req_list) > 1):
-            LOG.info(_LI("Creating event PROCESS BATCH"))
+            LOG.info("Creating event PROCESS BATCH")
             args_dict = {
                 'sa_req_list': sa_req_list,
                 'notification_data': notification_data

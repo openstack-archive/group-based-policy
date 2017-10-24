@@ -17,8 +17,6 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 import sqlalchemy as sa
 
-from gbpservice._i18n import _LI
-from gbpservice._i18n import _LW
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.extensions import group_policy as gbp_ext
@@ -130,17 +128,17 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
                                                  filter)
                     l3p = l3ps and l3ps[0]
                     if not l3p:
-                        LOG.warning(_LW(
+                        LOG.warning(
                             "Caught DefaultL3PolicyAlreadyExists, "
                             "but default L3 policy not concurrently "
-                            "created for tenant %s"), tenant_id)
+                            "created for tenant %s", tenant_id)
                         ctxt.reraise = True
             except exc.OverlappingIPPoolsInSameTenantNotAllowed:
                 with excutils.save_and_reraise_exception():
-                    LOG.info(_LI("Caught "
-                                 "OverlappingIPPoolsinSameTenantNotAllowed "
-                                 "during creation of default L3 policy for "
-                                 "tenant %s"), tenant_id)
+                    LOG.info("Caught "
+                             "OverlappingIPPoolsinSameTenantNotAllowed "
+                             "during creation of default L3 policy for "
+                             "tenant %s", tenant_id)
         context.current['l3_policy_id'] = l3p['id']
 
     def _use_implicit_l3_policy(self, context):
@@ -204,9 +202,9 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
             try:
                 self._delete_l2_policy(context._plugin_context, l2p_id)
             except gbp_ext.L2PolicyInUse:
-                LOG.info(_LI(
+                LOG.info(
                     "Cannot delete implicit L2 Policy %s because it's "
-                    "in use."), l2p_id)
+                    "in use.", l2p_id)
 
     def _validate_default_external_segment(self, context):
         # REVISIT(ivar): find a better way to retrieve the default ES

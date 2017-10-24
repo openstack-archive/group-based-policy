@@ -13,7 +13,6 @@
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
 
-from gbpservice._i18n import _LI
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_auto_ptg_db as auto_ptg_db)
 from gbpservice.neutron.db.grouppolicy.extensions import (
@@ -34,7 +33,7 @@ class AIMExtensionDriver(api.ExtensionDriver,
     _extension_dict = cisco_apic_gbp.EXTENDED_ATTRIBUTES_2_0
 
     def __init__(self):
-        LOG.info(_LI("AIM Extension __init__"))
+        LOG.info("AIM Extension __init__")
         self._policy_driver = None
 
     @property

@@ -17,7 +17,6 @@ from oslo_config import cfg
 from oslo_log import log as logging
 
 from gbpservice._i18n import _
-from gbpservice._i18n import _LE
 
 LOG = logging.getLogger(__name__)
 
@@ -66,9 +65,9 @@ class NFPException(Exception):
                 exc_info = sys.exc_info()
                 # kwargs doesn't match a variable in the message
                 # log the issue and the kwargs
-                LOG.exception(_LE('Exception in string format operation'))
+                LOG.exception('Exception in string format operation')
                 for name, value in kwargs.items():
-                    LOG.error(_LE("%(name)s: %(value)s"),
+                    LOG.error("%(name)s: %(value)s",
                               {'name': name, 'value': value})
                 if CONF.fatal_exception_format_errors:
                     six.reraise(*exc_info)

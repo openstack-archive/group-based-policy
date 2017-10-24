@@ -20,7 +20,6 @@ from oslo_serialization import jsonutils
 from oslo_utils import excutils
 import sqlalchemy as sa
 
-from gbpservice._i18n import _LE
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
@@ -104,10 +103,10 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 return tenant.id
             except k_exceptions.NotFound:
                 with excutils.save_and_reraise_exception(reraise=reraise):
-                    LOG.error(_LE('No tenant with name %s exists.'), tenant)
+                    LOG.error('No tenant with name %s exists.', tenant)
             except k_exceptions.NoUniqueMatch:
                 with excutils.save_and_reraise_exception(reraise=reraise):
-                    LOG.error(_LE('Multiple tenants matches found for %s'),
+                    LOG.error('Multiple tenants matches found for %s',
                               tenant)
 
     @staticmethod
@@ -290,7 +289,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     context.current['status_details'] = ptg_status[0][
                             'status_details']
         except Exception:
-            LOG.error(_LE('Failed to update ptg status'))
+            LOG.error('Failed to update ptg status')
 
     @log.log_method_call
     def _delete_policy_target_group_postcommit(self, context):
