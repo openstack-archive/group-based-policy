@@ -14,10 +14,10 @@
 import webob.exc
 
 import mock
-from neutron.common import config  # noqa
-from neutron import context as n_context
+from neutron.common import config
 from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
+from neutron_lib import context as n_context
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory
@@ -146,6 +146,24 @@ class NodeCompositionPluginTestCase(
         engine = db_api.context_manager.writer.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
+        try:
+            config.cfg.CONF.keystone_authtoken.username
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('username'),
+                'keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.password
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('password'),
+                'keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.project_name
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('project_name'),
+                'keystone_authtoken')
 
     def _create_simple_chain(self):
         node = self._create_profiled_servicechain_node(
