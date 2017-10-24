@@ -10,11 +10,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.db import api as db_api
+from neutron_lib import context as lib_context
+
+# REVISIT(Sumit): The neutron_lib context uses
+# a neutron_lib version of db_api. In ocata this
+# version of the db_api is different from the
+# db_api in neutron, and does not work for GBP.
+# Revisit for Pike.
+lib_context.db_api = db_api
+
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
 from neutron.db import address_scope_db
-from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
 from neutron.db.models import securitygroup as sg_models

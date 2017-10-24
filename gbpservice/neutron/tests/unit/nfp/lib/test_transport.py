@@ -13,7 +13,7 @@
 from gbpservice.nfp.lib import transport
 import mock
 from neutron.common import rpc as n_rpc
-from neutron import context as ctx
+from neutron_lib import context as ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 import six
@@ -59,9 +59,9 @@ class TestContext(object):
 
     def get_context(self):
         try:
-            return ctx.Context('some_user', 'some_tenant')
+            return ctx.Context('admin', 'some_tenant')
         except Exception:
-            return ctx.Context('some_user', 'some_tenant')
+            return ctx.Context('admin', 'some_tenant')
 
     def get_test_context(self):
         # creating a test context
