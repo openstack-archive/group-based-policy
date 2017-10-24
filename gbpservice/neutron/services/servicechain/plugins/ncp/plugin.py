@@ -76,9 +76,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         if instance:
             return instance
 
-        session = context.session
         deployers = {}
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             instance = super(NodeCompositionPlugin,
                              self).create_servicechain_instance(
                                  context, servicechain_instance)
@@ -151,11 +150,10 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         if instance:
             return instance
 
-        session = context.session
         deployers = {}
         updaters = {}
         destroyers = {}
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             original_instance = self.get_servicechain_instance(
                 context, servicechain_instance_id)
             updated_instance = super(
@@ -192,22 +190,20 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         When a Servicechain Instance is deleted, all its nodes need to be
         destroyed.
         """
-        session = context.session
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             instance = self.get_servicechain_instance(context,
                                                       servicechain_instance_id)
             destroyers = self._get_scheduled_drivers(context, instance,
                                                      'destroy')
         self._destroy_servicechain_nodes(context, destroyers)
 
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             super(NodeCompositionPlugin, self).delete_servicechain_instance(
                 context, servicechain_instance_id)
 
     @log.log_method_call
     def create_servicechain_node(self, context, servicechain_node):
-        session = context.session
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             result = super(NodeCompositionPlugin,
                            self).create_servicechain_node(context,
                                                           servicechain_node)
@@ -223,9 +219,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         need to be updated as well. This usually results in a node
         reconfiguration.
         """
-        session = context.session
         updaters = {}
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             original_sc_node = self.get_servicechain_node(
                 context, servicechain_node_id)
             updated_sc_node = super(NodeCompositionPlugin,
@@ -267,8 +262,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
     @log.log_method_call
     def create_servicechain_spec(self, context, servicechain_spec):
-        session = context.session
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             result = super(
                 NodeCompositionPlugin, self).create_servicechain_spec(
                     context, servicechain_spec, set_params=False)
@@ -278,8 +272,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     @log.log_method_call
     def update_servicechain_spec(self, context, servicechain_spec_id,
                                  servicechain_spec):
-        session = context.session
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             original_sc_spec = self.get_servicechain_spec(
                                          context, servicechain_spec_id)
             updated_sc_spec = super(NodeCompositionPlugin,
@@ -304,8 +297,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
     @log.log_method_call
     def create_service_profile(self, context, service_profile):
-        session = context.session
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             result = super(
                 NodeCompositionPlugin, self).create_service_profile(
                     context, service_profile)
@@ -315,8 +307,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     @log.log_method_call
     def update_service_profile(self, context, service_profile_id,
                                service_profile):
-        session = context.session
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             original_profile = self.get_service_profile(
                 context, service_profile_id)
             updated_profile = super(NodeCompositionPlugin,
@@ -485,9 +476,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         return result
 
     def _get_resource(self, context, resource_name, resource_id, fields=None):
-        session = context.session
         deployers = {}
-        with session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             resource = getattr(super(NodeCompositionPlugin,
                 self), 'get_' + resource_name)(context, resource_id)
             if resource_name == 'servicechain_instance':

@@ -44,6 +44,9 @@ function configure_apic_aim {
 
 function install_aim {
     git_clone $AIM_REPO $AIM_DIR $AIM_BRANCH
+    # REVISIT: The following should be removed  after DB
+    # migration issue with dc196d1f3c5efe8c46a09818d84ef44ca423af92 is resolved
+    git checkout c47438d54056e1fb4a63ccac66f9fd106ef72514
     mv $AIM_DIR/test-requirements.txt $AIM_DIR/_test-requirements.txt
     setup_develop $AIM_DIR
     mv $AIM_DIR/_test-requirements.txt $AIM_DIR/test-requirements.txt
