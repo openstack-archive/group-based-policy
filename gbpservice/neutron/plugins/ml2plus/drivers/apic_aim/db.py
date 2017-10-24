@@ -46,7 +46,14 @@ class NetworkMapping(model_base.BASEV2):
         primary_key=True)
 
     network = orm.relationship(
-        models_v2.Network, lazy='joined',
+        # REVISIT: The following also had an eager loading using
+        # lazy='joined' which was removed since it presumably causes
+        # cascaded delete to be triggered twice on the NetworkSegment
+        # object. The issue can be reproduced with the following UT:
+        # gbpservice.neutron.tests.unit.plugins.ml2plus.test_apic_aim.
+        # TestAimMapping.test_network_lifecycle
+        # Removing the eager loading will cause a performance hit.
+        models_v2.Network,
         backref=orm.backref(
             'aim_mapping', lazy='joined', uselist=False, cascade='delete'))
 
