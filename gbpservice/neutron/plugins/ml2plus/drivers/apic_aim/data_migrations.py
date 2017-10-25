@@ -20,10 +20,13 @@ from aim import context as aim_context
 from alembic import util as alembic_util
 from neutron.db.models import address_scope as as_db
 from neutron.db import models_v2
+from neutron.db import segments_db  # noqa
 from neutron_lib.db import model_base
+from oslo_config import cfg
 import sqlalchemy as sa
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
@@ -149,3 +152,36 @@ def do_apic_aim_persist_migration(session):
 
     alembic_util.msg(
         "Finished data migration for apic_aim mechanism driver persistence.")
+
+
+def do_ap_name_change(session):
+    alembic_util.msg("Starting data migration for apic_aim ap name change.")
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+    system_id = cfg.CONF.apic_system_id
+    with session.begin(subtransactions=True):
+        net_dbs = (session.query(models_v2.Network).
+                   all())
+        for net_db in net_dbs:
+            ext_db = (session.query(extension_db.NetworkExtensionDb).
+                      filter_by(network_id=net_db.id).
+                      one_or_none())
+            if ext_db and ext_db.external_network_dn:
+                alembic_util.msg("Migrating external network: %s" % net_db)
+                # Its a managed external network.
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    ext_db.external_network_dn)
+                l3out = aim_resource.L3Outside(tenant_name=ext_net.tenant_name,
+                                               name=ext_net.l3out_name)
+                if ext_db.nat_type == '':
+                    ns_cls = nat_strategy.NoNatStrategy
+                elif ext_db.nat_type == 'edge':
+                    ns_cls = nat_strategy.EdgeNatStrategy
+                else:
+                    ns_cls = nat_strategy.DistributedNatStrategy
+                ns = ns_cls(aim)
+                ns.app_profile_name = 'OpenStack'
+                ns.common_scope = None
+                ns.delete_l3outside(aim_ctx, l3out)
+                ns.common_scope = system_id
+                ns.create_l3outside(aim_ctx, l3out)
