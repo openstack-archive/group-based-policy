@@ -3282,6 +3282,72 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         epg = self._find_by_dn(net1_epg, aim_resource.EndpointGroup)
         self.assertIsNone(epg)
 
+    def test_ap_name_change(self):
+        net = self._make_ext_network(
+            'net2', dn='uni/tn-common/out-l1/instP-n1')
+        aim = self.aim_mgr
+        aim_ctx = aim_context.AimContext(self.db_session)
+        ns = self.driver._nat_type_to_strategy(None)
+        ext_net = aim_resource.ExternalNetwork.from_dn(
+            net[DN]['ExternalNetwork'])
+        l3out = aim_resource.L3Outside(tenant_name=ext_net.tenant_name,
+                                       name=ext_net.l3out_name)
+        right_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        for res in copy.deepcopy(right_res):
+            if isinstance(res, aim_resource.ApplicationProfile):
+                aim.delete(aim_ctx, res)
+                res.name = self.driver.ap_name
+                wrong_ap = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.EndpointGroup):
+                aim.delete(aim_ctx, res)
+                res.app_profile_name = self.driver.ap_name
+                res.bd_name = 'EXT-%s' % l3out.name
+                wrong_epg = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.BridgeDomain):
+                aim.delete(aim_ctx, res)
+                res.name = 'EXT-%s' % l3out.name
+                wrong_bd = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.Contract):
+                aim.delete(aim_ctx, res)
+                res.name = 'EXT-%s' % l3out.name
+                wrong_ctr = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.Filter):
+                aim.delete(aim_ctx, res)
+                res.name = 'EXT-%s' % l3out.name
+                wrong_flt = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.FilterEntry):
+                aim.delete(aim_ctx, res)
+                res.filter_name = 'EXT-%s' % l3out.name
+                wrong_entry = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.ContractSubject):
+                aim.delete(aim_ctx, res)
+                res.contract_name = 'EXT-%s' % l3out.name
+                wrong_sbj = aim.create(aim_ctx, res)
+
+        ns.common_scope = None
+        wrong_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        self.assertEqual(len(right_res), len(wrong_res))
+        self.assertNotEqual(sorted(right_res), sorted(wrong_res))
+        data_migrations.do_ap_name_change(self.db_session)
+        ns = self.driver._nat_type_to_strategy(None)
+        final_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        self.assertEqual(sorted(right_res), sorted(final_res))
+        self.assertIsNone(aim.get(aim_ctx, wrong_ap))
+        self.assertIsNone(aim.get(aim_ctx, wrong_epg))
+        self.assertIsNone(aim.get(aim_ctx, wrong_bd))
+        self.assertIsNone(aim.get(aim_ctx, wrong_ctr))
+        self.assertIsNone(aim.get(aim_ctx, wrong_flt))
+        self.assertIsNone(aim.get(aim_ctx, wrong_entry))
+        self.assertIsNone(aim.get(aim_ctx, wrong_sbj))
+        # Top level objects are scoped
+        for r in final_res:
+            if any(isinstance(r, x) for x in [aim_resource.ApplicationProfile,
+                                              aim_resource.BridgeDomain,
+                                              aim_resource.Contract,
+                                              aim_resource.Filter]):
+                self.assertTrue(r.name.startswith(self.driver.apic_system_id),
+                                '%s name: %s' % (type(r), r.name))
+
 
 class TestPortBinding(ApicAimTestCase):
     def test_bind_opflex_agent(self):
