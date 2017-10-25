@@ -2137,6 +2137,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 ext_segment_name = dn.replace('/', ':')
                 ipms.append({'external_segment_name': ext_segment_name,
                              'nat_epg_name': ext_net_epg.name,
+                             'nat_epg_app_profile': (
+                                 ext_net_epg.app_profile_name),
                              'nat_epg_tenant': ext_net_epg.tenant_name})
                 # TODO(amitbose) Set next_hop_ep_tenant for per-tenant NAT EPG
                 if host:
@@ -2148,6 +2150,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             else:
                 for f in fips_in_ext_net:
                     f['nat_epg_name'] = ext_net_epg.name
+                    f['nat_epg_app_profile'] = ext_net_epg.app_profile_name
                     f['nat_epg_tenant'] = ext_net_epg.tenant_name
         return fips, ipms, host_snat_ips
 
