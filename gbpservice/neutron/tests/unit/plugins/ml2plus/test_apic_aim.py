@@ -3274,6 +3274,102 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         epg = self._find_by_dn(net1_epg, aim_resource.EndpointGroup)
         self.assertIsNone(epg)
 
+    def test_ap_name_change(self):
+        self.tenant_1 = 't1'
+        net = self._make_ext_network(
+            'net2', dn='uni/tn-common/out-l1/instP-n1')
+        self._make_subnet(self.fmt, {'network': net}, '10.0.1.1',
+                          '10.0.1.0/24')
+
+        addr_scope = self._make_address_scope(
+            self.fmt, 4, name='as1', tenant_id=self.tenant_1)['address_scope']
+        subnetpool = self._make_subnetpool(
+            self.fmt, ['10.0.0.0/8'], name='spool1', tenant_id=self.tenant_1,
+            address_scope_id=addr_scope['id'])['subnetpool']
+        net_int = self._make_network(self.fmt, 'pvt-net', True,
+                                     tenant_id=self.tenant_1)['network']
+        sp_id = subnetpool['id']
+        sub = self._make_subnet(
+            self.fmt, {'network': net_int}, '10.10.1.1', '10.10.1.0/24',
+            subnetpool_id=sp_id)['subnet']
+        router = self._make_router(
+            self.fmt, self.tenant_1, 'router',
+            arg_list=self.extension_attributes,
+            external_gateway_info={'network_id': net['id']})['router']
+        self._router_interface_action('add', router['id'], sub['id'], None)
+
+        aim = self.aim_mgr
+        aim_ctx = aim_context.AimContext(self.db_session)
+        ns = self.driver._nat_type_to_strategy(None)
+        ext_net = aim_resource.ExternalNetwork.from_dn(
+            net[DN]['ExternalNetwork'])
+        l3out = aim_resource.L3Outside(tenant_name=ext_net.tenant_name,
+                                       name=ext_net.l3out_name)
+        right_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        for res in copy.deepcopy(right_res):
+            if isinstance(res, aim_resource.ApplicationProfile):
+                aim.delete(aim_ctx, res)
+                res.name = self.driver.ap_name
+                wrong_ap = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.EndpointGroup):
+                aim.delete(aim_ctx, res)
+                res.app_profile_name = self.driver.ap_name
+                res.bd_name = 'EXT-%s' % l3out.name
+                wrong_epg = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.BridgeDomain):
+                aim.delete(aim_ctx, res)
+                res.name = 'EXT-%s' % l3out.name
+                wrong_bd = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.Contract):
+                aim.delete(aim_ctx, res)
+                res.name = 'EXT-%s' % l3out.name
+                wrong_ctr = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.Filter):
+                aim.delete(aim_ctx, res)
+                res.name = 'EXT-%s' % l3out.name
+                wrong_flt = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.FilterEntry):
+                aim.delete(aim_ctx, res)
+                res.filter_name = 'EXT-%s' % l3out.name
+                wrong_entry = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.ContractSubject):
+                aim.delete(aim_ctx, res)
+                res.contract_name = 'EXT-%s' % l3out.name
+                wrong_sbj = aim.create(aim_ctx, res)
+
+        ns.common_scope = None
+        wrong_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        self.assertEqual(len(right_res), len(wrong_res))
+        self.assertNotEqual(sorted(right_res), sorted(wrong_res))
+
+        data_migrations.do_ap_name_change(self.db_session, cfg.CONF)
+        # Verify new model
+        ns = self.driver._nat_type_to_strategy(None)
+        final_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        self.assertEqual(sorted(right_res), sorted(final_res))
+        self.assertIsNone(aim.get(aim_ctx, wrong_ap))
+        self.assertIsNone(aim.get(aim_ctx, wrong_epg))
+        self.assertIsNone(aim.get(aim_ctx, wrong_bd))
+        self.assertIsNone(aim.get(aim_ctx, wrong_ctr))
+        self.assertIsNone(aim.get(aim_ctx, wrong_flt))
+        self.assertIsNone(aim.get(aim_ctx, wrong_entry))
+        self.assertIsNone(aim.get(aim_ctx, wrong_sbj))
+        self.assertIsNotNone(ns.get_subnet(aim_ctx, l3out, '10.0.1.1/24'))
+        # Top level objects are scoped
+        for r in final_res:
+            if any(isinstance(r, x) for x in [aim_resource.ApplicationProfile,
+                                              aim_resource.BridgeDomain,
+                                              aim_resource.Contract,
+                                              aim_resource.Filter]):
+                self.assertTrue(r.name.startswith(self.driver.apic_system_id),
+                                '%s name: %s' % (type(r), r.name))
+        self._update('routers', router['id'],
+                     {'router': {'external_gateway_info': {}}})
+        self._delete('networks', net['id'])
+        for r in final_res:
+            self.assertIsNone(aim.get(aim_ctx, r),
+                              'Resource: %s still in AIM' % r)
+
 
 class TestPortBinding(ApicAimTestCase):
     def test_bind_opflex_agent(self):
