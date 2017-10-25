@@ -2254,16 +2254,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mapping = self._get_network_mapping(session, network['id'])
         return mapping and self._get_network_vrf(mapping)
 
-    # DB Configuration callbacks
-    def _set_enable_metadata_opt(self, new_conf):
-        self.enable_metadata_opt = new_conf['value']
-
-    def _set_enable_dhcp_opt(self, new_conf):
-        self.enable_dhcp_opt = new_conf['value']
-
-    def _set_ap_name(self, new_conf):
-        self.ap_name = new_conf['value']
-
     def get_aim_domains(self, aim_ctx):
         vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
                 if x.type == utils.OPENSTACK_VMM_TYPE]
@@ -2282,6 +2272,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ns_cls = nat_strategy.EdgeNatStrategy
         ns = ns_cls(self.aim)
         ns.app_profile_name = self.ap_name
+        ns.common_scope = self.apic_system_id
         return ns
 
     def _get_aim_nat_strategy(self, network):
