@@ -13,6 +13,13 @@
 from neutron.db.migration.cli import *  # noqa
 
 
+global_opts = [
+    cfg.StrOpt('apic_system_id',
+               help="Prefix for APIC domain/names/profiles created"),
+]
+CONF.register_cli_opts(global_opts)
+
+
 def main():
     config = alembic_config.Config(
         os.path.join(os.path.dirname(__file__), 'alembic.ini'))
