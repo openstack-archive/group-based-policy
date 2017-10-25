@@ -3282,6 +3282,37 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         epg = self._find_by_dn(net1_epg, aim_resource.EndpointGroup)
         self.assertIsNone(epg)
 
+    def test_ap_name_change(self):
+        net = self._make_ext_network(
+            'net2', dn='uni/tn-common/out-l1/instP-n1')
+        aim = self.aim_mgr
+        aim_ctx = aim_context.AimContext(self.db_session)
+        ns = self.driver._nat_type_to_strategy(None)
+        ext_net = aim_resource.ExternalNetwork.from_dn(
+            net[DN]['ExternalNetwork'])
+        l3out = aim_resource.L3Outside(tenant_name=ext_net.tenant_name,
+                                       name=ext_net.l3out_name)
+        right_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        for res in copy.deepcopy(right_res):
+            if isinstance(res, aim_resource.ApplicationProfile):
+                aim.delete(aim_ctx, res)
+                res.name = self.driver.ap_name
+                wrong_ap = aim.create(aim_ctx, res)
+            if isinstance(res, aim_resource.EndpointGroup):
+                aim.delete(aim_ctx, res)
+                res.app_profile_name = self.driver.ap_name
+                wrong_epg = aim.create(aim_ctx, res)
+        ns.common_scope = None
+        wrong_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        self.assertEqual(len(right_res), len(wrong_res))
+        self.assertNotEqual(sorted(right_res), sorted(wrong_res))
+        data_migrations.do_ap_name_change(self.db_session)
+        ns = self.driver._nat_type_to_strategy(None)
+        final_res = ns.get_l3outside_resources(aim_ctx, l3out)
+        self.assertEqual(sorted(right_res), sorted(final_res))
+        self.assertIsNone(aim.get(aim_ctx, wrong_ap))
+        self.assertIsNone(aim.get(aim_ctx, wrong_epg))
+
 
 class TestPortBinding(ApicAimTestCase):
     def test_bind_opflex_agent(self):
