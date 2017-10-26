@@ -1000,7 +1000,8 @@ class Group_policy(extensions.ExtensionDescriptor):
         return resource_helper.build_resource_info(plural_mappings,
                                                    RESOURCE_ATTRIBUTE_MAP,
                                                    constants.GROUP_POLICY,
-                                                   register_quota=True)
+                                                   register_quota=True,
+                                                   allow_bulk=True)
 
     @classmethod
     def get_plugin_interface(cls):

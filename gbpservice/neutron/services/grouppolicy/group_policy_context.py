@@ -12,7 +12,7 @@
 
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
-
+from gbpservice.neutron.services.grouppolicy.common import constants
 
 class GroupPolicyContext(object):
     """GroupPolicy context base class."""
@@ -358,3 +358,5 @@ class NatPoolContext(GroupPolicyContext, api.NatPoolContext):
     @property
     def original(self):
         return self._original_nat_pool
+
+resource_context = {constants.POLICY_TARGET: PolicyTargetContext}
