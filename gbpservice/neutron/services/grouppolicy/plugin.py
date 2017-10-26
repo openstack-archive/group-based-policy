@@ -14,6 +14,7 @@ import netaddr
 import six
 
 from neutron import context as n_ctx
+from neutron.common import utils as n_utils
 from neutron.db import api as db_api
 from neutron.extensions import portbindings
 from neutron.plugins.common import constants as pconst
@@ -460,25 +461,30 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             policy_target['policy_target'].update(
                 {'port_attributes': port_attributes})
 
-    @log.log_method_call
-    @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
-    def create_policy_target(self, context, policy_target):
+    def _before_create_policy_target(self, context, policy_target):
         self._ensure_tenant(context, policy_target['policy_target'])
         self._add_fixed_ips_to_port_attributes(policy_target)
-        session = context.session
-        with session.begin(subtransactions=True):
-            result = super(GroupPolicyPlugin,
-                           self).create_policy_target(context, policy_target)
-            self.extension_manager.process_create_policy_target(
-                session, policy_target, result)
-            self._validate_shared_create(
-                self, context, result, 'policy_target')
-            policy_context = p_context.PolicyTargetContext(self, context,
-                                                           result)
-            self.policy_driver_manager.create_policy_target_precommit(
-                policy_context)
 
+    def _create_resource_db(self, context, resource_type, resource):
+        session = context.session
+        create_obj_db = getattr(super(GroupPolicyPlugin,self),
+                                'create_%s' % resource)
+        process_create_object = getattr(self.extension_manager,
+                                        'process_create_%s' % resource)
+        create_ob_precommit = getattr(self.policy_driver_manager,
+                                      'create_%s_precommit' % resource)
+        with session.begin(subtransactions=True):
+            result = create_obj_db(context, resource)
+            process_create_object(session, resource, result)
+            self._validate_shared_create(
+                self, context, result, resource_type)
+            obj_context_class = p_context.resource_context[resource_type]
+            policy_context = obj_context_class(self, context, result)
+            create_ob_precommit.create_policy_target_precommit(policy_context)
+
+        return result, policy_context
+
+    def _after_create_policy_target(self, context, result, policy_context):
         try:
             self.policy_driver_manager.create_policy_target_postcommit(
                 policy_context)
@@ -490,6 +496,80 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 self.delete_policy_target(context, result['id'])
 
         return self.get_policy_target(context, result['id'])
+
+    @log.log_method_call
+    @db_api.retry_if_session_inactive()
+    @gbp_extensions.disable_transaction_guard
+    def create_policy_target(self, context, policy_target):
+        self._before_create_policy_target(context, policy_target)
+        result, policy_context = self._create_resource_db(context,
+                                                          gp_cts.POLICY_TARGET,
+                                                          policy_target)
+        return self._after_create_policy_target(context,
+                                                result, policy_context)
+
+    def create_policy_target_bulk(self, context, policy_targets):
+        objects = self.create_bulk_gbp(gp_cts.POLICY_TARGET, context, policy_targets)
+        return [obj['result'] for obj in objects]
+
+    @log.log_method_call
+    @db_api.retry_if_session_inactive()
+    @gbp_extensions.disable_transaction_guard
+    def create_bulk_gbp(self, context, resource_type, request_items):
+        objects = []
+        collection = "%ss" % resource_type
+        items = request_items[collection]
+        obj_before_create = getattr(self, '_before_create_%s' % resource_type)
+        for item in items:
+            obj_before_create(context, item)
+        with db_api.context_manager.writer.using(context):
+            obj_creator = getattr(self, '_create_%s_db' % resource_type)
+            for item in items:
+                try:
+                    attrs = item[resource_type]
+                    result, policy_context = obj_creator(context, item)
+                    objects.append({'mech_context': policy_context,
+                                    'result': result,
+                                    'attributes': attrs})
+
+                except Exception as e:
+                    with excutils.save_and_reraise_exception():
+                        n_utils.attach_exc_details(
+                            e, ("An exception occurred while creating "
+                                "the %(resource)s:%(item)s"),
+                            {'resource': resource_type, 'item': item})
+
+        postcommit_op = getattr(self, '_after_create_%s' % resource_type)
+        for obj in objects:
+            try:
+                postcommit_op(context, obj['result'], obj['mech_context'])
+            except Exception:
+                with excutils.save_and_reraise_exception():
+                    resource_ids = [res['result']['id'] for res in objects]
+                    LOG.exception("ML2 _after_create_%(res)s "
+                                  "failed for %(res)s: "
+                                  "'%(failed_id)s'. Deleting "
+                                  "%(res)ss %(resource_ids)s",
+                                  {'res': resource_type,
+                                   'failed_id': obj['result']['id'],
+                                   'resource_ids': ', '.join(resource_ids)})
+                    # _after_handler will have deleted the object that threw
+                    to_delete = [o for o in objects if o != obj]
+                    self._delete_objects(context, resource_type, to_delete)
+        return objects
+
+    def _delete_objects(self, context, resource_type, objects):
+        delete_op = getattr(self, 'delete_%s' % resource_type)
+        for obj in objects:
+            try:
+                delete_op(context, obj['result']['id'])
+            except KeyError:
+                LOG.exception("Could not find %s to delete.",
+                              resource_type)
+            except Exception:
+                LOG.exception("Could not delete %(res)s %(id)s.",
+                              {'res': resource_type,
+                               'id': obj['result']['id']})
 
     @log.log_method_call
     @db_api.retry_if_session_inactive()
