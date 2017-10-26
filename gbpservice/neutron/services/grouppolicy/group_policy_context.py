@@ -12,10 +12,12 @@
 
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
+from gbpservice.neutron.services.grouppolicy.common import constants
 
 
 class GroupPolicyContext(object):
     """GroupPolicy context base class."""
+
     def __init__(self, plugin, plugin_context):
         self._plugin = plugin
         self._plugin_context = plugin_context
@@ -211,7 +213,7 @@ class L3PolicyContext(GroupPolicyContext, api.L3PolicyContext):
 
 
 class NetworkServicePolicyContext(
-    GroupPolicyContext, api.NetworkServicePolicyContext):
+        GroupPolicyContext, api.NetworkServicePolicyContext):
 
     def __init__(self, plugin, plugin_context, network_service_policy,
                  original_network_service_policy=None):
@@ -358,3 +360,6 @@ class NatPoolContext(GroupPolicyContext, api.NatPoolContext):
     @property
     def original(self):
         return self._original_nat_pool
+
+
+resource_context = {constants.POLICY_TARGET: PolicyTargetContext}
