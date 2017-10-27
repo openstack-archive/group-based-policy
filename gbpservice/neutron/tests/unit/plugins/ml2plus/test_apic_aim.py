@@ -406,9 +406,11 @@ class TestAimMapping(ApicAimTestCase):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
+                                       limit_ip_learn_to_subnets=True,
                                        name=bd_name)
         bd = self.aim_mgr.get(aim_ctx, bd)
         self.assertIsNotNone(bd)
+        self.assertTrue(bd.limit_ip_learn_to_subnets)
         return bd
 
     def _bd_should_not_exist(self, bd_name):
@@ -3899,7 +3901,9 @@ class TestExternalConnectivityBase(object):
             tenant_name=self.t1_aname, app_profile_name=self._app_profile_name,
             name='EXT-l1')
         ext_bd = aim_resource.BridgeDomain(
-            tenant_name=self.t1_aname, name='EXT-l1')
+            tenant_name=self.t1_aname,
+            limit_ip_learn_to_subnets=True, name='EXT-l1')
+        self.assertTrue(ext_bd.limit_ip_learn_to_subnets)
         ext_vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='EXT-l1')
         self._check_dn(net1, ext_epg, 'EndpointGroup')
         self._check_dn(net1, ext_bd, 'BridgeDomain')
