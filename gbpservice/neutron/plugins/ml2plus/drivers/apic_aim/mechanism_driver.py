@@ -2135,6 +2135,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         aname = self.name_mapper.network(session, id)
 
         bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
+                                       limit_ip_learn_to_subnets=True,
                                        name=aname)
         epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
                                          app_profile_name=self.ap_name,
