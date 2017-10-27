@@ -115,6 +115,7 @@ class DbMixin(object):
     def _get_network_bd(self, mapping):
         return aim_resource.BridgeDomain(
             tenant_name=mapping.bd_tenant_name,
+            limit_ip_learn_to_subnets=True,
             name=mapping.bd_name)
 
     def _get_network_epg(self, mapping):
