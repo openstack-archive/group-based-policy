@@ -201,6 +201,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             patch_neutron.original_notify_loop)
         super(AIMBaseTestCase, self).tearDown()
 
+    # helper function for getting domain names
+    def _doms(self, domains):
+        return [str(dom['name']) for dom in domains]
+
     def _setup_external_network(self, name, dn=None, router_tenant=None):
         DN = 'apic:distinguished_names'
         kwargs = {'router:external': True}
@@ -2183,9 +2187,7 @@ class TestPolicyTargetGroupVmmDomains(AIMBaseTestCase):
                 tenant_name=aim_tenant_name,
                 app_profile_name=aim_app_profile_name, name=aim_epg_name))
         self.assertEqual(set([]),
-                         set(aim_epg.openstack_vmm_domain_names))
-        self.assertEqual(set([]),
-                         set(aim_epg.physical_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
 
 
 class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
@@ -2676,17 +2678,17 @@ class TestPolicyTarget(AIMBaseTestCase):
                 tenant_name=aim_tenant_name,
                 app_profile_name=aim_app_profile_name, name=aim_epg_name))
         self.assertEqual(set(['vm1', 'vm2']),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
         # move port to another host
         self._bind_port_to_host(pt['port_id'], 'h2')
         aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
         self.assertEqual(set(['vm1', 'vm2']),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
         # delete port
         self.delete_policy_target(pt['id'], expected_res_status=204)
         aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
         self.assertEqual(set(['vm1', 'vm2']),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
 
     def test_policy_target_with_default_domains_explicit_port(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -2716,17 +2718,17 @@ class TestPolicyTarget(AIMBaseTestCase):
                     tenant_name=aim_tenant_name,
                     app_profile_name=aim_app_profile_name, name=aim_epg_name))
             self.assertEqual(set(['vm1', 'vm2']),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
             # move port to another host
             self._bind_port_to_host(pt['port_id'], 'h2')
             aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
             self.assertEqual(set(['vm1', 'vm2']),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
             # delete port
             self.delete_policy_target(pt['id'], expected_res_status=204)
             aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
             self.assertEqual(set(['vm1', 'vm2']),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
 
     def test_policy_target_with_specific_domains(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -2755,29 +2757,29 @@ class TestPolicyTarget(AIMBaseTestCase):
                 tenant_name=aim_tenant_name,
                 app_profile_name=aim_app_profile_name, name=aim_epg_name))
         self.assertEqual(set(['vm1']),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
         # move port to another host
         self._bind_port_to_host(pt['port_id'], 'opflex-2')
         aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
         self.assertEqual(set(['vm2']),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
         # create another port on a host that belongs to the same domain
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt1['port_id'], 'opflex-2a')
         aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
         self.assertEqual(set(['vm2']),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
         # delete 1st port
         self.delete_policy_target(pt['id'], expected_res_status=204)
         aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
         self.assertEqual(set(['vm2']),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
         # delete the last port
         self.delete_policy_target(pt1['id'], expected_res_status=204)
         aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
         self.assertEqual(set([]),
-                         set(aim_epg.openstack_vmm_domain_names))
+                         set(self._doms(aim_epg.domain_names)))
 
     def test_policy_target_with_specific_domains_explicit_port(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -2808,12 +2810,12 @@ class TestPolicyTarget(AIMBaseTestCase):
                     tenant_name=aim_tenant_name,
                     app_profile_name=aim_app_profile_name, name=aim_epg_name))
             self.assertEqual(set(['vm1']),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
             # move port to another host
             self._bind_port_to_host(port_id, 'opflex-2')
             aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
             self.assertEqual(set(['vm2']),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
         with self.port() as port1:
             # create another port on a host that belongs to the same domain
             port_id1 = port1['port']['id']
@@ -2824,17 +2826,17 @@ class TestPolicyTarget(AIMBaseTestCase):
 
             aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
             self.assertEqual(set(['vm2']),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
             # delete 1st pt
             self.delete_policy_target(pt['id'], expected_res_status=204)
             aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
             self.assertEqual(set(['vm2']),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
             # delete the last pt
             self.delete_policy_target(pt1['id'], expected_res_status=204)
             aim_epg = self.aim_mgr.get(aim_ctx, aim_epg)
             self.assertEqual(set([]),
-                             set(aim_epg.openstack_vmm_domain_names))
+                             set(self._doms(aim_epg.domain_names)))
 
     def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
                                        expected_epg_name, expected_epg_tenant,
