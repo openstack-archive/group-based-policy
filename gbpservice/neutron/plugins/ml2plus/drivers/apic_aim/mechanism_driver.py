@@ -88,6 +88,7 @@ NO_ADDR_SCOPE = object()
 
 DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
 GBP_DEFAULT = 'gbp_default'
+DEFAULT_HOST_DOMAIN = '*'
 
 
 class KeystoneNotificationEndpoint(object):
@@ -2254,10 +2255,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return mapping and self._get_network_vrf(mapping)
 
     def get_aim_domains(self, aim_ctx):
-        vmms = [x.name for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
-                if x.type == utils.OPENSTACK_VMM_TYPE]
-        phys = [x.name for x in
-                self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
+        vmms = [{'name': x.name, 'type': x.type}
+            for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                if x.type in utils.KNOWN_VMM_TYPES.values()]
+        phys = [{'name': x.name}
+            for x in self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
         return vmms, phys
 
     def _is_external(self, network):
@@ -2744,34 +2746,50 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             epg = self._get_network_epg(mapping)
         aim_epg = self.aim.get(aim_ctx, epg)
         host_id = port[portbindings.HOST_ID]
-        hd_mapping = aim_infra.HostDomainMapping(host_name=host_id)
-        aim_hd_mapping = self.aim.get(aim_ctx, hd_mapping)
-        domain = None
+        aim_hd_mappings = (self.aim.find(aim_ctx,
+                                         aim_infra.HostDomainMappingV2,
+                                         host_name=host_id) or
+                           self.aim.find(aim_ctx,
+                                         aim_infra.HostDomainMappingV2,
+                                         host_name=DEFAULT_HOST_DOMAIN))
+        domains = []
         try:
             if is_vmm:
-                if aim_hd_mapping:
-                    domain = aim_hd_mapping.vmm_domain_name
-                if not domain:
+                if aim_hd_mappings:
+                    domains = [{'type': mapping.domain_type,
+                                'name': mapping.domain_name}
+                               for mapping in aim_hd_mappings
+                               if mapping.domain_type in ['OpenStack']]
+                if not domains:
                     vmms, phys = self.get_aim_domains(aim_ctx)
                     self.aim.update(aim_ctx, epg,
-                                    openstack_vmm_domain_names=vmms)
-                elif domain not in aim_epg.openstack_vmm_domain_names:
-                    aim_epg.openstack_vmm_domain_names.append(domain)
-                    vmms = aim_epg.openstack_vmm_domain_names
-                    self.aim.update(aim_ctx, epg,
-                                    openstack_vmm_domain_names=vmms)
+                                    vmm_domains=vmms)
+                else:
+                    vmms = aim_epg.vmm_domains[:]
+                    for domain in domains:
+                        if domain not in aim_epg.vmm_domains:
+                            aim_epg.vmm_domains.append(domain)
+                    if vmms != aim_epg.vmm_domains:
+                        vmms = aim_epg.vmm_domains
+                        self.aim.update(aim_ctx, epg, vmm_domains=vmms)
             else:
-                if aim_hd_mapping:
-                    domain = aim_hd_mapping.physical_domain_name
-                if not domain:
+                if aim_hd_mappings:
+                    domains = [{'name': mapping.domain_name}
+                               for mapping in aim_hd_mappings
+                               if mapping.domain_type in ['PhysDom']]
+                if not domains:
                     vmms, phys = self.get_aim_domains(aim_ctx)
                     self.aim.update(aim_ctx, epg,
-                                    physical_domain_names=phys)
-                elif domain not in aim_epg.physical_domain_names:
-                    aim_epg.physical_domain_names.append(domain)
-                    phys = aim_epg.physical_domain_names
-                    self.aim.update(aim_ctx, epg,
-                                    physical_domain_names=phys)
+                                    physical_domains=phys)
+                else:
+                    phys = aim_epg.physical_domains[:]
+                    for domain in domains:
+                        if domain not in aim_epg.physical_domains:
+                            aim_epg.physical_domains.append(domain)
+                    if phys != aim_epg.physical_domains:
+                        phys = aim_epg.physical_domains
+                        self.aim.update(aim_ctx, epg,
+                                        physical_domains=phys)
         # this could be caused by concurrent transactions
         except db_exc.DBDuplicateEntry as e:
             LOG.debug(e)
@@ -2789,25 +2807,35 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                        else port_context.host)
             session = port_context._plugin_context.session
             aim_ctx = aim_context.AimContext(session)
-            hd_mapping = aim_infra.HostDomainMapping(host_name=host_id)
-            aim_hd_mapping = self.aim.get(aim_ctx, hd_mapping)
-            if not aim_hd_mapping:
+            aim_hd_mappings = (self.aim.find(aim_ctx,
+                                             aim_infra.HostDomainMappingV2,
+                                             host_name=host_id) or
+                               self.aim.find(aim_ctx,
+                                             aim_infra.HostDomainMappingV2,
+                                             host_name=DEFAULT_HOST_DOMAIN))
+            if not aim_hd_mappings:
                 return
+
             if self._is_opflex_type(btm[api.NETWORK_TYPE]):
-                domain = aim_hd_mapping.vmm_domain_name
-                if domain:
-                    hd_mappings = self.aim.find(aim_ctx,
-                                                aim_infra.HostDomainMapping,
-                                                vmm_domain_name=domain)
+                domain_type = 'OpenStack'
             else:
-                domain = aim_hd_mapping.physical_domain_name
-                if domain:
-                    hd_mappings = self.aim.find(aim_ctx,
-                                                aim_infra.HostDomainMapping,
-                                                physical_domain_name=domain)
-            if not domain:
+                domain_type = 'PhysDom'
+
+            domains = []
+            hd_mappings = []
+            for mapping in aim_hd_mappings:
+                d_type = mapping.domain_type
+                if d_type == domain_type and mapping.domain_name:
+                    domains.append(mapping.domain_name)
+                    hd_mappings.extend(self.aim.find(aim_ctx,
+                        aim_infra.HostDomainMappingV2,
+                        domain_name=mapping.domain_name,
+                        domain_type=d_type))
+            if not domains:
                 return
-            hosts = [x.host_name for x in hd_mappings]
+            hosts = [x.host_name
+                     for x in hd_mappings
+                     if x.host_name != DEFAULT_HOST_DOMAIN]
             ptg = None
             if self.gbp_driver:
                 ptg, pt = self.gbp_driver._port_id_to_ptg(
@@ -2850,17 +2878,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_epg = self.aim.get(aim_ctx, epg)
             try:
                 if self._is_opflex_type(btm[api.NETWORK_TYPE]):
-                    if domain in aim_epg.openstack_vmm_domain_names:
-                        aim_epg.openstack_vmm_domain_names.remove(domain)
-                        vmms = aim_epg.openstack_vmm_domain_names
+                    vmms = aim_epg.vmm_domains[:]
+                    for domain in domains:
+                        mapping = {'type': domain_type,
+                                   'name': domain}
+                        if mapping in aim_epg.vmm_domains:
+                            aim_epg.vmm_domains.remove(mapping)
+                    if vmms != aim_epg.vmm_domains:
+                        vmms = aim_epg.vmm_domains
                         self.aim.update(aim_ctx, epg,
-                                        openstack_vmm_domain_names=vmms)
+                                        vmm_domains=vmms)
                 else:
-                    if domain in aim_epg.physical_domain_names:
-                        aim_epg.physical_domain_names.remove(domain)
-                        phys = aim_epg.physical_domain_names
+                    phys = aim_epg.physical_domains[:]
+                    for domain in domains:
+                        mapping = {'name': domain}
+                        if mapping in aim_epg.physical_domains:
+                            aim_epg.physical_domains.remove(mapping)
+                    if phys != aim_epg.physical_domains:
+                        phys = aim_epg.physical_domains
                         self.aim.update(aim_ctx, epg,
-                                        physical_domain_names=phys)
+                                        physical_domains=phys)
             # this could be caused by concurrent transactions
             except db_exc.DBDuplicateEntry as e:
                 LOG.debug(e)
