@@ -1537,11 +1537,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     # Topology RPC method handler
     def update_link(self, context, host, interface, mac,
-                    switch, module, port, port_description=''):
+                    switch, module, port, pod_id='1', port_description=''):
         LOG.debug('Topology RPC: update_link: %s',
                   ', '.join([str(p) for p in
                              (host, interface, mac, switch, module, port,
-                              port_description)]))
+                              pod_id, port_description)]))
         if not switch:
             self.delete_link(context, host, interface, mac, switch, module,
                              port)
@@ -1555,7 +1555,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not hlink or hlink.path != port_description:
             attrs = dict(interface_mac=mac,
                          switch_id=switch, module=module, port=port,
-                         path=port_description)
+                         path=port_description, pod_id=pod_id)
             if hlink:
                 old_path = hlink.path
                 hlink = self.aim.update(aim_ctx, hlink, **attrs)

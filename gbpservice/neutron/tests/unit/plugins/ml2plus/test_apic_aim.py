@@ -5194,12 +5194,12 @@ class TestPortVlanNetwork(ApicAimTestCase):
         epg1 = self._net_2_epg(net1)
 
         # add hostlink for h10
-        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19,
-                               'topology/pod-1/paths-101/pathep-[eth1/19]')
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19, '2',
+                               'topology/pod-2/paths-101/pathep-[eth1/19]')
         expected_hlink10 = aim_infra.HostLink(host_name='h10',
             interface_name='eth0', interface_mac='A:A',
-            switch_id='101', module='1', port='19',
-            path='topology/pod-1/paths-101/pathep-[eth1/19]')
+            switch_id='101', module='1', port='19', pod_id='2',
+            path='topology/pod-2/paths-101/pathep-[eth1/19]')
         self.assertEqual(expected_hlink10,
                          self.aim_mgr.get(aim_ctx, expected_hlink10))
         epg1 = self.aim_mgr.get(aim_ctx, epg1)
@@ -5239,32 +5239,32 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self.assertEqual(expected_path, epgs[x].static_paths)
 
         # add hostlink for h10
-        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19,
-                                'topology/pod-1/paths-101/pathep-[eth1/19]')
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19, '2',
+                                'topology/pod-2/paths-101/pathep-[eth1/19]')
         expected_hlink10 = aim_infra.HostLink(host_name='h10',
             interface_name='eth0', interface_mac='A:A',
-            switch_id='101', module='1', port='19',
-            path='topology/pod-1/paths-101/pathep-[eth1/19]')
+            switch_id='101', module='1', port='19', pod_id='2',
+            path='topology/pod-2/paths-101/pathep-[eth1/19]')
         self.assertEqual(expected_hlink10,
                          self.aim_mgr.get(aim_ctx, expected_hlink10))
         check_epg_static_paths(expected_hlink10.path)
 
         # update link
-        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 42,
-                                'topology/pod-1/paths-101/pathep-[eth1/42]')
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 42, '2',
+                                'topology/pod-2/paths-101/pathep-[eth1/42]')
         expected_hlink10.port = '42'
-        expected_hlink10.path = 'topology/pod-1/paths-101/pathep-[eth1/42]'
+        expected_hlink10.path = 'topology/pod-2/paths-101/pathep-[eth1/42]'
         self.assertEqual(expected_hlink10,
                          self.aim_mgr.get(aim_ctx, expected_hlink10))
         check_epg_static_paths(expected_hlink10.path)
 
         # add another link (VPC like)
-        self.driver.update_link(nctx, 'h10', 'eth1', 'B:B', 201, 1, 24,
-                                'topology/pod-1/paths-101/pathep-[eth1/42]')
+        self.driver.update_link(nctx, 'h10', 'eth1', 'B:B', 201, 1, 24, '2',
+                                'topology/pod-2/paths-101/pathep-[eth1/42]')
         expected_hlink10_sec = aim_infra.HostLink(host_name='h10',
             interface_name='eth1', interface_mac='B:B',
-            switch_id='201', module='1', port='24',
-            path='topology/pod-1/paths-101/pathep-[eth1/42]')
+            switch_id='201', module='1', port='24', pod_id='2',
+            path='topology/pod-2/paths-101/pathep-[eth1/42]')
         self.assertEqual(expected_hlink10_sec,
                          self.aim_mgr.get(aim_ctx, expected_hlink10_sec))
         check_epg_static_paths(expected_hlink10.path)
@@ -5275,7 +5275,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
         check_epg_static_paths(expected_hlink10.path)
 
         # remove first link
-        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0, '')
+        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0, 0, '')
         self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10))
         check_epg_static_paths(None)
 
