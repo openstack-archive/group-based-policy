@@ -63,7 +63,8 @@ def get_status_for_test(self, context):
 class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
 
     def setUp(self, core_plugin=None, l3_plugin=None, gp_plugin=None,
-              ml2_options=None, sc_plugin=None, qos_plugin=None):
+              ml2_options=None, sc_plugin=None, qos_plugin=None,
+              trunk_plugin=None):
         if not gp_plugin:
             gp_plugin = GP_PLUGIN_KLASS
         ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch'],
@@ -75,7 +76,8 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
                                                      l3_plugin=l3_plugin,
                                                      gp_plugin=gp_plugin,
                                                      sc_plugin=sc_plugin,
-                                                     qos_plugin=qos_plugin)
+                                                     qos_plugin=qos_plugin,
+                                                     trunk_plugin=trunk_plugin)
 
     def _create_l2_policy_on_shared(self, **kwargs):
         l3p = self.create_l3_policy(shared=True)['l3_policy']
