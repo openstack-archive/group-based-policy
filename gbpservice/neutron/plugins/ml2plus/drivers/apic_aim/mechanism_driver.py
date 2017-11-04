@@ -67,6 +67,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
@@ -203,6 +204,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                          enable_iptables_firewall)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
+        trunk_driver.register()
 
     def _ensure_static_resources(self):
         session = db_api.get_session()
