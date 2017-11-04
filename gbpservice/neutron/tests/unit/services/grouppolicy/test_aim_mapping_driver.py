@@ -109,7 +109,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     _extension_path = None
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
-              l3_plugin=None, sc_plugin=None, qos_plugin=None, **kwargs):
+              l3_plugin=None, sc_plugin=None, qos_plugin=None,
+              trunk_plugin=None, **kwargs):
         core_plugin = core_plugin or ML2PLUS_PLUGIN
         if not l3_plugin:
             l3_plugin = "apic_aim_l3"
@@ -137,7 +138,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
-            sc_plugin=sc_plugin, qos_plugin=qos_plugin)
+            sc_plugin=sc_plugin, qos_plugin=qos_plugin,
+            trunk_plugin=trunk_plugin)
         aim_model_base.Base.metadata.create_all(self.engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
@@ -5126,3 +5128,59 @@ class TestPerL3PImplicitContractsConfig(TestL2PolicyWithAutoPTG):
 
     def test_create_not_called(self):
         self.mock_create.assert_not_called()
+
+
+class TestVlanAwareVM(AIMBaseTestCase):
+
+    def setUp(self, *args, **kwargs):
+        super(TestVlanAwareVM, self).setUp(trunk_plugin='trunk', **kwargs)
+
+    def _do_test_gbp_details_no_pt(self):
+        network = self._make_network(self.fmt, 'net1', True)
+        with self.subnet(network=network, cidr='1.1.2.0/24') as subnet:
+            with self.port(subnet=subnet) as port:
+                with self.port(subnet=subnet) as subp:
+                    port_id = port['port']['id']
+                    subp_id = subp['port']['id']
+                    trunk = self._create_resource('trunk', port_id=port_id)
+                    self.driver._trunk_plugin.add_subports(
+                        nctx.get_admin_context(), trunk['trunk']['id'],
+                        {'sub_ports': [{'port_id': subp_id,
+                                        'segmentation_type': 'vlan',
+                                        'segmentation_id': 100}]})
+                    self._bind_port_to_host(port_id, 'h1')
+                    req_mapping = self.driver.request_endpoint_details(
+                        nctx.get_admin_context(),
+                        request={'device': 'tap%s' % port_id,
+                                 'timestamp': 0, 'request_id': 'request_id'},
+                        host='h1')
+                    self.assertEqual(req_mapping['trunk_details']['trunk_id'],
+                                     trunk['trunk']['id'])
+                    self.assertEqual(
+                        req_mapping['trunk_details']['master_port_id'],
+                        trunk['trunk']['port_id'])
+                    self.assertEqual(
+                        req_mapping['trunk_details']['subports'],
+                        [{'port_id': subp_id,
+                          'segmentation_type': 'vlan',
+                          'segmentation_id': 100}])
+                    # Retrieve the subport
+                    self._bind_port_to_host(subp_id, 'h1')
+                    req_mapping = self.driver.request_endpoint_details(
+                        nctx.get_admin_context(),
+                        request={'device': 'tap%s' % subp_id,
+                                 'timestamp': 0, 'request_id': 'request_id'},
+                        host='h1')
+                    self.assertEqual(req_mapping['trunk_details']['trunk_id'],
+                                     trunk['trunk']['id'])
+                    self.assertEqual(
+                        req_mapping['trunk_details']['master_port_id'],
+                        port_id)
+                    self.assertEqual(
+                        req_mapping['trunk_details']['subports'],
+                        [{'port_id': subp_id,
+                          'segmentation_type': 'vlan',
+                          'segmentation_id': 100}])
+
+    def test_trunk_master_port(self):
+        self._do_test_gbp_details_no_pt()
