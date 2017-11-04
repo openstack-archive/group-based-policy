@@ -15,7 +15,10 @@ from apic_ml2.neutron.db import port_ha_ipaddress_binding as ha_ip_db
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as db_api
+from neutron.db import db_base_plugin_common
 from neutron.extensions import portbindings
+from neutron.objects import base as objects_base
+from neutron.objects import trunk as trunk_objects
 from neutron.plugins.ml2 import rpc as ml2_rpc
 from neutron_lib import constants
 from opflexagent import rpc as o_rpc
@@ -99,7 +102,9 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                       'gbp_details': self._get_gbp_details(context, request,
                                                            host),
                       'neutron_details': ml2_rpc.RpcCallbacks(
-                          None, None).get_device_details(context, **request)}
+                          None, None).get_device_details(context, **request),
+                      'trunk_details': self._get_trunk_details(context,
+                                                               request, host)}
             return result
         except Exception as e:
             LOG.error(_LE("An exception has occurred while requesting device "
@@ -142,6 +147,42 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         for p in ports_to_update:
             LOG.debug("APIC ownership update for port %s", p)
             self._send_port_update_notification(context, p)
+
+    @db_api.retry_db_errors
+    def _get_trunk_details(self, context, request, host):
+        if self._trunk_plugin:
+            device = request.get('device')
+            port_id = self._core_plugin._device_to_port_id(context, device)
+            # Find Trunk associated to this port (if any)
+            trunks = self._trunk_plugin.get_trunks(
+                context, filters={'port_id': [port_id]})
+            subports = None
+            if not trunks:
+                subports = self.retrieve_subports(
+                    context, filters={'port_id': [port_id]})
+                if subports:
+                    trunks = self._trunk_plugin.get_trunks(
+                        context, filters={'id': [subports[0].trunk_id]})
+            if trunks:
+                return {'trunk_id': trunks[0]['id'],
+                        'master_port_id': trunks[0]['port_id'],
+                        'subports': (
+                            [s.to_dict() for s in subports] if subports else
+                            self._trunk_plugin.get_subports(
+                                context, trunks[0]['id'])['sub_ports'])}
+
+    # NOTE(ivar): for some reason, the Trunk plugin doesn't expose a way to
+    # retrieve a subport starting from the port ID.
+    @db_base_plugin_common.filter_fields
+    def retrieve_subports(self, context, filters=None, fields=None,
+                          sorts=None, limit=None, marker=None,
+                          page_reverse=False):
+        filters = filters or {}
+        pager = objects_base.Pager(sorts=sorts, limit=limit,
+                                   page_reverse=page_reverse,
+                                   marker=marker)
+        return trunk_objects.SubPort.get_objects(context, _pager=pager,
+                                                 **filters)
 
     # Things you need in order to run this Mixin:
     # - self._core_plugin: attribute that points to the Neutron core plugin;

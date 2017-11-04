@@ -80,10 +80,12 @@ class ApiManagerMixin(object):
     def _create_resource(self, type, expected_res_status=None,
                          is_admin_context=False, **kwargs):
         plural = cm.get_resource_plural(type)
-        defaults = getattr(cm,
-                           'get_create_%s_default_attrs' % type)()
+        defaults_func = getattr(cm, 'get_create_%s_default_attrs' % type,
+                                None)
+        defaults = {}
+        if defaults_func:
+            defaults = defaults_func()
         defaults.update(kwargs)
-
         data = {type: {'tenant_id': self._tenant_id}}
         data[type].update(defaults)
 
