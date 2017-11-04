@@ -43,7 +43,7 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
                                    test_l3.L3NatTestCaseMixin):
 
     def setUp(self, core_plugin=None, l3_plugin=None, gp_plugin=None,
-              service_plugins=None, sc_plugin=None):
+              service_plugins=None, sc_plugin=None, trunk_plugin=None):
         if not gp_plugin:
             gp_plugin = DB_GP_PLUGIN_KLASS
         if not service_plugins:
@@ -53,6 +53,8 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
                                        'flavors_plugin.FlavorsPlugin',
                 'servicechain_plugin': sc_plugin or SC_PLUGIN_KLASS}
         service_plugins['l3_plugin_name'] = l3_plugin or "router"
+        if trunk_plugin:
+            service_plugins['trunk_plugin_name'] = trunk_plugin
         super(GroupPolicyMappingDbTestCase, self).setUp(
             core_plugin=core_plugin, gp_plugin=gp_plugin,
             service_plugins=service_plugins
