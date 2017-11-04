@@ -270,6 +270,12 @@ class LocalAPI(object):
             raise exc.GroupPolicyDeploymentError()
         return servicechain_plugin
 
+    @property
+    def _trunk_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        return directory.get_plugin('trunk')
+
     def _create_resource(self, plugin, context, resource, attrs,
                          do_notify=True):
         # REVISIT(rkukura): Do create.start notification?

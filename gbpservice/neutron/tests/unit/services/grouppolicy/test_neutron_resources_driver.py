@@ -35,7 +35,8 @@ CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
 class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
 
     def setUp(self, policy_drivers=None, core_plugin=None, l3_plugin=None,
-              ml2_options=None, sc_plugin=None, qos_plugin=None):
+              ml2_options=None, sc_plugin=None, qos_plugin=None,
+              trunk_plugin=None):
         core_plugin = core_plugin or ML2PLUS_PLUGIN
         policy_drivers = policy_drivers or ['neutron_resources']
         config.cfg.CONF.set_override('policy_drivers',
@@ -51,7 +52,8 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
                                                      l3_plugin=l3_plugin,
                                                      ml2_options=ml2_options,
                                                      sc_plugin=sc_plugin,
-                                                     qos_plugin=qos_plugin)
+                                                     qos_plugin=qos_plugin,
+                                                     trunk_plugin=trunk_plugin)
         engine = db_api.context_manager.writer.get_engine()
         model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
