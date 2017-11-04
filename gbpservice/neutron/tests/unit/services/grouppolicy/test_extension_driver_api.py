@@ -28,7 +28,7 @@ class ExtensionDriverTestBase(test_plugin.GroupPolicyPluginTestCase):
 
     def setUp(self, policy_drivers=None, core_plugin=None,
               l3_plugin=None, ml2_options=None,
-              sc_plugin=None, qos_plugin=None):
+              sc_plugin=None, qos_plugin=None, trunk_plugin=None):
         config.cfg.CONF.set_override('extension_drivers',
                                      self._extension_drivers,
                                      group='group_policy')
@@ -38,7 +38,7 @@ class ExtensionDriverTestBase(test_plugin.GroupPolicyPluginTestCase):
         super(ExtensionDriverTestBase, self).setUp(
             core_plugin=core_plugin, l3_plugin=l3_plugin,
             ml2_options=ml2_options, sc_plugin=sc_plugin,
-            qos_plugin=qos_plugin)
+            qos_plugin=qos_plugin, trunk_plugin=trunk_plugin)
 
 
 class ExtensionDriverTestCase(ExtensionDriverTestBase):
