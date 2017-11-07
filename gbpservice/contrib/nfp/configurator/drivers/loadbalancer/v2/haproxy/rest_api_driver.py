@@ -25,8 +25,6 @@ sys.modules['octavia.common.config.cfg'] = cfg
 from octavia.amphorae.driver_exceptions import exceptions as driver_except
 from octavia.amphorae.drivers.haproxy import rest_api_driver
 from octavia.common.jinja.haproxy import jinja_cfg
-from octavia.i18n import _LE
-from octavia.i18n import _LW
 from oslo_config import cfg
 import requests
 
@@ -96,10 +94,10 @@ class AmphoraAPIClient(rest_api_driver.AmphoraAPIClient):
                     resp=r))
                 return r
             except (requests.ConnectionError, requests.Timeout):
-                LOG.warning(_LW("Could not connect to instance. Retrying."))
+                LOG.warning("Could not connect to instance. Retrying.")
                 time.sleep(CONF.haproxy_amphora.connection_retry_interval)
 
-        LOG.error(_LE("Connection retries (currently set to %s) "
-                      "exhausted.  The amphora is unavailable."),
+        LOG.error("Connection retries (currently set to %s) "
+                  "exhausted.  The amphora is unavailable.",
                   CONF.haproxy_amphora.connection_max_retries)
         raise driver_except.TimeOutException()

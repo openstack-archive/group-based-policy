@@ -14,9 +14,9 @@ import netaddr
 import six
 
 from neutron.db import api as db_api
-from neutron.extensions import portbindings
 from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants
 from neutron_lib import context as n_ctx
 from neutron_lib.plugins import directory
