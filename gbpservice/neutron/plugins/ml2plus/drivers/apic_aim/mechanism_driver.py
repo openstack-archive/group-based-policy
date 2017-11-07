@@ -201,6 +201,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                apic_optimized_dhcp_lease_time)
         self.enable_keystone_notification_purge = (cfg.CONF.ml2_apic_aim.
                                             enable_keystone_notification_purge)
+        self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
+                                         enable_iptables_firewall)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._setup_default_arp_security_group_rules()
 
@@ -1699,10 +1701,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return True
 
     def _complete_binding(self, context, segment):
+        enable_firewall = False
+        if self.enable_iptables_firewall:
+            enable_firewall = self.sg_enabled
         context.set_binding(
             segment[api.ID], portbindings.VIF_TYPE_OVS,
-            {portbindings.CAP_PORT_FILTER: False,
-             portbindings.OVS_HYBRID_PLUG: False})
+            {portbindings.CAP_PORT_FILTER: enable_firewall,
+             portbindings.OVS_HYBRID_PLUG: enable_firewall})
 
     @property
     def plugin(self):
