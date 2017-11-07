@@ -10,35 +10,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.db import api as db_api
-from neutron_lib import context as lib_context
-
-# REVISIT(Sumit): The neutron_lib context uses
-# a neutron_lib version of db_api. In ocata this
-# version of the db_api is different from the
-# db_api in neutron, and does not work for GBP.
-# Revisit for Pike.
-lib_context.db_api = db_api
-
-from neutron.callbacks import events
-from neutron.callbacks import registry
-from neutron.callbacks import resources
 from neutron.db import address_scope_db
+from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
-from neutron.db.models import securitygroup as sg_models
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.extensions import address_scope as ext_address_scope
-from neutron.extensions import securitygroup as ext_sg
 from neutron.objects import subnetpool as subnetpool_obj
 from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib.api import validators
+from neutron_lib.db import api as lib_db_api
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
-from oslo_utils import uuidutils
 from sqlalchemy import event
-from sqlalchemy.orm import exc
 
 
 LOG = log.getLogger(__name__)
@@ -97,244 +82,6 @@ def _get_security_groups_on_port(self, context, port):
 
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
     _get_security_groups_on_port)
-
-
-# REVISIT(kent): Neutron doesn't pass the remote_group_id while creating the
-# ingress rule for the default SG. It also doesn't pass the newly created SG
-# for the PRECOMMIT_CREATE event. Note that we should remove this in Pike as
-# upstream has fixed the bug there
-def create_security_group(self, context, security_group, default_sg=False):
-    """Create security group.
-
-    If default_sg is true that means we are a default security group for
-    a given tenant if it does not exist.
-    """
-    s = security_group['security_group']
-    kwargs = {
-        'context': context,
-        'security_group': s,
-        'is_default': default_sg,
-    }
-
-    self._registry_notify(resources.SECURITY_GROUP, events.BEFORE_CREATE,
-                          exc_cls=ext_sg.SecurityGroupConflict, **kwargs)
-
-    tenant_id = s['tenant_id']
-
-    if not default_sg:
-        self._ensure_default_security_group(context, tenant_id)
-    else:
-        existing_def_sg_id = self._get_default_sg_id(context, tenant_id)
-        if existing_def_sg_id is not None:
-            # default already exists, return it
-            return self.get_security_group(context, existing_def_sg_id)
-
-    with db_api.autonested_transaction(context.session):
-        security_group_db = sg_models.SecurityGroup(id=s.get('id') or (
-                                          uuidutils.generate_uuid()),
-                                          description=s['description'],
-                                          tenant_id=tenant_id,
-                                          name=s['name'])
-        context.session.add(security_group_db)
-        if default_sg:
-            context.session.add(sg_models.DefaultSecurityGroup(
-                security_group=security_group_db,
-                tenant_id=security_group_db['tenant_id']))
-        for ethertype in ext_sg.sg_supported_ethertypes:
-            if default_sg:
-                # Allow intercommunication
-                ingress_rule = sg_models.SecurityGroupRule(
-                    id=uuidutils.generate_uuid(), tenant_id=tenant_id,
-                    security_group=security_group_db,
-                    direction='ingress',
-                    ethertype=ethertype,
-                    remote_group_id=security_group_db.id,
-                    source_group=security_group_db)
-                context.session.add(ingress_rule)
-
-            egress_rule = sg_models.SecurityGroupRule(
-                id=uuidutils.generate_uuid(), tenant_id=tenant_id,
-                security_group=security_group_db,
-                direction='egress',
-                ethertype=ethertype)
-            context.session.add(egress_rule)
-
-        secgroup_dict = self._make_security_group_dict(security_group_db)
-        kwargs['security_group'] = secgroup_dict
-        self._registry_notify(resources.SECURITY_GROUP,
-                              events.PRECOMMIT_CREATE,
-                              exc_cls=ext_sg.SecurityGroupConflict,
-                              **kwargs)
-
-    registry.notify(resources.SECURITY_GROUP, events.AFTER_CREATE, self,
-                    **kwargs)
-    return secgroup_dict
-
-securitygroups_db.SecurityGroupDbMixin.create_security_group = (
-    create_security_group)
-
-
-# REVISIT(kent): Neutron doesn't pass the updated SG for the PRECOMMIT_UPDATE
-# event. Note that we should remove this in Pike as upstream has fixed the bug
-# there
-def update_security_group(self, context, id, security_group):
-    s = security_group['security_group']
-
-    kwargs = {
-        'context': context,
-        'security_group_id': id,
-        'security_group': s,
-    }
-    self._registry_notify(resources.SECURITY_GROUP, events.BEFORE_UPDATE,
-                          exc_cls=ext_sg.SecurityGroupConflict, **kwargs)
-
-    with context.session.begin(subtransactions=True):
-        sg = self._get_security_group(context, id)
-        if sg['name'] == 'default' and 'name' in s:
-            raise ext_sg.SecurityGroupCannotUpdateDefault()
-        sg_dict = self._make_security_group_dict(sg)
-        kwargs['original_security_group'] = sg_dict
-        sg.update(s)
-        sg_dict = self._make_security_group_dict(sg)
-        kwargs['security_group'] = sg_dict
-        self._registry_notify(
-                resources.SECURITY_GROUP,
-                events.PRECOMMIT_UPDATE,
-                exc_cls=ext_sg.SecurityGroupConflict, **kwargs)
-
-    registry.notify(resources.SECURITY_GROUP, events.AFTER_UPDATE, self,
-                    **kwargs)
-    return sg_dict
-
-securitygroups_db.SecurityGroupDbMixin.update_security_group = (
-    update_security_group)
-
-
-# REVISIT(kent): Neutron doesn't pass the SG rules for the PRECOMMIT_DELETE
-# event. Note that we should remove this in Pike as upstream has fixed the bug
-# there
-def delete_security_group(self, context, id):
-    filters = {'security_group_id': [id]}
-    ports = self._get_port_security_group_bindings(context, filters)
-    if ports:
-        raise ext_sg.SecurityGroupInUse(id=id)
-    # confirm security group exists
-    sg = self._get_security_group(context, id)
-
-    if sg['name'] == 'default' and not context.is_admin:
-        raise ext_sg.SecurityGroupCannotRemoveDefault()
-    kwargs = {
-        'context': context,
-        'security_group_id': id,
-        'security_group': sg,
-    }
-    self._registry_notify(resources.SECURITY_GROUP, events.BEFORE_DELETE,
-                          exc_cls=ext_sg.SecurityGroupInUse, id=id,
-                          **kwargs)
-
-    with context.session.begin(subtransactions=True):
-        # pass security_group_rule_ids to ensure
-        # consistency with deleted rules
-        kwargs['security_group_rule_ids'] = [r['id'] for r in sg.rules]
-        kwargs['security_group'] = self._make_security_group_dict(sg)
-        self._registry_notify(resources.SECURITY_GROUP,
-                              events.PRECOMMIT_DELETE,
-                              exc_cls=ext_sg.SecurityGroupInUse, id=id,
-                              **kwargs)
-        context.session.delete(sg)
-
-    kwargs.pop('security_group')
-    registry.notify(resources.SECURITY_GROUP, events.AFTER_DELETE, self,
-                    **kwargs)
-
-securitygroups_db.SecurityGroupDbMixin.delete_security_group = (
-    delete_security_group)
-
-
-# REVISIT(kent): Neutron doesn't pass the newly created SG rule for the
-# PRECOMMIT_CREATE event. Note that we should remove this in Pike as upstream
-# has fixed the bug there
-def _create_security_group_rule(self, context, security_group_rule,
-                                validate=True):
-    if validate:
-        self._validate_security_group_rule(context, security_group_rule)
-    rule_dict = security_group_rule['security_group_rule']
-    kwargs = {
-        'context': context,
-        'security_group_rule': rule_dict
-    }
-    self._registry_notify(resources.SECURITY_GROUP_RULE,
-                          events.BEFORE_CREATE,
-                          exc_cls=ext_sg.SecurityGroupConflict, **kwargs)
-
-    with context.session.begin(subtransactions=True):
-        if validate:
-            self._check_for_duplicate_rules_in_db(context,
-                                                  security_group_rule)
-        db = sg_models.SecurityGroupRule(
-            id=(rule_dict.get('id') or uuidutils.generate_uuid()),
-            tenant_id=rule_dict['tenant_id'],
-            security_group_id=rule_dict['security_group_id'],
-            direction=rule_dict['direction'],
-            remote_group_id=rule_dict.get('remote_group_id'),
-            ethertype=rule_dict['ethertype'],
-            protocol=rule_dict['protocol'],
-            port_range_min=rule_dict['port_range_min'],
-            port_range_max=rule_dict['port_range_max'],
-            remote_ip_prefix=rule_dict.get('remote_ip_prefix'),
-            description=rule_dict.get('description')
-        )
-        context.session.add(db)
-        res_rule_dict = self._make_security_group_rule_dict(db)
-        kwargs['security_group_rule'] = res_rule_dict
-        self._registry_notify(resources.SECURITY_GROUP_RULE,
-                          events.PRECOMMIT_CREATE,
-                          exc_cls=ext_sg.SecurityGroupConflict, **kwargs)
-    registry.notify(
-        resources.SECURITY_GROUP_RULE, events.AFTER_CREATE, self,
-        **kwargs)
-    return res_rule_dict
-
-securitygroups_db.SecurityGroupDbMixin._create_security_group_rule = (
-    _create_security_group_rule)
-
-
-# REVISIT(kent): Neutron doesn't pass the SG ID of the rule for the
-# PRECOMMIT_DELETE event. Note that we should remove this in Pike as upstream
-# has fixed the bug there
-def delete_security_group_rule(self, context, id):
-    kwargs = {
-        'context': context,
-        'security_group_rule_id': id
-    }
-    self._registry_notify(resources.SECURITY_GROUP_RULE,
-                          events.BEFORE_DELETE, id=id,
-                          exc_cls=ext_sg.SecurityGroupRuleInUse, **kwargs)
-
-    with context.session.begin(subtransactions=True):
-        query = self._model_query(context,
-                                  sg_models.SecurityGroupRule).filter(
-            sg_models.SecurityGroupRule.id == id)
-        try:
-            # As there is a filter on a primary key it is not possible for
-            # MultipleResultsFound to be raised
-            sg_rule = query.one()
-        except exc.NoResultFound:
-            raise ext_sg.SecurityGroupRuleNotFound(id=id)
-
-        kwargs['security_group_id'] = sg_rule['security_group_id']
-        self._registry_notify(resources.SECURITY_GROUP_RULE,
-                              events.PRECOMMIT_DELETE,
-                              exc_cls=ext_sg.SecurityGroupRuleInUse, id=id,
-                              **kwargs)
-        context.session.delete(sg_rule)
-
-    registry.notify(
-        resources.SECURITY_GROUP_RULE, events.AFTER_DELETE, self,
-        **kwargs)
-
-securitygroups_db.SecurityGroupDbMixin.delete_security_group_rule = (
-    delete_security_group_rule)
 
 
 def get_port_from_device_mac(context, device_mac):
@@ -411,6 +158,7 @@ def get_writer_session():
 
 db_api.get_session = get_session
 db_api.get_writer_session = get_writer_session
+lib_db_api.get_writer_session = get_writer_session
 
 
 # REVISIT: This is temporary, the correct fix is to use
