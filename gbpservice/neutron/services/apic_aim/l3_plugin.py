@@ -21,8 +21,8 @@ from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.db.models import l3 as l3_db
 from neutron.extensions import l3
-from neutron.extensions import portbindings
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants
 from neutron_lib import exceptions
 from oslo_log import log as logging

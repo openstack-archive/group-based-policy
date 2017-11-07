@@ -35,10 +35,10 @@ from neutron.db.models import securitygroup as sg_models
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
-from neutron.extensions import portbindings
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
