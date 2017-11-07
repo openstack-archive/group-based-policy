@@ -12,7 +12,6 @@
 
 import sys
 
-from neutron import context as old_context
 from neutron_lib import context as n_context
 from oslo_config import cfg
 from oslo_log import log as logging
@@ -34,8 +33,7 @@ def get_current_context():
                 # using the neutron_lib context, hence we need
                 # to check for both. This should be changed in
                 # Pike to only check for the neutron_lib context.
-                if isinstance(val, n_context.Context) or (
-                        isinstance(val, old_context.Context)):
+                if isinstance(val, n_context.Context):
                     return val
             i = i + 1
     except Exception:
