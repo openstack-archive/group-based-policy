@@ -16,9 +16,10 @@ import sqlalchemy as sa
 from sqlalchemy import orm
 from sqlalchemy import sql
 
-from neutron.api.v2 import attributes as attr
-from neutron.db import db_base_plugin_v2
+from neutron.db import _model_query as model_query
+from neutron.db import _resource_extend as resource_extend
 from neutron.db import models_v2
+from neutron_lib.api.definitions import subnetpool as subnetpool_def
 from neutron_lib.api import validators
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
@@ -82,7 +83,7 @@ class ImplicitSubnetpoolMixin(object):
         return query.filter(
             (ImplicitSubnetpool.is_implicit.in_(vals)))
 
-    db_base_plugin_v2.NeutronDbPluginV2.register_model_query_hook(
+    model_query.register_hook(
         models_v2.SubnetPool,
         "implicit_subnetpool",
         '_subnetpool_model_hook',
@@ -101,8 +102,8 @@ class ImplicitSubnetpoolMixin(object):
         return subnetpool_res
 
     # Register dict extend functions for ports
-    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-        attr.SUBNETPOOLS, ['_extend_subnetpool_dict_implicit'])
+    resource_extend.register_funcs(subnetpool_def.COLLECTION_NAME,
+            ['_extend_subnetpool_dict_implicit'])
 
     def update_implicit_subnetpool(self, context, subnetpool):
         is_implicit = False
