@@ -51,7 +51,7 @@ from neutron.plugins.ml2 import ovo_rpc
 ovo_rpc.LOG.error = ovo_rpc.LOG.debug
 
 
-from neutron.callbacks import registry
+from neutron_lib.callbacks import registry
 
 from gbpservice.network.neutronv2 import local_api
 
@@ -72,8 +72,8 @@ def notify(resource, event, trigger, **kwargs):
 registry.notify = notify
 
 
-from neutron.callbacks import events
-from neutron.callbacks import exceptions
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import exceptions
 from oslo_log import log as logging
 
 

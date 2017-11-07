@@ -14,15 +14,15 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.db import _resource_extend as resource_extend
 from neutron.db import common_db_mixin
-from neutron.db import db_base_plugin_v2
 from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.db.models import l3 as l3_db
 from neutron.extensions import l3
-from neutron.extensions import portbindings
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants
 from neutron_lib import exceptions
 from oslo_log import log as logging
@@ -84,8 +84,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             with excutils.save_and_reraise_exception():
                 LOG.exception("APIC AIM extend_router_dict failed")
 
-    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-        l3.ROUTERS, ['_extend_router_dict_apic'])
+    resource_extend.register_funcs(l3.ROUTERS, ['_extend_router_dict_apic'])
 
     def create_router(self, context, router):
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
