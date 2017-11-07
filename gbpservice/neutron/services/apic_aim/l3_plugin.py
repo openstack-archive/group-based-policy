@@ -14,17 +14,20 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.db import _resource_extend as resource_extend
 from neutron.db import common_db_mixin
-from neutron.db import db_base_plugin_v2
 from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.db.models import l3 as l3_db
 from neutron.extensions import l3
-from neutron.extensions import portbindings
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import l3 as l3_def
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants
 from neutron_lib import exceptions
+from neutron_lib.plugins import constants
+from neutron_lib.plugins import directory
 from oslo_log import log as logging
 from oslo_utils import excutils
 from sqlalchemy import inspect
@@ -39,6 +42,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
 LOG = logging.getLogger(__name__)
 
 
+@resource_extend.has_resource_extenders
 class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                    extraroute_db.ExtraRoute_db_mixin,
                    l3_gwmode_db.L3_NAT_db_mixin,
@@ -74,18 +78,18 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             self._mechanism_driver = mech_mgr.mech_drivers['apic_aim'].obj
         return self._mechanism_driver
 
-    def _extend_router_dict_apic(self, router_res, router_db):
+    @staticmethod
+    @resource_extend.extends([l3_def.ROUTERS])
+    def _extend_router_dict_apic(router_res, router_db):
         LOG.debug("APIC AIM L3 Plugin extending router dict: %s", router_res)
+        plugin = directory.get_plugin(constants.L3)
         session = inspect(router_db).session
         try:
-            self._md.extend_router_dict(session, router_db, router_res)
-            self._include_router_extn_attr(session, router_res)
+            plugin._md.extend_router_dict(session, router_db, router_res)
+            plugin._include_router_extn_attr(session, router_res)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception("APIC AIM extend_router_dict failed")
-
-    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-        l3.ROUTERS, ['_extend_router_dict_apic'])
 
     def create_router(self, context, router):
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
