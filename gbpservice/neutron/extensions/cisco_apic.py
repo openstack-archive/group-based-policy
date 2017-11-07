@@ -15,6 +15,9 @@
 
 from neutron.api.v2 import attributes
 from neutron.extensions import address_scope
+from neutron_lib.api.definitions import address_scope as as_def
+from neutron_lib.api.definitions import network as net_def
+from neutron_lib.api.definitions import subnet as subnet_def
 from neutron_lib.api import converters as conv
 from neutron_lib.api import extensions
 
@@ -103,11 +106,11 @@ ADDRESS_SCOPE_ATTRIBUTES = {
 
 
 EXTENDED_ATTRIBUTES_2_0 = {
-    attributes.NETWORKS: dict(
+    net_def.COLLECTION_NAME: dict(
         APIC_ATTRIBUTES.items() + EXT_NET_ATTRIBUTES.items()),
-    attributes.SUBNETS: dict(
+    subnet_def.COLLECTION_NAME: dict(
         APIC_ATTRIBUTES.items() + EXT_SUBNET_ATTRIBUTES.items()),
-    address_scope.ADDRESS_SCOPES: dict(
+    as_def.COLLECTION_NAME: dict(
         APIC_ATTRIBUTES.items() + ADDRESS_SCOPE_ATTRIBUTES.items())
 }
 

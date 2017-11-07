@@ -11,13 +11,14 @@
 #    under the License.
 
 from neutron.api.v2 import attributes
+from neutron_lib.api.definitions import subnetpool as subnetpool_def
 from neutron_lib.api import converters as conv
 from neutron_lib.api import extensions
 from neutron_lib import constants
 
 
 EXTENDED_ATTRIBUTES_2_0 = {
-    attributes.SUBNETPOOLS: {
+    subnetpool_def.COLLECTION_NAME: {
         'is_implicit': {'allow_post': True, 'allow_put': True,
                         'default': False,
                         'convert_to': conv.convert_to_boolean,

@@ -30,7 +30,6 @@ from aim import utils as aim_utils
 
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
-from neutron.callbacks import registry
 from neutron.db import api as db_api
 from neutron.db import segments_db
 from neutron.plugins.ml2 import config
@@ -39,6 +38,7 @@ from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
+from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
 from neutron_lib.plugins import directory

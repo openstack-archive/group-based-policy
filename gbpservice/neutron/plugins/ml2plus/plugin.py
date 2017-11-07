@@ -21,9 +21,6 @@ from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 from neutron.api.v2 import attributes
-from neutron.callbacks import events
-from neutron.callbacks import registry
-from neutron.callbacks import resources
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron.db.models import securitygroup as securitygroups_db
@@ -34,7 +31,14 @@ from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import network as net_def
+from neutron_lib.api.definitions import port as port_def
+from neutron_lib.api.definitions import subnet as subnet_def
+from neutron_lib.api.definitions import subnetpool as subnetpool_def
 from neutron_lib.api import validators
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
+from neutron_lib.callbacks import resources
 from oslo_config import cfg
 from oslo_log import log
 from oslo_utils import excutils
@@ -194,7 +198,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         LOG.info("Modular L2 Plugin (extended) initialization complete")
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-               attributes.SUBNETPOOLS, ['_ml2_md_extend_subnetpool_dict'])
+               subnetpool_def.COLLECTION_NAME,
+               ['_ml2_md_extend_subnetpool_dict'])
 
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
                as_ext.ADDRESS_SCOPES, ['_ml2_md_extend_address_scope_dict'])
@@ -295,7 +300,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @gbp_extensions.disable_transaction_guard
     @db_api.retry_if_session_inactive()
     def create_network(self, context, network):
-        self._ensure_tenant(context, network[attributes.NETWORK])
+        self._ensure_tenant(context, network[net_def.RESOURCE_NAME])
         return super(Ml2PlusPlugin, self).create_network(context, network)
 
     @gbp_extensions.disable_transaction_guard
@@ -311,15 +316,15 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @gbp_extensions.disable_transaction_guard
     @db_api.retry_if_session_inactive()
     def create_network_bulk(self, context, networks):
-        self._ensure_tenant_bulk(context, networks[attributes.NETWORKS],
-                                 attributes.NETWORK)
+        self._ensure_tenant_bulk(context, networks[net_def.COLLECTION_NAME],
+                                 net_def.RESOURCE_NAME)
         return super(Ml2PlusPlugin, self).create_network_bulk(context,
                                                               networks)
 
     @gbp_extensions.disable_transaction_guard
     @db_api.retry_if_session_inactive()
     def create_subnet(self, context, subnet):
-        self._ensure_tenant(context, subnet[attributes.SUBNET])
+        self._ensure_tenant(context, subnet[subnet_def.RESOURCE_NAME])
         return super(Ml2PlusPlugin, self).create_subnet(context, subnet)
 
     @gbp_extensions.disable_transaction_guard
@@ -335,22 +340,22 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @gbp_extensions.disable_transaction_guard
     @db_api.retry_if_session_inactive()
     def create_subnet_bulk(self, context, subnets):
-        self._ensure_tenant_bulk(context, subnets[attributes.SUBNETS],
-                                 attributes.SUBNET)
+        self._ensure_tenant_bulk(context, subnets[
+            subnet_def.COLLECTION_NAME], subnet_def.RESOURCE_NAME)
         return super(Ml2PlusPlugin, self).create_subnet_bulk(context,
                                                              subnets)
 
     @gbp_extensions.disable_transaction_guard
     @db_api.retry_if_session_inactive()
     def create_port(self, context, port):
-        self._ensure_tenant(context, port[attributes.PORT])
+        self._ensure_tenant(context, port[port_def.RESOURCE_NAME])
         return super(Ml2PlusPlugin, self).create_port(context, port)
 
     @gbp_extensions.disable_transaction_guard
     @db_api.retry_if_session_inactive()
     def create_port_bulk(self, context, ports):
-        self._ensure_tenant_bulk(context, ports[attributes.PORTS],
-                                 attributes.PORT)
+        self._ensure_tenant_bulk(context, ports[port_def.COLLECTION_NAME],
+                                 port_def.RESOURCE_NAME)
         return super(Ml2PlusPlugin, self).create_port_bulk(context,
                                                            ports)
 
@@ -395,14 +400,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @gbp_extensions.disable_transaction_guard
     @db_api.retry_if_session_inactive()
     def create_subnetpool(self, context, subnetpool):
-        self._ensure_tenant(context, subnetpool[attributes.SUBNETPOOL])
+        self._ensure_tenant(context, subnetpool[subnetpool_def.RESOURCE_NAME])
         session = context.session
         with session.begin(subtransactions=True):
             result = super(Ml2PlusPlugin, self).create_subnetpool(context,
                                                                   subnetpool)
             self._update_implicit_subnetpool(context, subnetpool, result)
             self.extension_manager.process_create_subnetpool(
-                context, subnetpool[attributes.SUBNETPOOL], result)
+                context, subnetpool[subnetpool_def.RESOURCE_NAME], result)
             mech_context = driver_context.SubnetPoolContext(
                 self, context, result)
             self.mechanism_manager.create_subnetpool_precommit(mech_context)
@@ -430,7 +435,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self._update_implicit_subnetpool(context, subnetpool,
                                              updated_subnetpool)
             self.extension_manager.process_update_subnetpool(
-                context, subnetpool[attributes.SUBNETPOOL],
+                context, subnetpool[subnetpool_def.RESOURCE_NAME],
                 updated_subnetpool)
             mech_context = driver_context.SubnetPoolContext(
                 self, context, updated_subnetpool,
