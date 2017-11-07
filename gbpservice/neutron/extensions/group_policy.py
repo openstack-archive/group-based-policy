@@ -751,6 +751,12 @@ RESOURCE_ATTRIBUTE_MAP = {
         'consuming_external_policies': {
             'allow_post': False, 'allow_put': False, 'default': None,
             'is_visible': True},
+        'providing_policy_target_groups': {
+            'allow_post': False, 'allow_put': False, 'default': None,
+            'is_visible': True},
+        'providing_external_policies': {
+            'allow_post': False, 'allow_put': False, 'default': None,
+            'is_visible': True},
         attr.SHARED: {'allow_post': True, 'allow_put': True,
                       'default': False, 'convert_to': conv.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
