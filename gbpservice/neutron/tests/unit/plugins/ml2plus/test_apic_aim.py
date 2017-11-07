@@ -17,6 +17,7 @@ import copy
 import mock
 import netaddr
 import six
+import testtools
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
@@ -3490,24 +3491,10 @@ class TestPortBindingDvs(ApicAimTestCase):
         dvs_mock.assert_not_called()
 
 
-class TestMl2BasicGet(test_plugin.TestBasicGet,
-                      ApicAimTestCase):
-    pass
+class TestDomains(ApicAimTestCase):
 
-
-class TestMl2V2HTTPResponse(test_plugin.TestV2HTTPResponse,
-                            ApicAimTestCase):
-    pass
-
-
-class TestMl2PortsV2(test_plugin.TestPortsV2,
-                     ApicAimTestCase):
-    pass
-
-
-class TestMl2NetworksV2(test_plugin.TestNetworksV2,
-                        ApicAimTestCase):
-
+    # REVISIT: Does this test anything that is not covered by
+    # TestPortOnPhysicalNode.test_mixed_ports_on_network_with_default_domains?
     def test_aim_epg_domains(self):
         aim_ctx = aim_context.AimContext(self.db_session)
         self.aim_mgr.create(aim_ctx,
@@ -3524,19 +3511,51 @@ class TestMl2NetworksV2(test_plugin.TestNetworksV2,
         self.aim_mgr.create(aim_ctx,
                             aim_resource.PhysicalDomain(name='ph2'),
                             overwrite=True)
-        with self.network(name='net'):
-            epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
-            self.assertEqual(set([]),
-                             set(epg.openstack_vmm_domain_names))
-            self.assertEqual(set([]),
-                             set(epg.physical_domain_names))
+        self._make_network(self.fmt, 'net', True)
+        epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup)[0]
+        self.assertEqual(set([]),
+                         set(epg.openstack_vmm_domain_names))
+        self.assertEqual(set([]),
+                         set(epg.physical_domain_names))
 
 
+# REVISIT: Skipping inherited ML2 tests to reduce UT run time.
+@testtools.skip('Skipping test class')
+class TestMl2BasicGet(test_plugin.TestBasicGet,
+                      ApicAimTestCase):
+    pass
+
+
+# REVISIT: Skipping inherited ML2 tests to reduce UT run time.
+@testtools.skip('Skipping test class')
+class TestMl2V2HTTPResponse(test_plugin.TestV2HTTPResponse,
+                            ApicAimTestCase):
+    pass
+
+
+# REVISIT: Skipping inherited ML2 tests to reduce UT run time.
+@testtools.skip('Skipping test class')
+class TestMl2PortsV2(test_plugin.TestPortsV2,
+                     ApicAimTestCase):
+    pass
+
+
+# REVISIT: Skipping inherited ML2 tests to reduce UT run time.
+@testtools.skip('Skipping test class')
+class TestMl2NetworksV2(test_plugin.TestNetworksV2,
+                        ApicAimTestCase):
+    pass
+
+
+# REVISIT: Skipping inherited ML2 tests to reduce UT run time.
+@testtools.skip('Skipping test class')
 class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
                        ApicAimTestCase):
     pass
 
 
+# REVISIT: Skipping inherited ML2 tests to reduce UT run time.
+@testtools.skip('Skipping test class')
 class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
                            ApicAimTestCase):
     pass
