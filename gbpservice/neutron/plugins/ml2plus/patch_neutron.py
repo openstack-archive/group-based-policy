@@ -43,15 +43,23 @@ def get_current_session():
 from neutron.plugins.ml2 import ovo_rpc
 
 
-# The following reduces the ERROR log level for a message
-# which is seen when a port_update even is sent. The
-# port_update is intentionally sent in the pre_commit
-# phase by the apic_aim mechanism driver, but is not
-# what neutron expects and hence it flags it.
-ovo_rpc.LOG.error = ovo_rpc.LOG.debug
+# The Neutron code is instrumented to warn whenever AFTER_CREATE/UPDATE event
+# notification handling is done within a transaction. With ML2Plus plugin
+# this is expected to happen all the time. Hence we chose to suppress this
+# warning. It can be turned on again by setting the following to True.
+WARN_ON_SESSION_SEMANTIC_VIOLATION = False
 
 
-from neutron.callbacks import registry
+def new_is_session_semantic_violated(self, context, resource, event):
+    return
+
+
+if not WARN_ON_SESSION_SEMANTIC_VIOLATION:
+    setattr(ovo_rpc._ObjectChangeHandler, '_is_session_semantic_violated',
+            new_is_session_semantic_violated)
+
+
+from neutron_lib.callbacks import registry
 
 from gbpservice.network.neutronv2 import local_api
 
@@ -72,8 +80,8 @@ def notify(resource, event, trigger, **kwargs):
 registry.notify = notify
 
 
-from neutron.callbacks import events
-from neutron.callbacks import exceptions
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import exceptions
 from oslo_log import log as logging
 
 

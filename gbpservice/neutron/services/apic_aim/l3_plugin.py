@@ -14,17 +14,21 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.db import _resource_extend as resource_extend
+from neutron.db import api as db_api
 from neutron.db import common_db_mixin
-from neutron.db import db_base_plugin_v2
 from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.db.models import l3 as l3_db
 from neutron.extensions import l3
-from neutron.extensions import portbindings
 from neutron.quota import resource_registry
+from neutron_lib.api.definitions import l3 as l3_def
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants
 from neutron_lib import exceptions
+from neutron_lib.plugins import constants
+from neutron_lib.plugins import directory
 from oslo_log import log as logging
 from oslo_utils import excutils
 from sqlalchemy import inspect
@@ -39,6 +43,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
 LOG = logging.getLogger(__name__)
 
 
+@resource_extend.has_resource_extenders
 class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                    extraroute_db.ExtraRoute_db_mixin,
                    l3_gwmode_db.L3_NAT_db_mixin,
@@ -74,23 +79,23 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             self._mechanism_driver = mech_mgr.mech_drivers['apic_aim'].obj
         return self._mechanism_driver
 
-    def _extend_router_dict_apic(self, router_res, router_db):
+    @staticmethod
+    @resource_extend.extends([l3_def.ROUTERS])
+    def _extend_router_dict_apic(router_res, router_db):
         LOG.debug("APIC AIM L3 Plugin extending router dict: %s", router_res)
+        plugin = directory.get_plugin(constants.L3)
         session = inspect(router_db).session
         try:
-            self._md.extend_router_dict(session, router_db, router_res)
-            self._include_router_extn_attr(session, router_res)
+            plugin._md.extend_router_dict(session, router_db, router_res)
+            plugin._include_router_extn_attr(session, router_res)
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception("APIC AIM extend_router_dict failed")
 
-    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
-        l3.ROUTERS, ['_extend_router_dict_apic'])
-
     def create_router(self, context, router):
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
-        self._md.ensure_tenant(context, router['router']['tenant_id'])
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
+            self._md.ensure_tenant(context, router['router']['tenant_id'])
             # REVISIT(rkukura): The base operation may create a port,
             # which should generally not be done inside a
             # transaction. But we need to ensure atomicity, and are
@@ -106,7 +111,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
     def update_router(self, context, id, router):
         LOG.debug("APIC AIM L3 Plugin updating router %(id)s with: %(router)s",
                   {'id': id, 'router': router})
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             # REVISIT(rkukura): The base operation sends notification
             # RPCs, which should generally not be done inside a
             # transaction. But we need to ensure atomicity, and are
@@ -122,7 +127,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
     def delete_router(self, context, id):
         LOG.debug("APIC AIM L3 Plugin deleting router: %s", id)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             # REVISIT(rkukura): The base operation may delete ports
             # and sends notification RPCs, which should generally not
             # be done inside a transaction. But we need to ensure
@@ -147,7 +152,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         LOG.debug("APIC AIM L3 Plugin adding interface %(interface)s "
                   "to router %(router)s",
                   {'interface': interface_info, 'router': router_id})
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             # REVISIT(rkukura): The base operation may create or
             # update a port and sends notification RPCs, which should
             # generally not be done inside a transaction. But we need
@@ -200,7 +205,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         LOG.debug("APIC AIM L3 Plugin removing interface %(interface)s "
                   "from router %(router)s",
                   {'interface': interface_info, 'router': router_id})
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             # REVISIT(rkukura): The base operation may delete or
             # update a port and sends notification RPCs, which should
             # generally not be done inside a transaction. But we need
@@ -236,9 +241,9 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
     def create_floatingip(self, context, floatingip):
         fip = floatingip['floatingip']
-        # Verify that subnet is not a SNAT host-pool
-        self._md.check_floatingip_external_address(context, fip)
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
+            # Verify that subnet is not a SNAT host-pool
+            self._md.check_floatingip_external_address(context, fip)
             if fip.get('subnet_id') or fip.get('floating_ip_address'):
                 result = super(ApicL3Plugin, self).create_floatingip(
                     context, floatingip)
@@ -268,7 +273,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         return result
 
     def update_floatingip(self, context, id, floatingip):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             old_fip = self.get_floatingip(context, id)
             result = super(ApicL3Plugin, self).update_floatingip(
                 context, id, floatingip)
@@ -279,7 +284,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         return result
 
     def delete_floatingip(self, context, id):
-        with context.session.begin(subtransactions=True):
+        with db_api.context_manager.writer.using(context):
             old_fip = self.get_floatingip(context, id)
             super(ApicL3Plugin, self).delete_floatingip(context, id)
             self._md.delete_floatingip(context, old_fip)
