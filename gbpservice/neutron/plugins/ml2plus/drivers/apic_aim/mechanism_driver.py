@@ -35,10 +35,10 @@ from neutron.db.models import securitygroup as sg_models
 from neutron.db import models_v2
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
-from neutron.extensions import portbindings
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
@@ -309,6 +309,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Filters are [re]created whenever needed.
         session = plugin_context.session
         with session.begin(subtransactions=True):
+            session = plugin_context.session
             tenant_aname = self.name_mapper.project(session, project_id)
             project_name = self.project_name_cache.get_project_name(project_id)
             if project_name is None:
@@ -434,7 +435,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         dist_names = {}
         aim_ctx = aim_context.AimContext(session)
 
-        mapping = network_db.aim_mapping
+        mapping = self._get_network_mapping(session, network_db['id'])
         if mapping:
             bd = self._get_network_bd(mapping)
             dist_names[cisco_apic.BD] = bd.dn

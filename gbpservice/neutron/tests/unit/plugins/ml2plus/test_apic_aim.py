@@ -33,16 +33,15 @@ from aim import utils as aim_utils
 
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
-from neutron.callbacks import registry
 from neutron.db import api as db_api
 from neutron.db import segments_db
-from neutron.plugins.ml2 import config
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit import testlib_api
+from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
 from neutron_lib.plugins import directory
@@ -57,7 +56,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    config as aimcfg)  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
@@ -195,21 +195,20 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         # we can successfully call through to all mechanism
         # driver apis.
         mech = mechanism_drivers or ['logger', 'apic_aim']
-        config.cfg.CONF.set_override('mechanism_drivers', mech, 'ml2')
-        config.cfg.CONF.set_override('extension_drivers',
-                                     ['apic_aim', 'port_security', 'dns'],
-                                     'ml2')
-        config.cfg.CONF.set_override('api_extensions_path', None)
-        config.cfg.CONF.set_override('type_drivers',
-                                     ['opflex', 'local', 'vlan'],
-                                     'ml2')
+        cfg.CONF.set_override('mechanism_drivers', mech,
+                group='ml2')
+        cfg.CONF.set_override('extension_drivers',
+                ['apic_aim', 'port_security', 'dns'],
+                group='ml2')
+        cfg.CONF.set_override('api_extensions_path', None)
+        cfg.CONF.set_override('type_drivers',
+                ['opflex', 'local', 'vlan'], group='ml2')
         net_type = tenant_network_types or ['opflex']
-        config.cfg.CONF.set_override('tenant_network_types', net_type, 'ml2')
-        config.cfg.CONF.set_override('network_vlan_ranges',
-                                     ['physnet1:1000:1099',
-                                      'physnet2:123:165',
-                                      'physnet3:347:513'],
-                                     group='ml2_type_vlan')
+        cfg.CONF.set_override('tenant_network_types', net_type,
+                group='ml2')
+        cfg.CONF.set_override('network_vlan_ranges',
+                ['physnet1:1000:1099', 'physnet2:123:165',
+                    'physnet3:347:513'], group='ml2_type_vlan')
         service_plugins = {
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
