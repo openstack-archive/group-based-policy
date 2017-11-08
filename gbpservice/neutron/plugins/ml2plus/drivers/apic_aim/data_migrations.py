@@ -19,10 +19,13 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from alembic import util as alembic_util
 from neutron.db.models import address_scope as as_db
+from neutron.db.migration.cli import *  # noqa
 from neutron.db import models_v2
+from neutron.db import segments_db  # noqa
 from neutron_lib.db import model_base
 import sqlalchemy as sa
 
+from gbpservice.neutron.extensions import cisco_apic as ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
@@ -149,3 +152,81 @@ def do_apic_aim_persist_migration(session):
 
     alembic_util.msg(
         "Finished data migration for apic_aim mechanism driver persistence.")
+
+
+def do_ap_name_change(session, conf=None):
+    alembic_util.msg("Starting data migration for apic_aim ap name change.")
+    cfg = conf or CONF
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+    system_id = cfg.apic_system_id
+    alembic_util.msg("APIC System ID: %s" % system_id)
+    ext_mixin = extension_db.ExtensionDbMixin()
+    db_mixin = db.DbMixin()
+    with session.begin(subtransactions=True):
+        net_dbs = session.query(models_v2.Network).all()
+        for net_db in net_dbs:
+            ext_db = ext_mixin.get_network_extn_db(session, net_db.id)
+            if ext_db and ext_db[ext.EXTERNAL_NETWORK]:
+                alembic_util.msg("Migrating external network: %s" % net_db)
+                # Its a managed external network.
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    ext_db[ext.EXTERNAL_NETWORK])
+                ext_net = aim.get(aim_ctx, ext_net)
+                l3out = aim_resource.L3Outside(tenant_name=ext_net.tenant_name,
+                                               name=ext_net.l3out_name)
+                if ext_db[ext.NAT_TYPE] == '':
+                    ns_cls = nat_strategy.NoNatStrategy
+                elif ext_db[ext.NAT_TYPE] == 'edge':
+                    ns_cls = nat_strategy.EdgeNatStrategy
+                else:
+                    ns_cls = nat_strategy.DistributedNatStrategy
+                clone_ext_nets = {}
+                ns = ns_cls(aim)
+                ns.app_profile_name = 'OpenStack'
+                ns.common_scope = None
+                # Start Cleanup
+                if not isinstance(ns, nat_strategy.NoNatStrategy):
+                    l3out_clones = ns.db.get_clones(aim_ctx, l3out)
+                    # Retrieve External Networks
+                    for l3out_clone in l3out_clones:
+                        for extc in aim.find(
+                                aim_ctx, aim_resource.ExternalNetwork,
+                                tenant_name=l3out_clone[0],
+                                l3out_name=l3out_clone[1]):
+                            clone_ext_nets[(l3out.tenant_name,
+                                            l3out.name,
+                                            extc.name)] = extc
+                vrfs = ns.read_vrfs(aim_ctx, ext_net)
+                session.query(db.NetworkMapping).filter(
+                    db.NetworkMapping.network_id == net_db.id).delete()
+                for vrf in vrfs:
+                    ns.disconnect_vrf(aim_ctx, ext_net, vrf)
+                ns.delete_external_network(aim_ctx, ext_net)
+                ns.delete_l3outside(aim_ctx, l3out)
+                # Recreate
+                ns.common_scope = system_id
+                ns.create_l3outside(aim_ctx, l3out)
+                ns.create_external_network(aim_ctx, ext_net)
+                ns.update_external_cidrs(aim_ctx, ext_net,
+                                         ext_db[ext.EXTERNAL_CIDRS])
+                for subnet in net_db.subnets:
+                    aim_subnet = aim_resource.Subnet.to_gw_ip_mask(
+                        subnet.gateway_ip, int(subnet.cidr.split('/')[1]))
+                    ns.create_subnet(aim_ctx, l3out, aim_subnet)
+                for resource in ns.get_l3outside_resources(aim_ctx, l3out):
+                    if isinstance(resource, aim_resource.BridgeDomain):
+                        bd = resource
+                    elif isinstance(resource, aim_resource.EndpointGroup):
+                        epg = resource
+                    elif isinstance(resource, aim_resource.VRF):
+                        vrf = resource
+                db_mixin._add_network_mapping(session, net_db.id, bd, epg, vrf)
+                eid = (ext_net.tenant_name, ext_net.l3out_name, ext_net.name)
+                for vrf in vrfs:
+                    if eid in clone_ext_nets:
+                        ext_net.provided_contract_names = clone_ext_nets[
+                            eid].provided_contract_names
+                        ext_net.consumed_contract_names = clone_ext_nets[
+                            eid].consumed_contract_names
+                    ns.connect_vrf(aim_ctx, ext_net, vrf)
