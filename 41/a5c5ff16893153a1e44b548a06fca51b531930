@@ -1,0 +1,9 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Wed, 08 Nov 2017 15:55:09 +0000
+Reviewed-on: https://review.openstack.org/518363
+Project: openstack/group-based-policy
+Branch: refs/heads/master
