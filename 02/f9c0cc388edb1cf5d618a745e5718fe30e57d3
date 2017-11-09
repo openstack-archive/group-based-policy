@@ -1,0 +1,9 @@
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 09 Nov 2017 02:30:01 +0000
+Reviewed-on: https://review.openstack.org/518386
+Project: openstack/group-based-policy
+Branch: refs/heads/master
