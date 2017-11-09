@@ -36,6 +36,10 @@ apic_opts = [
                 help=("This will enable purging all the resources including "
                       "the tenant once a keystone project.deleted "
                       "notification is received.")),
+    cfg.BoolOpt('enable_iptables_firewall',
+                default=False,
+                help=("This will enable the iptables firewall implementation "
+                      "on those compute nodes.")),
 ]
 
 
