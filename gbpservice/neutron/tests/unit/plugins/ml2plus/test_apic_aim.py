@@ -3288,6 +3288,18 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
                          port['binding:vif_details'])
 
+    def test_bind_opflex_agent_with_firewall_enabled(self):
+        self.driver.enable_iptables_firewall = True
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        port = self._bind_port_to_host(port_id, 'host1')['port']
+        self.assertEqual('ovs', port['binding:vif_type'])
+        self.assertEqual({'port_filter': True, 'ovs_hybrid_plug': True},
+                         port['binding:vif_details'])
+
     def test_bind_unsupported_vnic_type(self):
         net = self._make_network(self.fmt, 'net1', True)
         self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
