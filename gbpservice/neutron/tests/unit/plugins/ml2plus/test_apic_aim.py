@@ -293,9 +293,10 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                       self.fmt)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
-    def _bind_dhcp_port_to_host(self, port_id, host):
+    def _bind_other_port_to_host(self, port_id, host,
+                                 owner=n_constants.DEVICE_OWNER_DHCP):
         data = {'port': {'binding:host_id': host,
-                         'device_owner': 'network:dhcp',
+                         'device_owner': owner,
                          'device_id': 'someid'}}
         # Create EP with bound port
         req = self.new_update_request('ports', data, port_id,
@@ -3695,6 +3696,45 @@ class TestPortBinding(ApicAimTestCase):
                          port['binding:vif_details'])
         self.assertEqual(n_constants.PORT_STATUS_ACTIVE, port['status'])
 
+    def test_bind_dependent_port_triggers_port_notify(self):
+        # Test that a port update to a DHCP or LBaaS port triggers a
+        # port update notification to a compute port on the same net,
+        # but not to a compute port on a different net
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        self._register_agent('host2', AGENT_CONF_OPFLEX)
+        net1 = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net1, '10.0.1.1', '10.0.1.0/24')
+        net2 = self._make_network(self.fmt, 'net2', True)
+        self._make_subnet(self.fmt, net1, '20.0.1.1', '20.0.1.0/24')
+
+        p1 = self._make_port(self.fmt, net1['network']['id'])['port']
+        p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
+        self.assertEqual(net1['network']['id'], p1['network_id'])
+        self.assertEqual('ovs', p1['binding:vif_type'])
+        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
+                         p1['binding:vif_details'])
+        p2 = self._make_port(self.fmt, net2['network']['id'])['port']
+        p2 = self._bind_port_to_host(p2['id'], 'host2')['port']
+        self.assertEqual(net2['network']['id'], p2['network_id'])
+        self.assertEqual('ovs', p2['binding:vif_type'])
+        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
+                         p2['binding:vif_details'])
+        with mock.patch.object(self.driver,
+                               '_notify_port_update_bulk') as notify:
+            p3 = self._make_port(self.fmt, net1['network']['id'],
+                device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
+            p3 = self._bind_other_port_to_host(p3['id'], 'host1',
+                owner=n_constants.DEVICE_OWNER_DHCP)['port']
+            mock_calls = [mock.call(mock.ANY, p1['id']),
+                          mock.call(mock.ANY, p1['id'])]
+            notify.has_calls(mock_calls)
+            notify.reset_mock()
+            p4 = self._make_port(self.fmt, net1['network']['id'],
+                device_owner=n_constants.DEVICE_OWNER_LOADBALANCERV2)['port']
+            p4 = self._bind_other_port_to_host(p4['id'], 'host1',
+                owner=n_constants.DEVICE_OWNER_LOADBALANCERV2)['port']
+            notify.has_calls(mock_calls)
+
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
 
@@ -3792,7 +3832,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         self.driver.dvs_notifier.reset_mock()
         p2 = self._make_port(self.fmt, net['network']['id'])['port']
         self.assertEqual(net['network']['id'], p2['network_id'])
-        newp2 = self._bind_dhcp_port_to_host(p2['id'], 'h1')
+        newp2 = self._bind_other_port_to_host(p2['id'], 'h1')
         # Called on the network's tenant
         vif_det = newp2['port']['binding:vif_details']
         self.assertIsNone(vif_det.get('dvs_port_group_name', None))
@@ -3828,7 +3868,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         p2 = self._make_port(self.fmt, net['network']['id'])['port']
         self.assertEqual(net['network']['id'], p2['network_id'])
         # Bind port to trigger path binding
-        newp2 = self._bind_dhcp_port_to_host(p2['id'], 'h1')
+        newp2 = self._bind_other_port_to_host(p2['id'], 'h1')
         # Called on the network's tenant
         vif_det = newp2['port']['binding:vif_details']
         self.assertIsNone(vif_det.get('dvs_port_group_name', None))
