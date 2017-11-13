@@ -1992,8 +1992,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                         subnet['host_routes'].append(
                             {'destination': '0.0.0.0/0',
                              'nexthop': subnet['gateway_ip']})
-                    if not metadata_route and dhcp_ips and (
-                        not self._is_metadata_optimized(plugin_context, port)):
+                    optimized = self._is_metadata_optimized(plugin_context,
+                                                            port)
+                    if not metadata_route and dhcp_ips and (not optimized or
+                            (optimized and not default_route)):
                         subnet['host_routes'].append(
                             {'destination': dhcp.METADATA_DEFAULT_CIDR,
                              'nexthop': dhcp_ips[0]})
