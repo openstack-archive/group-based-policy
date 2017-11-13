@@ -3228,46 +3228,6 @@ class TestPolicyTarget(AIMBaseTestCase):
     def test_get_gbp_details_no_pt_no_as_unrouted(self):
         self._do_test_gbp_details_no_pt(use_as=False, routed=False)
 
-    def test_notify_filtered_ports_per_network(self, pre_vrf=None):
-        l3p = self.create_l3_policy(name='myl3')['l3_policy']
-        l2p = self.create_l2_policy(name='myl2',
-                                    l3_policy_id=l3p['id'])['l2_policy']
-        ptg = self.create_policy_target_group(
-            name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
-        net_id = l2p['network_id']
-
-        pt1 = self.create_policy_target(name="pt1",
-            policy_target_group_id=ptg['id'])['policy_target']
-        pt2 = self.create_policy_target(name="pt2",
-            policy_target_group_id=ptg['id'])['policy_target']
-        pt3 = self.create_policy_target(name="pt3",
-            policy_target_group_id=ptg['id'])['policy_target']
-        with mock.patch.object(self.driver,
-                               '_send_port_update_notification') as notify:
-            ctx = self._neutron_admin_context
-            self._bind_port_to_host(pt1['port_id'], 'h1')
-            self.driver.notify_filtered_ports_per_network(ctx,
-                host='h1', network=net_id)
-            notify.assert_called_with(mock.ANY, pt1['port_id'])
-            notify.reset_mock()
-            self._bind_other_port_to_host(pt2['port_id'], 'h2')
-            self.driver.notify_filtered_ports_per_network(ctx,
-                host='h2', network=net_id)
-            notify.assert_not_called()
-            self._bind_other_port_to_host(pt3['port_id'], 'h3',
-                n_constants.DEVICE_OWNER_LOADBALANCERV2)
-            self.driver.notify_filtered_ports_per_network(ctx,
-                host='h3', network=net_id)
-            notify.assert_not_called()
-            # test non-existing host
-            self.driver.notify_filtered_ports_per_network(ctx,
-                host='h4', network=net_id)
-            notify.assert_not_called()
-            # test non-existing network
-            self.driver.notify_filtered_ports_per_network(ctx,
-                host='h3', network='foo')
-            notify.assert_not_called()
-
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
         l2p = self.create_l2_policy(name='myl2',
