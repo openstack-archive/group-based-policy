@@ -26,6 +26,8 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
+from neutron.callbacks import events
+from neutron.callbacks import registry
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import api as db_api
@@ -38,7 +40,9 @@ from neutron.db import models_v2
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
 from neutron.plugins.common import constants as pconst
+from neutron.plugins.ml2 import db as n_db
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2 import driver_context as ml2_context
 from neutron.plugins.ml2 import models
 from neutron_lib.api.definitions import portbindings
 from neutron_lib.api.definitions import provider_net as provider
@@ -66,6 +70,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
+from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
@@ -456,7 +461,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             epg.bd_name = bd.name
             self.aim.create(aim_ctx, epg)
 
-        self._add_network_mapping(session, current['id'], bd, epg, vrf)
+        self._add_network_mapping_and_notify(
+            context._plugin_context, current['id'], bd, epg, vrf)
 
     def update_network_precommit(self, context):
         current = context.current
@@ -1156,7 +1162,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     # router topology.
                     vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
-                        aim_ctx, router_topology, router_vrf, vrf,
+                        context, aim_ctx, router_topology, router_vrf, vrf,
                         nets_to_notify)
                     router_topo_moved = True
                     self._cleanup_default_vrf(aim_ctx, router_vrf)
@@ -1167,7 +1173,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     vrf = router_vrf
                     if net_intfs:
                         self._move_topology(
-                            aim_ctx, intf_topology, intf_vrf, vrf,
+                            context, aim_ctx, intf_topology, intf_vrf, vrf,
                             nets_to_notify)
                         self._cleanup_default_vrf(aim_ctx, intf_vrf)
                 else:
@@ -1382,7 +1388,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if old_vrf.identity != intf_vrf.identity:
                     intf_vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
-                        aim_ctx, intf_topology, old_vrf, intf_vrf,
+                        context, aim_ctx, intf_topology, old_vrf, intf_vrf,
                         nets_to_notify)
 
             # See if the router's topology must be moved.
@@ -1395,7 +1401,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if old_vrf.identity != router_vrf.identity:
                     router_vrf = self._ensure_default_vrf(aim_ctx, router_vrf)
                     self._move_topology(
-                        aim_ctx, router_topology, old_vrf, router_vrf,
+                        context, aim_ctx, router_topology, old_vrf, router_vrf,
                         nets_to_notify)
                     router_topo_moved = True
 
@@ -1403,7 +1409,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # network's BD unrouted.
         if not router_ids and old_vrf:
             self._dissassociate_network_from_vrf(
-                aim_ctx, network_db, old_vrf, nets_to_notify, is_svi=is_svi)
+                context, aim_ctx, network_db, old_vrf, nets_to_notify,
+                is_svi=is_svi)
             if scope_id == NO_ADDR_SCOPE:
                 self._cleanup_default_vrf(aim_ctx, old_vrf)
 
@@ -1462,7 +1469,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                       vnic_type)
             return
 
-        if port['binding:host_id'].startswith(FABRIC_HOST_ID):
+        if port[portbindings.HOST_ID].startswith(FABRIC_HOST_ID):
             for segment in context.segments_to_bind:
                 context.set_binding(segment[api.ID],
                                     VIF_TYPE_FABRIC,
@@ -1568,6 +1575,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
         self._update_sg_rule_with_remote_group_set(context, port)
+        registry.notify(sfc_cts.GBP_PORT, events.PRECOMMIT_UPDATE,
+                        self, driver_context=context)
 
     def update_port_postcommit(self, context):
         port = context.current
@@ -2083,7 +2092,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                        distinct())
         return rtr_dbs
 
-    def _associate_network_with_vrf(self, aim_ctx, network_db, new_vrf,
+    def _associate_network_with_vrf(self, ctx, aim_ctx, network_db, new_vrf,
                                     nets_to_notify, is_svi=False):
         LOG.debug("Associating previously unrouted network %(net_id)s named "
                   "'%(net_name)s' in project %(net_tenant)s with VRF %(vrf)s",
@@ -2118,7 +2127,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 bd.vrf_name = new_vrf.name
                 bd = self.aim.create(aim_ctx, bd)
                 self._set_network_bd(network_db.aim_mapping, bd)
-
                 epg = self.aim.get(aim_ctx, epg)
                 self.aim.delete(aim_ctx, epg)
                 # ensure app profile exists in destination tenant
@@ -2128,7 +2136,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self.aim.create(aim_ctx, ap)
                 epg.tenant_name = new_vrf.tenant_name
                 epg = self.aim.create(aim_ctx, epg)
-                self._set_network_epg(network_db.aim_mapping, epg)
+                self._set_network_epg_and_notify(ctx, network_db.aim_mapping,
+                                                 epg)
             else:
                 old_l3out = self.aim.get(aim_ctx, l3out)
                 l3out = copy.copy(old_l3out)
@@ -2152,7 +2161,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out = self.aim.update(aim_ctx, l3out,
                                         vrf_name=new_vrf.name)
 
-        self._set_network_vrf(network_db.aim_mapping, new_vrf)
+        self._set_network_vrf_and_notify(ctx, network_db.aim_mapping, new_vrf)
 
         # All non-router ports on this network need to be notified
         # since their BD's VRF and possibly their BD's and EPG's
@@ -2165,8 +2174,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ext_net = self._get_network_l3out_ext_net(network_db.aim_mapping)
             return l3out, ext_net
 
-    def _dissassociate_network_from_vrf(self, aim_ctx, network_db, old_vrf,
-                                        nets_to_notify, is_svi=False):
+    def _dissassociate_network_from_vrf(self, ctx, aim_ctx, network_db,
+                                        old_vrf, nets_to_notify, is_svi=False):
         LOG.debug("Dissassociating network %(net_id)s named '%(net_name)s' in "
                   "project %(net_tenant)s from VRF %(vrf)s",
                   {'net_id': network_db.id, 'net_name': network_db.name,
@@ -2204,7 +2213,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.aim.delete(aim_ctx, epg)
                 epg.tenant_name = new_tenant_name
                 epg = self.aim.create(aim_ctx, epg)
-                self._set_network_epg(network_db.aim_mapping, epg)
+                self._set_network_epg_and_notify(ctx, network_db.aim_mapping,
+                                                 epg)
             else:
                 l3out = self._get_network_l3out(network_db.aim_mapping)
                 old_l3out = self.aim.get(aim_ctx, l3out)
@@ -2231,14 +2241,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out = self.aim.update(aim_ctx, l3out,
                                         vrf_name=new_vrf.name)
 
-        self._set_network_vrf(network_db.aim_mapping, new_vrf)
+        self._set_network_vrf_and_notify(ctx, network_db.aim_mapping, new_vrf)
 
         # All non-router ports on this network need to be notified
         # since their BD's VRF and possibly their BD's and EPG's
         # Tenants have changed.
         nets_to_notify.add(network_db.id)
 
-    def _move_topology(self, aim_ctx, topology, old_vrf, new_vrf,
+    def _move_topology(self, ctx, aim_ctx, topology, old_vrf, new_vrf,
                        nets_to_notify):
         LOG.info("Moving routed networks %(topology)s from VRF "
                  "%(old_vrf)s to VRF %(new_vrf)s",
@@ -2284,7 +2294,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self.aim.delete(aim_ctx, epg)
                     epg.tenant_name = new_vrf.tenant_name
                     epg = self.aim.create(aim_ctx, epg)
-                    self._set_network_epg(network_db.aim_mapping, epg)
+                    self._set_network_epg_and_notify(
+                        ctx, network_db.aim_mapping, epg)
                 # SVI network with auto l3out
                 elif network_db.aim_mapping.l3out_name:
                     l3out = self._get_network_l3out(network_db.aim_mapping)
@@ -2312,7 +2323,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     l3out = self.aim.update(aim_ctx, l3out,
                                             vrf_name=new_vrf.name)
 
-            self._set_network_vrf(network_db.aim_mapping, new_vrf)
+            self._set_network_vrf_and_notify(ctx, network_db.aim_mapping,
+                                             new_vrf)
 
         # All non-router ports on all networks in topology need to be
         # notified since their BDs' VRFs and possibly their BDs' and
@@ -2561,10 +2573,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def get_aim_domains(self, aim_ctx):
         vmms = [{'name': x.name, 'type': x.type}
-            for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
+                for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
                 if x.type in utils.KNOWN_VMM_TYPES.values()]
         phys = [{'name': x.name}
-            for x in self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
+                for x in self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
         return vmms, phys
 
     def _is_external(self, network):
@@ -3404,3 +3416,164 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                            n_constants.DEVICE_OWNER_ROUTER_INTF).
                     all())
         return [p[0] for p in port_ids]
+
+    def _get_port_network_id(self, plugin_context, port_id):
+        port = self.plugin.get_port(plugin_context, port_id)
+        return port['network_id']
+
+    def _get_svi_net_l3out(self, network):
+        if not network.get(cisco_apic.SVI):
+            return None
+        ext_net_dn = network.get(cisco_apic.DIST_NAMES, {}).get(
+            cisco_apic.EXTERNAL_NETWORK)
+        aim_ext_net = aim_resource.ExternalNetwork.from_dn(ext_net_dn)
+        return aim_resource.L3Outside(
+            tenant_name=aim_ext_net.tenant_name, name=aim_ext_net.l3out_name)
+
+    def _get_bd_by_network_id(self, session, network_id):
+        net_mapping = self._get_network_mapping(session, network_id)
+        return self._get_network_bd(net_mapping)
+
+    def _get_epg_by_network_id(self, session, network_id):
+        net_mapping = self._get_network_mapping(session, network_id)
+        return self._get_network_epg(net_mapping)
+
+    def _get_vrf_by_network(self, session, network):
+        # TODO(ivar): SVI L3Out should be included in the network mapping
+        l3out = self._get_svi_net_l3out(network)
+        if l3out:
+            aim_ctx = aim_context.AimContext(db_session=session)
+            l3out = self.aim.get(aim_ctx, l3out)
+            # TODO(ivar): VRF could be in tenant common, there's no way of
+            # knowing it until we put the VRF in the mapping.
+            return aim_resource.VRF(tenant_name=l3out.tenant_name,
+                                    name=l3out.vrf_name)
+        net_mapping = self._get_network_mapping(session, network['id'])
+        return self._get_network_vrf(net_mapping)
+
+    def _get_port_static_path_and_encap(self, plugin_context, port):
+        port_id = port['id']
+        path = encap = None
+        if self._is_port_bound(port):
+            session = plugin_context.session
+            aim_ctx = aim_context.AimContext(db_session=session)
+            __, binding = n_db.get_locked_port_and_binding(plugin_context,
+                                                           port_id)
+            levels = n_db.get_binding_levels(plugin_context, port_id,
+                                             binding.host)
+            network = self.plugin.get_network(
+                plugin_context, port['network_id'])
+            port_context = ml2_context.PortContext(
+                self, plugin_context, port, network, binding, levels)
+            host = port_context.host
+            segment = port_context.bottom_bound_segment
+            host_link_net_labels = self.aim.find(
+                aim_ctx, aim_infra.HostLinkNetworkLabel, host_name=host,
+                network_label=segment[api.PHYSICAL_NETWORK])
+            if host_link_net_labels:
+                for hl_net_label in host_link_net_labels:
+                    interface = hl_net_label.interface_name
+                    host_link = self.aim.find(
+                        aim_ctx, aim_infra.HostLink, host_name=host,
+                        interface_name=interface)
+                    if not host_link or not host_link[0].path:
+                        LOG.warning(
+                            'No host link information found for host: '
+                            '%(host)s, interface: %(interface)s',
+                            {'host': host, 'interface': interface})
+                        continue
+                    path = host_link[0].path
+            if not path:
+                host_link = self.aim.find(aim_ctx, aim_infra.HostLink,
+                                          host_name=host)
+                if not host_link or not host_link[0].path:
+                    LOG.warning(
+                        'No host link information found for host %s', host)
+                    return None, None
+                path = host_link[0].path
+            if segment:
+                if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
+                    encap = 'vlan-%s' % segment[api.SEGMENTATION_ID]
+                else:
+                    LOG.debug('Unsupported segmentation type for static path '
+                              'binding: %s',
+                              segment.get(api.NETWORK_TYPE))
+                    encap = None
+        return path, encap
+
+    def _get_port_unique_domain(self, plugin_context, port):
+        """Get port domain
+
+        Returns a unique domain (either virtual or physical) in which the
+        specific endpoint is placed. If the domain cannot be uniquely
+        identified returns None
+
+        :param plugin_context:
+        :param port:
+        :return:
+        """
+        # TODO(ivar): at the moment, it's likely that this method won't
+        # return anything unique for the specific port. This is because we
+        # don't require users to specify domain mappings, and even if we did,
+        # such mappings are barely scoped by host, and each host could have
+        # at the very least one VMM and one Physical domain referring to it
+        # (HPB). However, every Neutron port can actually belong only to a
+        # single domain. We should implement a way to unequivocally retrieve
+        # that information.
+        session = plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        if self._is_port_bound(port):
+            host_id = port[portbindings.HOST_ID]
+            dom_mappings = (self.aim.find(aim_ctx,
+                                          aim_infra.HostDomainMappingV2,
+                                          host_name=host_id) or
+                            self.aim.find(aim_ctx,
+                                          aim_infra.HostDomainMappingV2,
+                                          host_name=DEFAULT_HOST_DOMAIN))
+            if not dom_mappings:
+                # If there's no direct mapping, get all the existing domains in
+                # AIM.
+                vmms, phys = self.get_aim_domains(aim_ctx)
+                for vmm in vmms:
+                    dom_mappings.append(
+                        aim_infra.HostDomainMappingV2(
+                            domain_type=vmm['type'], domain_name=vmm['name'],
+                            host_name=DEFAULT_HOST_DOMAIN))
+                for phy in phys:
+                    dom_mappings.append(
+                        aim_infra.HostDomainMappingV2(
+                            domain_type='PhysDom', domain_name=phy['name'],
+                            host_name=DEFAULT_HOST_DOMAIN))
+            if not dom_mappings or len(dom_mappings) > 1:
+                return None, None
+            return dom_mappings[0].domain_type, dom_mappings[0].domain_name
+        return None, None
+
+    def _add_network_mapping_and_notify(self, context, network_id, bd, epg,
+                                        vrf):
+        with db_api.context_manager.writer.using(context):
+            self._add_network_mapping(context.session, network_id, bd, epg,
+                                      vrf)
+            registry.notify(sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+                            self, context=context, network_id=network_id)
+
+    def _set_network_epg_and_notify(self, context, mapping, epg):
+        with db_api.context_manager.writer.using(context):
+            self._set_network_epg(mapping, epg)
+            registry.notify(sfc_cts.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE,
+                            self, context=context,
+                            network_id=mapping.network_id)
+
+    def _set_network_vrf_and_notify(self, context, mapping, vrf):
+        with db_api.context_manager.writer.using(context):
+            self._set_network_vrf(mapping, vrf)
+            registry.notify(sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+                            self, context=context,
+                            network_id=mapping.network_id)
+
+    def _set_network_l3out_and_notify(self, context, mapping, l3out):
+        with db_api.context_manager.writer.using(context):
+            self._set_network_l3out(mapping, l3out)
+            registry.notify(sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+                            self, context=context,
+                            network_id=mapping.network_id)
