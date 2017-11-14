@@ -61,6 +61,8 @@ from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (  # noqa
 from gbpservice.neutron.tests.unit.services.grouppolicy.drivers import (  # noqa
     extension_test
 )
+from networking_sfc.db import flowclassifier_db  # noqa
+from networking_sfc.db import sfc_db  # noqa
 
 # Note that the models in gbpservice.nfp.orchestrator.db.nfp_db_model
 # are managed by a separate fixture, so are not imported here.
