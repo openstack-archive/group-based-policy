@@ -303,6 +303,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         return self.deserialize(self.fmt,
                                 req.get_response(self.api))['subnet']
 
+    def _show_port(self, id):
+        req = self.new_show_request('ports', id, fmt=self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))['port']
+
     def _show_subnetpool(self, id):
         req = self.new_show_request('subnetpools', id, fmt=self.fmt)
         return self.deserialize(self.fmt,
