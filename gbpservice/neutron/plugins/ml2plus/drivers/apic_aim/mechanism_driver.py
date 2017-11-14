@@ -25,6 +25,8 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
+from neutron.callbacks import events
+from neutron.callbacks import registry
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron import context as nctx
@@ -39,7 +41,9 @@ from neutron.db import segments_db
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.common import constants as pconst
+from neutron.plugins.ml2 import db as n_db
 from neutron.plugins.ml2 import driver_api as api
+from neutron.plugins.ml2 import driver_context as ml2_context
 from neutron.plugins.ml2 import models
 from neutron_lib import constants as n_constants
 from neutron_lib import exceptions as n_exceptions
@@ -66,6 +70,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
@@ -1292,7 +1297,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                       vnic_type)
             return
 
-        if port['binding:host_id'].startswith(FABRIC_HOST_ID):
+        if port[portbindings.HOST_ID].startswith(FABRIC_HOST_ID):
             for segment in context.segments_to_bind:
                 context.set_binding(segment[api.ID],
                                     VIF_TYPE_FABRIC,
@@ -1398,6 +1403,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
         self._update_sg_rule_with_remote_group_set(context, port)
+        registry.notify(sfc_cts.GBP_PORT, events.PRECOMMIT_UPDATE,
+                        self, driver_context=context)
 
     def update_port_postcommit(self, context):
         port = context.current
@@ -3003,3 +3010,115 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                            n_constants.DEVICE_OWNER_ROUTER_INTF).
                     all())
         return [p[0] for p in port_ids]
+
+    def _get_port_network_id(self, plugin_context, port_id):
+        port = self.plugin.get_port(plugin_context, port_id)
+        return port['network_id']
+
+    def _get_net_l3out(self, external_network):
+        ext_net_dn = (external_network.get(cisco_apic.DIST_NAMES, {})
+                      .get(cisco_apic.EXTERNAL_NETWORK))
+        if not ext_net_dn:
+            return None
+        aim_ext_net = aim_resource.ExternalNetwork.from_dn(ext_net_dn)
+        return aim_resource.L3Outside(
+            tenant_name=aim_ext_net.tenant_name, name=aim_ext_net.l3out_name)
+
+    def _get_port_bd(self, session, port):
+        net_mapping = self._get_network_mapping(session, port['network_id'])
+        return self._get_network_bd(net_mapping)
+
+    def _get_epg_by_network_id(self, session, network_id):
+        net_mapping = self._get_network_mapping(session, network_id)
+        return self._get_network_epg(net_mapping)
+
+    def _get_vrf_by_network_id(self, session, network_id):
+        net_mapping = self._get_network_mapping(session, network_id)
+        return self._get_network_vrf(net_mapping)
+
+    def _get_network_by_port_id(self, plugin_context, port_id):
+        port = self.plugin.get_port(plugin_context, port_id)
+        return self.plugin.get_network(plugin_context, port['network_id'])
+
+    def _get_port_static_path_and_encap(self, plugin_context, port):
+        port_id = port['id']
+        path = encap = None
+        if self._is_port_bound(port):
+            session = plugin_context.session
+            aim_ctx = aim_context.AimContext(db_session=session)
+            __, binding = n_db.get_locked_port_and_binding(session, port_id)
+            levels = n_db.get_binding_levels(session, port_id, binding.host)
+            network = self.plugin.get_network(
+                plugin_context, port['network_id'])
+            port_context = ml2_context.PortContext(
+                self, plugin_context, port, network, binding, levels)
+            host = port_context.host
+            segment = port_context.bottom_bound_segment
+            host_link_net_labels = self.aim.find(
+                aim_ctx, aim_infra.HostLinkNetworkLabel, host_name=host,
+                network_label=segment[api.PHYSICAL_NETWORK])
+            if host_link_net_labels:
+                for hl_net_label in host_link_net_labels:
+                    interface = hl_net_label.interface_name
+                    host_link = self.aim.find(
+                        aim_ctx, aim_infra.HostLink, host_name=host,
+                        interface_name=interface)
+                    if not host_link or not host_link[0].path:
+                        LOG.warning(
+                            _('No host link information found for host: '
+                                '%(host)s, interface: %(interface)s'),
+                            {'host': host, 'interface': interface})
+                        continue
+                    path = host_link[0].path
+            if not path:
+                host_link = self.aim.find(aim_ctx, aim_infra.HostLink,
+                                          host_name=host)
+                if not host_link or not host_link[0].path:
+                    LOG.warning(
+                        _('No host link information found for host %s'),
+                        host)
+                    return None, None
+                path = host_link[0].path
+            if segment:
+                if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
+                    encap = 'vlan-%s' % segment[api.SEGMENTATION_ID]
+                else:
+                    LOG.debug('Unsupported segmentation type for static path '
+                              'binding: %s',
+                              segment.get(api.NETWORK_TYPE))
+                    encap = None
+        return path, encap
+
+    def _get_port_unique_domain(self, plugin_context, port):
+        """Get port domain
+
+        Returns a unique domain (either virtual or physical) in which the
+        specific endpoint is placed. If the domain cannot be uniquely
+        identified returns None
+
+        :param plugin_context:
+        :param port:
+        :return:
+        """
+        # TODO(ivar): at the moment, it's likely that this method won't
+        # return anything unique for the specific port. This is because we
+        # don't require users to specify domain mappings, and even if we did,
+        # such mappings are barely scoped by host, and each host could have
+        # at the very least one VMM and one Physical domain referring to it
+        # (HPB). However, every Neutron port can actually belong only to a
+        # single domain. We should implement a way to unequivocally retrieve
+        # that information.
+        session = plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        if self._is_port_bound(port):
+            host_id = port[portbindings.HOST_ID]
+            dom_mappings = (self.aim.find(aim_ctx,
+                                          aim_infra.HostDomainMappingV2,
+                                          host_name=host_id) or
+                            self.aim.find(aim_ctx,
+                                          aim_infra.HostDomainMappingV2,
+                                          host_name=DEFAULT_HOST_DOMAIN))
+            if not dom_mappings or len(dom_mappings) > 1:
+                return None, None
+            return dom_mappings[0].domain_type, dom_mappings[0].domain_name
+        return None, None
