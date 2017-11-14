@@ -25,6 +25,8 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
+from neutron.callbacks import events
+from neutron.callbacks import registry
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron import context as nctx
@@ -66,6 +68,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
@@ -1357,6 +1360,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
         self._update_sg_rule_with_remote_group_set(context, port)
+        registry.notify(sfc_cts.GBP_PORT, events.PRECOMMIT_UPDATE,
+                        self, driver_context=context)
 
     def update_port_postcommit(self, context):
         port = context.current
