@@ -20,6 +20,7 @@ from neutron_lib import context as lib_context
 # Revisit for Pike.
 lib_context.db_api = db_api
 
+
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
@@ -36,7 +37,6 @@ from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib.api import validators
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
-from oslo_utils import uuidutils
 from sqlalchemy import event
 from sqlalchemy.orm import exc
 
@@ -450,3 +450,120 @@ def _delete_address_scope(self, context, id):
 
 address_scope_db.AddressScopeDbMixin.delete_address_scope = (
     _delete_address_scope)
+
+try:
+    import six
+    import sys
+
+    from networking_sfc.db import flowclassifier_db
+    from networking_sfc.db import sfc_db
+    from networking_sfc.extensions import flowclassifier as fc_ext
+    from neutron.services.trunk import constants
+    from oslo_utils import uuidutils
+
+    from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
+
+    if 'flowclassifier' in sys.modules:
+        sys.modules['flowclassifier'].SUPPORTED_L7_PARAMETERS.update(
+            sfc_cts.AIM_FLC_L7_PARAMS)
+    if 'networking_sfc.extensions.flowclassifier' in sys.modules:
+        sys.modules[
+            ('networking_sfc.extensions.'
+             'flowclassifier')].SUPPORTED_L7_PARAMETERS.update(
+            sfc_cts.AIM_FLC_L7_PARAMS)
+    # REVISIT(ivar): The following diff will fix flow classifier creation
+    # method when using L7 parameters.
+    # -            key: L7Parameter(key, val)
+    # +            key: L7Parameter(keyword=key, value=val)
+    # Also, make sure classifiers with different l7 params are not considered
+    # conflicting
+
+    def create_flow_classifier(self, context, flow_classifier):
+        fc = flow_classifier['flow_classifier']
+        tenant_id = fc['tenant_id']
+        l7_parameters = {
+            key: flowclassifier_db.L7Parameter(keyword=key, value=val)
+            for key, val in six.iteritems(fc['l7_parameters'])}
+        ethertype = fc['ethertype']
+        protocol = fc['protocol']
+        source_port_range_min = fc['source_port_range_min']
+        source_port_range_max = fc['source_port_range_max']
+        self._check_port_range_valid(source_port_range_min,
+                                     source_port_range_max,
+                                     protocol)
+        destination_port_range_min = fc['destination_port_range_min']
+        destination_port_range_max = fc['destination_port_range_max']
+        self._check_port_range_valid(destination_port_range_min,
+                                     destination_port_range_max,
+                                     protocol)
+        source_ip_prefix = fc['source_ip_prefix']
+        self._check_ip_prefix_valid(source_ip_prefix, ethertype)
+        destination_ip_prefix = fc['destination_ip_prefix']
+        self._check_ip_prefix_valid(destination_ip_prefix, ethertype)
+        logical_source_port = fc['logical_source_port']
+        logical_destination_port = fc['logical_destination_port']
+        with context.session.begin(subtransactions=True):
+            if logical_source_port is not None:
+                self._get_port(context, logical_source_port)
+            if logical_destination_port is not None:
+                self._get_port(context, logical_destination_port)
+            query = self._model_query(
+                context, flowclassifier_db.FlowClassifier)
+            for flow_classifier_db in query.all():
+                if self.flowclassifier_conflict(
+                    fc,
+                    flow_classifier_db
+                ):
+                    # REVISIT(ivar): Conflict considers l7_parameters
+                    if (validators.is_attr_set(fc['l7_parameters']) and
+                        validators.is_attr_set(
+                            flow_classifier_db['l7_parameters'])):
+                        if (fc['l7_parameters'] ==
+                                flow_classifier_db['l7_parameters']):
+                            raise fc_ext.FlowClassifierInConflict(
+                                id=flow_classifier_db['id']
+                            )
+            flow_classifier_db = flowclassifier_db.FlowClassifier(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=fc['name'],
+                description=fc['description'],
+                ethertype=ethertype,
+                protocol=protocol,
+                source_port_range_min=source_port_range_min,
+                source_port_range_max=source_port_range_max,
+                destination_port_range_min=destination_port_range_min,
+                destination_port_range_max=destination_port_range_max,
+                source_ip_prefix=source_ip_prefix,
+                destination_ip_prefix=destination_ip_prefix,
+                logical_source_port=logical_source_port,
+                logical_destination_port=logical_destination_port,
+                l7_parameters=l7_parameters
+            )
+            context.session.add(flow_classifier_db)
+            return self._make_flow_classifier_dict(flow_classifier_db)
+    flowclassifier_db.FlowClassifierDbPlugin.create_flow_classifier = (
+        create_flow_classifier)
+
+    # NOTE(ivar): Trunk subports don't have a device ID, we need this
+    # validation to pass
+    def _validate_port_pair_ingress_egress(self, ingress, egress):
+        if any(port.get('device_owner') == constants.TRUNK_SUBPORT_OWNER
+               for port in [ingress, egress]):
+            return
+        if 'device_id' not in ingress or not ingress['device_id']:
+            raise sfc_db.ext_sfc.PortPairIngressNoHost(
+                ingress=ingress['id']
+            )
+        if 'device_id' not in egress or not egress['device_id']:
+            raise sfc_db.ext_sfc.PortPairEgressNoHost(
+                egress=egress['id']
+            )
+        if ingress['device_id'] != egress['device_id']:
+            raise sfc_db.ext_sfc.PortPairIngressEgressDifferentHost(
+                ingress=ingress['id'],
+                egress=egress['id'])
+    sfc_db.SfcDbPlugin._validate_port_pair_ingress_egress = (
+        _validate_port_pair_ingress_egress)
+except ImportError:
+    pass
