@@ -174,7 +174,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         vm.name = 'someid'
         nova_client.return_value = vm
 
-        self.extension_attributes = ('router:external', DN,
+        self.extension_attributes = ('router:external', DN, 'apic:svi',
                                      'apic:nat_type', 'apic:snat_host_pool',
                                      CIDR, PROV, CONS)
         # REVISIT: Note that the aim_driver sets create_auto_ptg to
@@ -293,6 +293,15 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         req = self.new_show_request('subnets', id, fmt=self.fmt)
         return self.deserialize(self.fmt,
                                 req.get_response(self.api))['subnet']
+
+    def _show_port(self, id):
+        req = self.new_show_request('ports', id, fmt=self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))['port']
+
+    def _show_network(self, id):
+        req = self.new_show_request('networks', id, fmt=self.fmt)
+        return self.deserialize(self.fmt,
+                                req.get_response(self.api))['network']
 
     def _show_subnetpool(self, id):
         req = self.new_show_request('subnetpools', id, fmt=self.fmt)
