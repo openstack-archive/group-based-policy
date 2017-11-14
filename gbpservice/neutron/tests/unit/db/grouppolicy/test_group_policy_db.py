@@ -38,6 +38,8 @@ from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
 import gbpservice.neutron.tests
 from gbpservice.neutron.tests.unit import common as cm
+from networking_sfc.extensions import flowclassifier
+from networking_sfc.extensions import sfc
 
 
 JSON_FORMAT = 'json'
@@ -80,32 +82,34 @@ class ApiManagerMixin(object):
                          sorted([i[resource]['id'] for i in items]))
 
     def _create_resource(self, type, expected_res_status=None,
-                         is_admin_context=False, **kwargs):
+                         is_admin_context=False, deserialize=True, **kwargs):
         plural = cm.get_resource_plural(type)
-        defaults = getattr(cm,
-                           'get_create_%s_default_attrs' % type)()
-        defaults.update(kwargs)
+        type = type.split('/')[-1]
+        try:
+            defaults = getattr(cm, 'get_create_%s_default_attrs' % type)()
+            defaults.update(kwargs)
+        except AttributeError:
+            defaults = kwargs
 
         data = {type: {'tenant_id': self._tenant_id}}
         data[type].update(defaults)
-
         req = self.new_create_request(plural, data, self.fmt)
         req.environ['neutron.context'] = context.Context(
             '', kwargs.get('tenant_id', self._tenant_id) if not
             is_admin_context else self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
-
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
-        elif res.status_int >= webob.exc.HTTPClientError.code:
+        elif deserialize and res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
 
-        return self.deserialize(self.fmt, res)
+        return self.deserialize(self.fmt, res) if deserialize else res
 
-    def _update_resource(
-            self, id, type, expected_res_status=None, is_admin_context=False,
-            api=None, **kwargs):
+    def _update_resource(self, id, type, expected_res_status=None,
+                         is_admin_context=False, api=None, deserialize=True,
+                         **kwargs):
         plural = cm.get_resource_plural(type)
+        type = type.split('/')[-1]
         data = {type: kwargs}
         tenant_id = kwargs.pop('tenant_id', self._tenant_id)
         # Create PT with bound port
@@ -117,12 +121,13 @@ class ApiManagerMixin(object):
 
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
-        elif res.status_int >= webob.exc.HTTPClientError.code:
+        elif deserialize and res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
-        return self.deserialize(self.fmt, res)
+        return self.deserialize(self.fmt, res) if deserialize else res
 
     def _show_resource(self, id, plural, expected_res_status=None,
-                       is_admin_context=False, tenant_id=None):
+                       is_admin_context=False, tenant_id=None,
+                       deserialize=True):
         req = self.new_show_request(plural, id, fmt=self.fmt)
         req.environ['neutron.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
@@ -130,22 +135,23 @@ class ApiManagerMixin(object):
 
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
-        elif res.status_int >= webob.exc.HTTPClientError.code:
+        elif deserialize and res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
-        return self.deserialize(self.fmt, res)
+        return self.deserialize(self.fmt, res) if deserialize else res
 
     def _delete_resource(self, id, plural, is_admin_context=False,
-                         expected_res_status=None, tenant_id=None):
+                         expected_res_status=None, tenant_id=None,
+                         deserialize=True):
         req = self.new_delete_request(plural, id)
         req.environ['neutron.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
-        elif res.status_int >= webob.exc.HTTPClientError.code:
+        elif deserialize and res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
         if res.status_int != 204:
-            return self.deserialize(self.fmt, res)
+            return self.deserialize(self.fmt, res) if deserialize else res
 
     def _get_object(self, type, id, api, expected_res_status=None):
         req = self.new_show_request(type, id, self.fmt)
@@ -214,15 +220,30 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         def _is_gbp_resource(plural):
             return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
 
+        def _is_sfc_resource(plural):
+            return plural in sfc.RESOURCE_ATTRIBUTE_MAP
+
+        def _is_flowc_resource(plural):
+            return plural in flowclassifier.RESOURCE_ATTRIBUTE_MAP
+
         def _is_valid_resource(plural):
-            return _is_gbp_resource(plural) or _is_sc_resource(plural)
+            return (_is_gbp_resource(plural) or _is_sc_resource(plural) or
+                    _is_flowc_resource(plural) or _is_sfc_resource(plural))
+
+        def _get_prefix(plural):
+            if _is_flowc_resource(plural) or _is_sfc_resource(plural):
+                return 'sfc/'
+            return ''
+
         # Update Method
         if item.startswith('update_'):
             resource = item[len('update_'):]
             plural = cm.get_resource_plural(resource)
             if _is_valid_resource(plural):
+                r = _get_prefix(plural) + resource
+
                 def update_wrapper(id, **kwargs):
-                    return self._update_resource(id, resource, **kwargs)
+                    return self._update_resource(id, r, **kwargs)
                 return update_wrapper
         # Show Method
         if item.startswith('show_'):
@@ -230,7 +251,8 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
             plural = cm.get_resource_plural(resource)
             if _is_valid_resource(plural):
                 def show_wrapper(id, **kwargs):
-                    return self._show_resource(id, plural, **kwargs)
+                    p = _get_prefix(plural) + plural
+                    return self._show_resource(id, p, **kwargs)
                 return show_wrapper
         # Create Method
         if item.startswith('create_'):
@@ -238,7 +260,8 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
             plural = cm.get_resource_plural(resource)
             if _is_valid_resource(plural):
                 def create_wrapper(**kwargs):
-                    return self._create_resource(resource, **kwargs)
+                    r = _get_prefix(plural) + resource
+                    return self._create_resource(r, **kwargs)
                 return create_wrapper
         # Delete Method
         if item.startswith('delete_'):
@@ -246,7 +269,8 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
             plural = cm.get_resource_plural(resource)
             if _is_valid_resource(plural):
                 def delete_wrapper(id, **kwargs):
-                    return self._delete_resource(id, plural, **kwargs)
+                    p = _get_prefix(plural) + plural
+                    return self._delete_resource(id, p, **kwargs)
                 return delete_wrapper
 
         raise AttributeError
@@ -350,6 +374,9 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                 'gp_plugin_name': gp_plugin,
                 'sc_plugin_name': sc_plugin}
 
+        # Always install SFC plugin for convenience
+        service_plugins['sfc_plugin_name'] = 'sfc'
+        service_plugins['flowc_plugin_name'] = 'flow_classifier'
         extensions.append_api_extensions_path(
             gbpservice.neutron.extensions.__path__)
         service_plugins['flavors_plugin_name'] =\
