@@ -27,6 +27,11 @@ L3_POLICY_TYPE_TAG = 'l3p'
 POLICY_RULE_SET_TYPE_TAG = 'prs'
 POLICY_RULE_TYPE_TAG = 'pr'
 APPLICATION_POLICY_GROUP_TYPE_TAG = 'apg'
+PORT_PAIR_GROUP_TYPE_TAG = 'ppg'
+PORT_PAIR_TYPE_TAG = 'pp'
+PORT_TYPE_TAG = 'prt'
+FLOW_CLASSIFIER_TYPE_TAG = 'flc'
+PORT_CHAIN_TYPE_TAG = 'ptc'
 
 
 class APICNameMapper(object):
@@ -97,6 +102,38 @@ class APICNameMapper(object):
         self, session, name, prefix="", enforce=True):
         return self._unmap(
             session, name, APPLICATION_POLICY_GROUP_TYPE_TAG, prefix, enforce)
+
+    def port_pair_group(self, session, id, prefix=""):
+        return self._map(session, id, PORT_PAIR_GROUP_TYPE_TAG, prefix)
+
+    def reverse_port_pair_group(self, session, name, prefix="", enforce=True):
+        return self._unmap(session, name, PORT_PAIR_GROUP_TYPE_TAG, prefix,
+                           enforce)
+
+    def port_pair(self, session, id, prefix=""):
+        return self._map(session, id, PORT_PAIR_TYPE_TAG, prefix)
+
+    def reverse_port_pair(self, session, name, prefix="", enforce=True):
+        return self._unmap(session, name, PORT_PAIR_TYPE_TAG, prefix, enforce)
+
+    def port(self, session, id, prefix=""):
+        return self._map(session, id, PORT_TYPE_TAG, prefix)
+
+    def reverse_port(self, session, name, prefix="", enforce=True):
+        return self._unmap(session, name, PORT_TYPE_TAG, prefix, enforce)
+
+    def flow_classifier(self, session, id, prefix=""):
+        return self._map(session, id, FLOW_CLASSIFIER_TYPE_TAG, prefix)
+
+    def reverse_flow_classifier(self, session, name, prefix="", enforce=True):
+        return self._unmap(session, name, FLOW_CLASSIFIER_TYPE_TAG, prefix,
+                           enforce)
+
+    def port_chain(self, session, id, prefix=""):
+        return self._map(session, id, PORT_CHAIN_TYPE_TAG, prefix)
+
+    def reverse_port_chain(self, session, name, prefix="", enforce=True):
+        return self._unmap(session, name, PORT_CHAIN_TYPE_TAG, prefix, enforce)
 
     def _map(self, session, id, type_tag, prefix):
         return ("%(prefix)s%(type_tag)s_%(id)s" %
