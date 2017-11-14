@@ -349,6 +349,9 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                 'gp_plugin_name': gp_plugin,
                 'sc_plugin_name': sc_plugin}
 
+        # Always install SFC plugin for convenience
+        service_plugins['sfc_plugin_name'] = 'sfc'
+        service_plugins['flowc_plugin_name'] = 'flow_classifier'
         extensions.append_api_extensions_path(
             gbpservice.neutron.extensions.__path__)
         super(GroupPolicyDbTestCase, self).setUp(
