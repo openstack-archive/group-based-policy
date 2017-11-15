@@ -66,16 +66,13 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
 
-# REVISIT(rkukura): Consider making these APIC name constants
-# configurable, although changing them would break an existing
-# deployment.
-
 ANY_FILTER_NAME = 'AnyFilter'
 ANY_FILTER_ENTRY_NAME = 'AnyFilterEntry'
 DEFAULT_VRF_NAME = 'DefaultVRF'
 UNROUTED_VRF_NAME = 'UnroutedVRF'
 COMMON_TENANT_NAME = 'common'
 ROUTER_SUBJECT_NAME = 'route'
+DEFAULT_SG_NAME = 'DefaultSecurityGroup'
 
 AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
@@ -87,7 +84,6 @@ FABRIC_HOST_ID = 'fabric'
 NO_ADDR_SCOPE = object()
 
 DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
-GBP_DEFAULT = 'gbp_default'
 DEFAULT_HOST_DOMAIN = '*'
 
 
@@ -201,43 +197,53 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
-        self._setup_default_arp_security_group_rules()
+        self._ensure_static_resources()
 
-    def _setup_default_arp_security_group_rules(self):
+    def _ensure_static_resources(self):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
-        sg = aim_resource.SecurityGroup(
-            tenant_name=COMMON_TENANT_NAME, name=GBP_DEFAULT)
-        try:
-            self.aim.create(aim_ctx, sg, overwrite=True)
-        except db_exc.DBNonExistentTable as e:
-            # This is expected in the UT env. but will never
-            # happen in the real fab.
-            LOG.error(e)
-            return
+        self._ensure_common_tenant(aim_ctx)
+        self._ensure_unrouted_vrf(aim_ctx)
+        self._ensure_any_filter(aim_ctx)
+        self._setup_default_arp_security_group_rules(aim_ctx)
 
+    def _setup_default_arp_security_group_rules(self, aim_ctx):
+        sg_name = self._default_sg_name
+        dname = aim_utils.sanitize_display_name('DefaultSecurityGroup')
+        sg = aim_resource.SecurityGroup(
+            tenant_name=COMMON_TENANT_NAME, name=sg_name, display_name=dname)
+        self.aim.create(aim_ctx, sg, overwrite=True)
+
+        dname = aim_utils.sanitize_display_name('DefaultSecurityGroupSubject')
         sg_subject = aim_resource.SecurityGroupSubject(
             tenant_name=COMMON_TENANT_NAME,
-            security_group_name=GBP_DEFAULT, name='default')
+            security_group_name=sg_name, name='default', display_name=dname)
         self.aim.create(aim_ctx, sg_subject, overwrite=True)
 
+        dname = aim_utils.sanitize_display_name(
+            'DefaultSecurityGroupEgressRule')
         arp_egress_rule = aim_resource.SecurityGroupRule(
             tenant_name=COMMON_TENANT_NAME,
-            security_group_name=GBP_DEFAULT,
+            security_group_name=sg_name,
             security_group_subject_name='default',
             name='arp_egress',
+            display_name=dname,
             direction='egress',
             ethertype='arp',
             conn_track='normal')
+        self.aim.create(aim_ctx, arp_egress_rule, overwrite=True)
+
+        dname = aim_utils.sanitize_display_name(
+            'DefaultSecurityGroupIngressRule')
         arp_ingress_rule = aim_resource.SecurityGroupRule(
             tenant_name=COMMON_TENANT_NAME,
-            security_group_name=GBP_DEFAULT,
+            security_group_name=sg_name,
             security_group_subject_name='default',
             name='arp_ingress',
+            display_name=dname,
             direction='ingress',
             ethertype='arp',
             conn_track='normal')
-        self.aim.create(aim_ctx, arp_egress_rule, overwrite=True)
         self.aim.create(aim_ctx, arp_ingress_rule, overwrite=True)
 
     def _setup_keystone_notification_listeners(self):
@@ -316,7 +322,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             bd, epg = self._map_network(session, current)
 
             dname = aim_utils.sanitize_display_name(current['name'])
-            vrf = self._ensure_unrouted_vrf(aim_ctx)
+            vrf = self._map_unrouted_vrf()
 
             bd.display_name = dname
             bd.vrf_name = vrf.name
@@ -667,8 +673,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
-        filter = self._ensure_any_filter(aim_ctx)
-
         contract, subject = self._map_router(session, current)
 
         dname = aim_utils.sanitize_display_name(current['name'])
@@ -677,7 +681,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim.create(aim_ctx, contract)
 
         subject.display_name = dname
-        subject.bi_filters = [filter.name]
+        subject.bi_filters = [self._any_filter_name]
         self.aim.create(aim_ctx, subject)
 
         # External-gateway information about the router will be handled
@@ -2197,7 +2201,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return tenant
 
     def _ensure_unrouted_vrf(self, aim_ctx):
-        self._ensure_common_tenant(aim_ctx)
         attrs = self._map_unrouted_vrf()
         vrf = self.aim.get(aim_ctx, attrs)
         if not vrf:
@@ -2208,9 +2211,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return vrf
 
     def _ensure_any_filter(self, aim_ctx):
-        self._ensure_common_tenant(aim_ctx)
-
-        filter_name = self.apic_system_id + '_' + ANY_FILTER_NAME
+        filter_name = self._any_filter_name
         dname = aim_utils.sanitize_display_name("AnyFilter")
         filter = aim_resource.Filter(tenant_name=COMMON_TENANT_NAME,
                                      name=filter_name,
@@ -2229,6 +2230,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.aim.create(aim_ctx, entry)
 
         return filter
+
+    @property
+    def _any_filter_name(self):
+        return self.apic_system_id + '_' + ANY_FILTER_NAME
+
+    @property
+    def _default_sg_name(self):
+        return self.apic_system_id + '_' + DEFAULT_SG_NAME
 
     def _ensure_default_vrf(self, aim_ctx, attrs):
         vrf = self.aim.get(aim_ctx, attrs)
