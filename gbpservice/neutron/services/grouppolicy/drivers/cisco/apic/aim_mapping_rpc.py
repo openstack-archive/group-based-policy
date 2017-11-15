@@ -220,8 +220,9 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                 {'policy-space': details['ptg_tenant'],
                  'name': sg_id})
         # Always include this SG which has the default arp & dhcp rules
-        details['security_group'].append({'policy-space': 'common',
-                                          'name': 'gbp_default'})
+        details['security_group'].append(
+            {'policy-space': 'common',
+             'name': self.aim_mech_driver._default_sg_name})
 
     # Child class needs to support:
     # - self._get_subnet_details(context, port, details)
