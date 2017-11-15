@@ -14,6 +14,7 @@
 #    under the License.
 
 import copy
+import fixtures
 import mock
 import netaddr
 import six
@@ -27,6 +28,7 @@ from aim.api import status as aim_status
 from aim import config as aim_cfg
 from aim import context as aim_context
 from aim.db import model_base as aim_model_base
+from aim.db import models as aim_models  # noqa
 from aim import utils as aim_utils
 
 from keystoneclient.v3 import client as ksc_client
@@ -41,6 +43,7 @@ from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
+from neutron.tests.unit import testlib_api
 from neutron_lib import constants as n_constants
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
@@ -125,7 +128,29 @@ class FakeKeystoneClient(object):
         self.projects = FakeProjectManager()
 
 
-# TODO(rkukura): Also run Neutron L3 tests on apic_aim L3 plugin.
+class AimSqlFixture(fixtures.Fixture):
+
+    # Flag to indicate that the models have been loaded.
+    _AIM_TABLES_ESTABLISHED = False
+
+    def _setUp(self):
+        # Ensure Neutron has done its setup first.
+        self.useFixture(testlib_api.StaticSqlFixture())
+
+        # Register all data models.
+        engine = db_api.context_manager.writer.get_engine()
+        if not AimSqlFixture._AIM_TABLES_ESTABLISHED:
+            aim_model_base.Base.metadata.create_all(engine)
+            AimSqlFixture._AIM_TABLES_ESTABLISHED = True
+
+        def clear_tables():
+            with engine.begin() as conn:
+                for table in reversed(
+                        aim_model_base.Base.metadata.sorted_tables):
+                    conn.execute(table.delete())
+
+        self.addCleanup(clear_tables)
+
 
 class ApicAimTestMixin(object):
 
@@ -188,10 +213,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
 
+        self.useFixture(AimSqlFixture())
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
                                            service_plugins=service_plugins)
-        engine = db_api.context_manager.writer.get_engine()
-        aim_model_base.Base.metadata.create_all(engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
 
@@ -229,11 +253,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                         'dhcp_agent_scheduler')
 
     def tearDown(self):
-        engine = db_api.context_manager.writer.get_engine()
-        with engine.begin() as conn:
-            for table in reversed(
-                aim_model_base.Base.metadata.sorted_tables):
-                conn.execute(table.delete())
         ksc_client.Client = self.saved_keystone_client
         # We need to do the following to avoid non-aim tests
         # picking up the patched version of the method in patch_neutron
@@ -327,37 +346,48 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             raise webob.exc.HTTPClientError(code=res.status_int)
         return self.deserialize(self.fmt, res)
 
-    def _get_sg(self, sg_id, tenant_name):
+    def _get_sg(self, sg_name, tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
-                                        name=sg_id)
+                                        name=sg_name)
         sg = self.aim_mgr.get(aim_ctx, sg)
         self.assertIsNotNone(sg)
         return sg
 
-    def _sg_should_not_exist(self, sg_id):
+    def _sg_should_not_exist(self, sg_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         sgs = self.aim_mgr.find(
-            aim_ctx, aim_resource.SecurityGroup, name=sg_id)
+            aim_ctx, aim_resource.SecurityGroup, name=sg_name)
         self.assertEqual([], sgs)
 
-    def _get_sg_rule(self, sg_id, sg_rule_id, tenant_name):
+    def _get_sg_subject(self, sg_subject_name, sg_name, tenant_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg_subject = aim_resource.SecurityGroupSubject(
+            tenant_name=tenant_name, security_group_name=sg_name,
+            name=sg_subject_name)
+        sg_subject = self.aim_mgr.get(aim_ctx, sg_subject)
+        self.assertIsNotNone(sg_subject)
+        return sg_subject
+
+    def _get_sg_rule(self, sg_rule_name, sg_subject_name, sg_name,
+                     tenant_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         sg_rule = aim_resource.SecurityGroupRule(
-            tenant_name=tenant_name, security_group_name=sg_id,
-            security_group_subject_name='default', name=sg_rule_id)
+            tenant_name=tenant_name, security_group_name=sg_name,
+            security_group_subject_name=sg_subject_name, name=sg_rule_name)
         sg_rule = self.aim_mgr.get(aim_ctx, sg_rule)
         self.assertIsNotNone(sg_rule)
         return sg_rule
 
-    def _sg_rule_should_not_exist(self, sg_rule_id):
+    def _sg_rule_should_not_exist(self, sg_rule_name):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         sg_rules = self.aim_mgr.find(
-            aim_ctx, aim_resource.SecurityGroupRule, name=sg_rule_id)
+            aim_ctx, aim_resource.SecurityGroupRule, name=sg_rule_name)
         self.assertEqual([], sg_rules)
 
     def port_notif_verifier(self):
@@ -673,7 +703,8 @@ class TestAimMapping(ApicAimTestCase):
         tenant_aname = self.name_mapper.project(None, sg_rule['tenant_id'])
         self._get_tenant(tenant_aname)
 
-        aim_sg_rule = self._get_sg_rule(sg_id, sg_rule['id'], tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
         self.assertEqual(tenant_aname, aim_sg_rule.tenant_name)
         self.assertEqual(sg_id, aim_sg_rule.security_group_name)
         self.assertEqual('default',
@@ -718,8 +749,6 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual([self.driver.apic_system_id + '_AnyFilter'],
                          aim_subject.bi_filters)
         self._check_dn_is_resource(dns, 'ContractSubject', aim_subject)
-
-        self._check_any_filter()
 
         if expected_gw_ips:
             if unscoped_project:
@@ -787,6 +816,71 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('unspecified', aim_entry.tcp_flags)
         self.assertFalse(aim_entry.stateful)
         self.assertFalse(aim_entry.fragment_only)
+
+    def test_static_resources(self):
+        # Check common Tenant.
+        tenant = self._get_tenant('common')
+        self.assertEqual('common', tenant.name)
+        self.assertEqual('CommonTenant', tenant.display_name)
+        self.assertEqual('', tenant.descr)
+
+        # Check unrouted VRF.
+        vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
+        vrf = self._get_vrf(vrf_aname, 'common')
+        self.assertEqual('common', vrf.tenant_name)
+        self.assertEqual(vrf_aname, vrf.name)
+        self.assertEqual('CommonUnroutedVRF', vrf.display_name)
+        self.assertEqual('enforced', vrf.policy_enforcement_pref)
+
+        # Check any Filter.
+        self._check_any_filter()
+
+        # Check default SecurityGroup.
+        sg_aname = self.driver.apic_system_id + '_DefaultSecurityGroup'
+        sg = self._get_sg(sg_aname, 'common')
+        self.assertEqual('common', sg.tenant_name)
+        self.assertEqual(sg_aname, sg.name)
+        self.assertEqual('DefaultSecurityGroup', sg.display_name)
+
+        # Check default SecurityGroupSubject.
+        sg_subject = self._get_sg_subject('default', sg_aname, 'common')
+        self.assertEqual('common', sg_subject.tenant_name)
+        self.assertEqual(sg_aname, sg_subject.security_group_name)
+        self.assertEqual('default', sg_subject.name)
+        self.assertEqual(
+            'DefaultSecurityGroupSubject', sg_subject.display_name)
+
+        # Check ARP egress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'arp_egress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('arp_egress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupEgressRule', sg_rule.display_name)
+        self.assertEqual('egress', sg_rule.direction)
+        self.assertEqual('arp', sg_rule.ethertype)
+        self.assertEqual([], sg_rule.remote_ips)
+        self.assertEqual('unspecified', sg_rule.from_port)
+        self.assertEqual('unspecified', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check ARP inress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'arp_ingress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('arp_ingress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupIngressRule', sg_rule.display_name)
+        self.assertEqual('ingress', sg_rule.direction)
+        self.assertEqual('arp', sg_rule.ethertype)
+        self.assertEqual([], sg_rule.remote_ips)
+        self.assertEqual('unspecified', sg_rule.from_port)
+        self.assertEqual('unspecified', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
 
     def test_network_lifecycle(self):
         # Test create.
@@ -2315,12 +2409,12 @@ class TestAimMapping(ApicAimTestCase):
     def test_network_in_address_scope_pre_existing_vrf(self, common_vrf=False):
         aim_ctx = aim_context.AimContext(self.db_session)
 
-        tenant = aim_resource.Tenant(
-            name='common' if common_vrf else self.t1_aname,
-            display_name=('CommonTenant' if common_vrf
-                          else TEST_TENANT_NAMES['t1']),
-            monitored=True)
-        self.aim_mgr.create(aim_ctx, tenant)
+        if not common_vrf:
+            tenant = aim_resource.Tenant(
+                name=self.t1_aname,
+                display_name=TEST_TENANT_NAMES['t1'],
+                monitored=True)
+            self.aim_mgr.create(aim_ctx, tenant)
         vrf = aim_resource.VRF(
             tenant_name='common' if common_vrf else self.t1_aname,
             name='ctx1', monitored=True)
@@ -4622,8 +4716,6 @@ class TestExternalConnectivityBase(object):
         aim_ctx = aim_context.AimContext(self.db_session)
 
         # create pre-existing VRF
-        tenant = aim_resource.Tenant(name='common', monitored=True)
-        self.aim_mgr.create(aim_ctx, tenant)
         vrf = aim_resource.VRF(tenant_name='common', name='ctx1',
                                monitored=True)
         vrf = self.aim_mgr.create(aim_ctx, vrf)
@@ -5472,8 +5564,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             if sg_rule['remote_group_id'] and sg_rule['ethertype'] == 'IPv4':
                 break
         tenant_aname = self.name_mapper.project(None, default_sg['tenant_id'])
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
 
         # add another rule with remote_group_id set
@@ -5483,36 +5575,36 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         rules = {'security_group_rules': [rule1['security_group_rule']]}
         sg_rule1 = self._make_security_group_rule(
             self.fmt, rules)['security_group_rules'][0]
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule1['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
 
         # delete SG from port
         data = {'port': {'security_groups': []}}
         port = self._update('ports', port['id'], data)['port']
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, [])
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule1['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, [])
 
         # add SG to port
         data = {'port': {'security_groups': [default_sg_id]}}
         port = self._update('ports', port['id'], data)['port']
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+             sg_rule['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule1['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
 
         self._delete('ports', port['id'])
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, [])
-        aim_sg_rule = self._get_sg_rule(default_sg_id, sg_rule1['id'],
-                                        tenant_aname)
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, [])
 
     def test_mixed_ports_on_network_with_specific_domains(self):

@@ -22,7 +22,6 @@ from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim.api import status as aim_status
 from aim import context as aim_context
-from aim.db import model_base as aim_model_base
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
@@ -41,7 +40,7 @@ from oslo_config import cfg
 import webob.exc
 
 from gbpservice.network.neutronv2 import local_api
-from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db  # noqa
+from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
@@ -134,11 +133,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
         self._default_es_name = 'default'
+        self.useFixture(test_aim_md.AimSqlFixture())
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin, qos_plugin=qos_plugin)
-        aim_model_base.Base.metadata.create_all(self.engine)
         self.db_session = db_api.get_session()
         self.initialize_db_config(self.db_session)
         self.l3_plugin = directory.get_plugin(n_constants.L3)
@@ -189,11 +188,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._dn_t1_l1_n1 = ('uni/tn-%s/out-l1/instP-n1' % self._t1_aname)
 
     def tearDown(self):
-        engine = db_api.context_manager.writer.get_engine()
-        with engine.begin() as conn:
-            for table in reversed(
-                aim_model_base.Base.metadata.sorted_tables):
-                conn.execute(table.delete())
         ksc_client.Client = self.saved_keystone_client
         # We need to do the following to avoid non-aim tests
         # picking up the patched version of the method in patch_neutron
@@ -1527,8 +1521,6 @@ class TestLegacyL3Policy(TestL3Policy):
                         subnet_prefix_length=24, shared=False)
                 session.add(l3p_db)
                 session.flush()
-            aim_model_base.Base.metadata.create_all(
-                    session.__dict__['bind'])
             orig_create_per_l3p_implicit_contracts(self)
             aimd.AIMMappingDriver._create_per_l3p_implicit_contracts = (
                     orig_create_per_l3p_implicit_contracts)
@@ -1628,9 +1620,9 @@ class TestL2Policy(TestL2PolicyBase):
                                                shared=False):
         self.assertEqual(0, len(self.aim_mgr.find(
             self._aim_context, aim_resource.Contract)))
-        self.assertEqual(0, len(self.aim_mgr.find(
+        self.assertEqual(1, len(self.aim_mgr.find(
             self._aim_context, aim_resource.Filter)))
-        self.assertEqual(0, len(self.aim_mgr.find(
+        self.assertEqual(1, len(self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry)))
         l2p0 = self.create_l2_policy(name="l2p0",
                                      shared=shared)['l2_policy']
@@ -2108,11 +2100,11 @@ class TestL2PolicyRollback(TestL2PolicyBase):
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter,
             tenant_name=aim_tenant_name)
-        self.assertEqual(0, len(aim_filters))
+        self.assertEqual(1, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry,
             tenant_name=aim_tenant_name)
-        self.assertEqual(0, len(aim_filter_entries))
+        self.assertEqual(1, len(aim_filter_entries))
         # restore mock
         self.dummy.create_l2_policy_precommit = orig_func
 
@@ -3090,7 +3082,8 @@ class TestPolicyTarget(AIMBaseTestCase):
                 {'policy-space': mapping['ptg_tenant'],
                  'name': sg_id})
         sg_list.append({'policy-space': 'common',
-                        'name': 'gbp_default'})
+                        'name': self.driver.aim_mech_driver.apic_system_id +
+                        '_DefaultSecurityGroup'})
         self.assertEqual(sg_list, mapping['security_group'])
 
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
@@ -3206,8 +3199,6 @@ class TestPolicyTarget(AIMBaseTestCase):
 
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
-        self.aim_mgr.create(
-            aim_ctx, aim_resource.Tenant(name='common', monitored=True))
         vrf = self.aim_mgr.create(
             aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
                                       monitored=True))
@@ -3220,8 +3211,6 @@ class TestPolicyTarget(AIMBaseTestCase):
 
     def test_get_gbp_details_no_pt_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
-        self.aim_mgr.create(
-            aim_ctx, aim_resource.Tenant(name='common', monitored=True))
         vrf = self.aim_mgr.create(
             aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
                                       monitored=True))
@@ -3712,10 +3701,10 @@ class TestPolicyRuleRollback(TestPolicyRuleBase):
                          self._gbp_plugin.get_policy_rules(self._context))
         aim_filters = self.aim_mgr.find(
             self._aim_context, aim_resource.Filter)
-        self.assertEqual(0, len(aim_filters))
+        self.assertEqual(1, len(aim_filters))
         aim_filter_entries = self.aim_mgr.find(
             self._aim_context, aim_resource.FilterEntry)
-        self.assertEqual(0, len(aim_filter_entries))
+        self.assertEqual(1, len(aim_filter_entries))
         # restore mock
         self.dummy.create_policy_rule_precommit = orig_func
 
