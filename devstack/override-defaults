@@ -17,6 +17,6 @@ if [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]]; then
 
     Q_ML2_TENANT_NETWORK_TYPE=${Q_ML2_TENANT_NETWORK_TYPE:-opflex}
 else
-    Q_SERVICE_PLUGIN_CLASSES=${Q_SERVICE_PLUGIN_CLASSES},qos
+    _neutron_service_plugin_class_add  "qos"
     Q_ML2_PLUGIN_EXT_DRIVERS=${Q_ML2_PLUGIN_EXT_DRIVERS},qos
 fi
