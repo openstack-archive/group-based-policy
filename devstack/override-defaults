@@ -17,6 +17,9 @@ if [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]]; then
 
     Q_ML2_TENANT_NETWORK_TYPE=${Q_ML2_TENANT_NETWORK_TYPE:-opflex}
 else
-    Q_SERVICE_PLUGIN_CLASSES=${Q_SERVICE_PLUGIN_CLASSES},qos
-    Q_ML2_PLUGIN_EXT_DRIVERS=${Q_ML2_PLUGIN_EXT_DRIVERS},qos
+    # This initialization happens before the initialization in
+    # plugin.sh and any other initialization in neutron, hence
+    # we are not appending to any existing values.
+    Q_SERVICE_PLUGIN_CLASSES=qos
+    Q_ML2_PLUGIN_EXT_DRIVERS=qos
 fi
