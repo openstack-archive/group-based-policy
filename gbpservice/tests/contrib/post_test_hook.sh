@@ -12,6 +12,10 @@ sudo pip show neutron-lib
 sudo git --git-dir=/opt/stack/new/group-based-policy/.git --work-tree=/opt/stack/new/group-based-policy show --name-only
 sudo git --git-dir=/opt/stack/new/group-based-policy/.git --work-tree=/opt/stack/new/group-based-policy status
 
+# The following is added to get past the error:
+# "publicURL endpoint for compute service in RegionOne region not found"
+# when trying to launch a VM in the exercise scripts
+sudo /bin/systemctl restart memcached
 # Run exercise scripts
 $TOP_DIR/exercise.sh
 exercises_exit_code=$?
