@@ -1,0 +1,9 @@
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Workflow+1: Amit Bose <amitbose@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Fri, 17 Nov 2017 00:06:42 +0000
+Reviewed-on: https://review.openstack.org/520813
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
