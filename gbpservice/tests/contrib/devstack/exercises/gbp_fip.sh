@@ -42,7 +42,7 @@ if [ -z "$EXT_NET_ID" ] ; then
     EXT_SUBNET_ID=$(neutron subnet-create --ip_version 4 --gateway 172.16.73.1 --disable-dhcp --name public-subnet $EXT_NET_ID 172.16.73.0/24 | grep ' id ' | get_field 2)
     EXT_NET_TO_BE_CLEANED_UP=true
 else
-    EXT_SUBNET_ID=$(neutron net-show $EXT_NET_ID | grep subnets | awk '{print $4}' )
+    EXT_SUBNET_ID=$(neutron subnet-show public-subnet -c id | grep id | awk '{print $4}' )
 fi
 
 die_if_not_set $LINENO EXT_SUBNET_ID "Failure creating external network"
