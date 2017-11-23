@@ -209,9 +209,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._ensure_common_tenant(aim_ctx)
         self._ensure_unrouted_vrf(aim_ctx)
         self._ensure_any_filter(aim_ctx)
-        self._setup_default_arp_security_group_rules(aim_ctx)
+        self._setup_default_arp_dhcp_security_group_rules(aim_ctx)
 
-    def _setup_default_arp_security_group_rules(self, aim_ctx):
+    def _setup_default_arp_dhcp_security_group_rules(self, aim_ctx):
         sg_name = self._default_sg_name
         dname = aim_utils.sanitize_display_name('DefaultSecurityGroup')
         sg = aim_resource.SecurityGroup(
@@ -225,7 +225,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim.create(aim_ctx, sg_subject, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
-            'DefaultSecurityGroupEgressRule')
+            'DefaultSecurityGroupArpEgressRule')
         arp_egress_rule = aim_resource.SecurityGroupRule(
             tenant_name=COMMON_TENANT_NAME,
             security_group_name=sg_name,
@@ -238,7 +238,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim.create(aim_ctx, arp_egress_rule, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
-            'DefaultSecurityGroupIngressRule')
+            'DefaultSecurityGroupArpIngressRule')
         arp_ingress_rule = aim_resource.SecurityGroupRule(
             tenant_name=COMMON_TENANT_NAME,
             security_group_name=sg_name,
@@ -249,6 +249,38 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ethertype='arp',
             conn_track='normal')
         self.aim.create(aim_ctx, arp_ingress_rule, overwrite=True)
+
+        dname = aim_utils.sanitize_display_name(
+            'DefaultSecurityGroupDhcpEgressRule')
+        dhcp_egress_rule = aim_resource.SecurityGroupRule(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=sg_name,
+            security_group_subject_name='default',
+            name='dhcp_egress',
+            display_name=dname,
+            direction='egress',
+            ethertype='ipv4',
+            ip_protocol='udp',
+            from_port='67',
+            to_port='67',
+            conn_track='normal')
+        self.aim.create(aim_ctx, dhcp_egress_rule, overwrite=True)
+
+        dname = aim_utils.sanitize_display_name(
+            'DefaultSecurityGroupDhcpIngressRule')
+        dhcp_ingress_rule = aim_resource.SecurityGroupRule(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=sg_name,
+            security_group_subject_name='default',
+            name='dhcp_ingress',
+            display_name=dname,
+            direction='ingress',
+            ethertype='ipv4',
+            ip_protocol='udp',
+            from_port='68',
+            to_port='68',
+            conn_track='normal')
+        self.aim.create(aim_ctx, dhcp_ingress_rule, overwrite=True)
 
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(

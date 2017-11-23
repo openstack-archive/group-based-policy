@@ -851,7 +851,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('default', sg_rule.security_group_subject_name)
         self.assertEqual('arp_egress', sg_rule.name)
         self.assertEqual(
-            'DefaultSecurityGroupEgressRule', sg_rule.display_name)
+            'DefaultSecurityGroupArpEgressRule', sg_rule.display_name)
         self.assertEqual('egress', sg_rule.direction)
         self.assertEqual('arp', sg_rule.ethertype)
         self.assertEqual([], sg_rule.remote_ips)
@@ -867,12 +867,46 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('default', sg_rule.security_group_subject_name)
         self.assertEqual('arp_ingress', sg_rule.name)
         self.assertEqual(
-            'DefaultSecurityGroupIngressRule', sg_rule.display_name)
+            'DefaultSecurityGroupArpIngressRule', sg_rule.display_name)
         self.assertEqual('ingress', sg_rule.direction)
         self.assertEqual('arp', sg_rule.ethertype)
         self.assertEqual([], sg_rule.remote_ips)
         self.assertEqual('unspecified', sg_rule.from_port)
         self.assertEqual('unspecified', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check DHCP egress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp_egress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp_egress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcpEgressRule', sg_rule.display_name)
+        self.assertEqual('egress', sg_rule.direction)
+        self.assertEqual('ipv4', sg_rule.ethertype)
+        self.assertEqual('udp', sg_rule.ip_protocol)
+        self.assertEqual([], sg_rule.remote_ips)
+        self.assertEqual('67', sg_rule.from_port)
+        self.assertEqual('67', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check DHCP ingress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp_ingress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp_ingress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcpIngressRule', sg_rule.display_name)
+        self.assertEqual('ingress', sg_rule.direction)
+        self.assertEqual('ipv4', sg_rule.ethertype)
+        self.assertEqual('udp', sg_rule.ip_protocol)
+        self.assertEqual([], sg_rule.remote_ips)
+        self.assertEqual('68', sg_rule.from_port)
+        self.assertEqual('68', sg_rule.to_port)
         self.assertEqual('normal', sg_rule.conn_track)
 
     def test_network_lifecycle(self):
