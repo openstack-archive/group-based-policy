@@ -34,6 +34,8 @@ source $TOP_DIR/openrc demo demo
 # an error.  It is also useful for following allowing as the install occurs.
 set -o xtrace
 
+ACTIVE_TIMEOUT=120
+
 function confirm_server_active {
     local VM_UUID=$1
     if ! timeout $ACTIVE_TIMEOUT sh -c "while ! nova show $VM_UUID | grep status | grep -q ACTIVE; do sleep 1; done"; then

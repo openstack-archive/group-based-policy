@@ -107,8 +107,13 @@ if is_service_enabled group-policy; then
 
     elif [[ "$1" == "stack" && "$2" == "post-config" ]]; then
         echo_summary "Configuring $GBP"
-        [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_nova
-        [[ $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_heat
+        # REVIST Ideally, we should be configuring nova, heat and UI as well for GBP in the
+        # GBP devstack gate job. However, contrary to the documentation, this block
+        # of code is not being invoked by devstack after the nova, heat and
+        # dashboard config files have been created. Once this is sorted out, the
+        # ENABLE_GBP_GATE variable can be eliminated.
+        [[ $ENABLE_GBP_GATE = False && $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_nova
+        [[ $ENABLE_GBP_GATE = False && $ENABLE_APIC_AIM_GATE = False ]] && gbp_configure_heat
         gbp_configure_neutron
 
         if [[ $ENABLE_NSX_POLICY = True ]]; then
@@ -130,11 +135,11 @@ if is_service_enabled group-policy; then
         [[ $ENABLE_NFP = True ]] && install_nfpgbpservice
         init_gbpservice
         [[ $ENABLE_NFP = True ]] && init_nfpgbpservice
-        [[ $ENABLE_APIC_AIM_GATE = False ]] && install_gbpheat
-        [[ $ENABLE_APIC_AIM_GATE = False ]] && install_gbpui
+        [[ $ENABLE_GBP_GATE = False && $ENABLE_APIC_AIM_GATE = False ]] && install_gbpheat
+        [[ $ENABLE_GBP_GATE = False && $ENABLE_APIC_AIM_GATE = False ]] && install_gbpui
         [[ $ENABLE_APIC_AIM = True || $ENABLE_APIC_AIM_GATE = True ]] && configure_apic_aim
-        [[ $ENABLE_APIC_AIM_GATE = False ]] && stop_apache_server
-        [[ $ENABLE_APIC_AIM_GATE = False ]] && start_apache_server
+        [[ $ENABLE_GBP_GATE = False && $ENABLE_APIC_AIM_GATE = False ]] && stop_apache_server
+        [[ $ENABLE_GBP_GATE = False && $ENABLE_APIC_AIM_GATE = False ]] && start_apache_server
     elif [[ "$1" == "stack" && "$2" == "extra" ]]; then
         echo_summary "Initializing $GBP"
         if [[ $ENABLE_NFP = True ]]; then
