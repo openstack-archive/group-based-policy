@@ -1034,7 +1034,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         aim_ctx, router_topology, router_vrf, vrf,
                         nets_to_notify)
                     router_topo_moved = True
-                    # REVISIT: Delete router_vrf if no longer used?
+                    self._cleanup_default_vrf(aim_ctx, router_vrf)
                 elif router_shared_net:
                     # Router topology has shared network, so move
                     # interface topology, unless first interface for
@@ -1044,7 +1044,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         self._move_topology(
                             aim_ctx, intf_topology, intf_vrf, vrf,
                             nets_to_notify)
-                    # REVISIT: Delete intf_vrf if no longer used?
+                        self._cleanup_default_vrf(aim_ctx, intf_vrf)
                 else:
                     # This should never happen.
                     LOG.error("Interface topology %(intf_topology)s and "
@@ -1212,6 +1212,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 intf_vrf = self._map_default_vrf(
                     session, intf_shared_net or network_db)
                 if old_vrf.identity != intf_vrf.identity:
+                    intf_vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
                         aim_ctx, intf_topology, old_vrf, intf_vrf,
                         nets_to_notify)
@@ -1224,6 +1225,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     session,
                     router_shared_net or router_topology.itervalues().next())
                 if old_vrf.identity != router_vrf.identity:
+                    router_vrf = self._ensure_default_vrf(aim_ctx, router_vrf)
                     self._move_topology(
                         aim_ctx, router_topology, old_vrf, router_vrf,
                         nets_to_notify)
@@ -1234,6 +1236,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not router_ids:
             self._dissassociate_network_from_vrf(
                 aim_ctx, network_db, old_vrf, nets_to_notify)
+            if scope_id == NO_ADDR_SCOPE:
+                self._cleanup_default_vrf(aim_ctx, old_vrf)
 
         # If external-gateway is set, handle external-connectivity changes.
         if router_db.gw_port_id:
@@ -2279,6 +2283,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.info("Creating default VRF for %s", attrs.tenant_name)
             vrf = self.aim.create(aim_ctx, attrs)
         return vrf
+
+    def _cleanup_default_vrf(self, aim_ctx, vrf):
+        if not self._is_vrf_used_by_networks(aim_ctx.db_session, vrf):
+            LOG.info("Deleting default VRF for %s", vrf.tenant_name)
+            self.aim.delete(aim_ctx, vrf)
 
     # Used by policy driver.
     def get_bd_for_network(self, session, network):
