@@ -410,14 +410,17 @@ class TestAimMapping(ApicAimTestCase):
         self.assertIsNotNone(tenant)
         return tenant
 
-    def _get_vrf(self, vrf_name, tenant_name):
+    def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
         session = db_api.get_session()
         aim_ctx = aim_context.AimContext(session)
         vrf = aim_resource.VRF(tenant_name=tenant_name,
                                name=vrf_name)
         vrf = self.aim_mgr.get(aim_ctx, vrf)
-        self.assertIsNotNone(vrf)
-        return vrf
+        if should_exist:
+            self.assertIsNotNone(vrf)
+            return vrf
+        else:
+            self.assertIsNone(vrf)
 
     def _vrf_should_not_exist(self, vrf_name):
         session = db_api.get_session()
@@ -2248,6 +2251,15 @@ class TestAimMapping(ApicAimTestCase):
             self._check_router(
                 router, expected_gw_ips, unscoped_project=project)
 
+        def check_default_vrf(project, should_exist):
+            tenant_name = self.name_mapper.project(None, project)
+            vrf = self._get_vrf('DefaultVRF', tenant_name, should_exist)
+            if should_exist:
+                self.assertEqual(tenant_name, vrf.tenant_name)
+                self.assertEqual('DefaultVRF', vrf.name)
+                self.assertEqual('DefaultRoutedVRF', vrf.display_name)
+                self.assertEqual('enforced', vrf.policy_enforcement_pref)
+
         def check_port_notify(ports=None):
             if not ports:
                 mock_notif.assert_not_called()
@@ -2281,57 +2293,68 @@ class TestAimMapping(ApicAimTestCase):
         gw4C = '10.0.4.3'
 
         # Check initial state with no routing.
-        check_router(rA, [], t1)
-        check_router(rB, [], t1)
-        check_router(rC, [], t1)
+        check_router(rA, [], None)
+        check_router(rB, [], None)
+        check_router(rC, [], None)
         check_net(net1, sn1, [], [], [gw1A], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
         check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, False)
+        check_default_vrf(t2, False)
 
-        # Add subnet 1 to router A.
+        # Add subnet 1 to router A, which should create tenant 1's
+        # default VRF.
         add_interface(rA, net1, sn1, gw1A, t1)
         check_port_notify([p1])
         check_router(rA, [gw1A], t1)
-        check_router(rB, [], t1)
-        check_router(rC, [], t1)
+        check_router(rB, [], None)
+        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
         check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
 
         # Add subnet 2 to router A.
         add_interface(rA, net2, sn2, gw2A, t1)
         check_port_notify([p2])
         check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [], t1)
-        check_router(rC, [], t1)
+        check_router(rB, [], None)
+        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
         check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
 
         # Add subnet 2 to router B.
         add_interface(rB, net2, sn2, gw2B, t1)
         check_port_notify()
         check_router(rA, [gw1A, gw2A], t1)
         check_router(rB, [gw2B], t1)
-        check_router(rC, [], t1)
+        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
         check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
 
         # Add subnet 3 to router B.
         add_interface(rB, net3, sn3, gw3B, t1)
         check_port_notify([p3])
         check_router(rA, [gw1A, gw2A], t1)
         check_router(rB, [gw2B, gw3B], t1)
-        check_router(rC, [], t1)
+        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
         check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
 
         # Add subnet 3 to router C.
         add_interface(rC, net3, sn3, gw3C, t1)
@@ -2343,10 +2366,13 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t1)
         check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
 
         # Add shared subnet 4 to router C, which should move router
         # C's topology (networks 1, 2 and 3 and routers A, B and C) to
-        # tenant 2.
+        # tenant 2, create tenant 2's default VRF, and delete tenant
+        # 1's default VRF.
         add_interface(rC, net4, sn4, gw4C, t1)
         check_port_notify([p1, p2, p3])
         check_router(rA, [gw1A, gw2A], t2)
@@ -2356,9 +2382,12 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+        check_default_vrf(t1, False)
+        check_default_vrf(t2, True)
 
         # Remove subnet 3 from router B, which should move router B's
-        # topology (networks 1 and 2 and routers A and B) to tenant 1.
+        # topology (networks 1 and 2 and routers A and B) to tenant 1
+        # and create tenant 1's default VRF.
         remove_interface(rB, net3, sn3, gw3B, t1)
         check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], t1)
@@ -2368,10 +2397,12 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rC], [(gw3C, rC)], [gw3B], t2)
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, True)
 
         # Add subnet 3 back to router B, which should move router B's
         # topology (networks 1 and 2 and routers A and B) to tenant 2
-        # again.
+        # again and delete tenant 1's default VRF.
         add_interface(rB, net3, sn3, gw3B, t1)
         check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], t2)
@@ -2381,9 +2412,12 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+        check_default_vrf(t1, False)
+        check_default_vrf(t2, True)
 
         # Remove subnet 2 from router B, which should move network 2's
-        # topology (networks 1 and 2 and router A) back to tenant 1.
+        # topology (networks 1 and 2 and router A) back to tenant 1
+        # and create tenant 1's default VRF
         remove_interface(rB, net2, sn2, gw2B, t1)
         check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], t1)
@@ -2393,9 +2427,12 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, True)
 
         # Add subnet 2 back to router B, which should move network 2's
-        # topology (networks 1 and 2 and router A) to tenant 2 again.
+        # topology (networks 1 and 2 and router A) to tenant 2 again
+        # and delete tenant 1's default VRF.
         add_interface(rB, net2, sn2, gw2B, t1)
         check_port_notify([p1, p2])
         check_router(rA, [gw1A, gw2A], t2)
@@ -2405,6 +2442,90 @@ class TestAimMapping(ApicAimTestCase):
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
         check_net(net4, sn4, [rC], [(gw4C, rC)], [], t2)
+        check_default_vrf(t1, False)
+        check_default_vrf(t2, True)
+
+        # Remove subnet 4 from router C, which should move network 3's
+        # topology (networks 1, 2 and 3 and routers A and B) to tenant
+        # 1, create tenant 1's default VRF, and delete tenant 2's
+        # default VRF.
+        remove_interface(rC, net4, sn4, gw4C, t1)
+        check_port_notify([p1, p2, p3])
+        check_router(rA, [gw1A, gw2A], t1)
+        check_router(rB, [gw2B, gw3B], t1)
+        check_router(rC, [gw3C], t1)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
+        check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
+
+        # Remove subnet 3 from router C.
+        remove_interface(rC, net3, sn3, gw3C, t1)
+        check_port_notify()
+        check_router(rA, [gw1A, gw2A], t1)
+        check_router(rB, [gw2B, gw3B], t1)
+        check_router(rC, [], None)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
+        check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
+
+        # Remove subnet 2 from router B.
+        remove_interface(rB, net2, sn2, gw2B, t1)
+        check_port_notify()
+        check_router(rA, [gw1A, gw2A], t1)
+        check_router(rB, [gw3B], t1)
+        check_router(rC, [], None)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
+        check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
+
+        # Remove subnet 2 from router A.
+        remove_interface(rA, net2, sn2, gw2A, t1)
+        check_port_notify([p2])
+        check_router(rA, [gw1A], t1)
+        check_router(rB, [gw3B], t1)
+        check_router(rC, [], None)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
+        check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
+
+        # Remove subnet 3 from router B.
+        remove_interface(rB, net3, sn3, gw3B, t1)
+        check_port_notify([p3])
+        check_router(rA, [gw1A], t1)
+        check_router(rB, [], None)
+        check_router(rC, [], None)
+        check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
+        check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
+        check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, True)
+        check_default_vrf(t2, False)
+
+        # Remove subnet 1 from router A, which should delete tenant
+        # 1's default VRF.
+        remove_interface(rA, net1, sn1, gw1A, t1)
+        check_port_notify([p1])
+        check_router(rA, [], None)
+        check_router(rB, [], None)
+        check_router(rC, [], None)
+        check_net(net1, sn1, [], [], [gw1A], t1)
+        check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
+        check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
+        check_net(net4, sn4, [], [], [gw4C], t2)
+        check_default_vrf(t1, False)
+        check_default_vrf(t2, False)
 
     def test_address_scope_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
