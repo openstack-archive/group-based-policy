@@ -1,0 +1,9 @@
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Workflow+1: Thomas Bachman <bachman@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Mon, 04 Dec 2017 19:55:54 +0000
+Reviewed-on: https://review.openstack.org/524996
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
