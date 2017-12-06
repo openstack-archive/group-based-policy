@@ -15,8 +15,6 @@ import mock
 from mock import call
 import webob.exc
 
-from neutron.db import api as db_api
-from neutron_lib.db import model_base
 from oslo_config import cfg
 from vmware_nsx.common import config
 from vmware_nsxlib.v3 import exceptions as nsxlib_exc
@@ -40,9 +38,6 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
             policy_drivers=['implicit_policy', 'nsx_policy'])
         # REVISIT (annak): currently run with ML2 plugin
         # core_plugin='vmware_nsx.plugin.NsxV3Plugin'
-
-        engine = db_api.context_manager.writer.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
 
         self.driver = self._gbp_plugin.policy_driver_manager.policy_drivers[
                'nsx_policy'].obj

@@ -13,10 +13,8 @@
 
 import mock
 from neutron import context as nctx
-from neutron.db import api as db_api
 from neutron.plugins.common import constants as pconst
 from neutron_lib import constants
-from neutron_lib.db import model_base
 from neutron_lib.plugins import directory
 import webob.exc
 
@@ -52,8 +50,6 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
                                                      ml2_options=ml2_options,
                                                      sc_plugin=sc_plugin,
                                                      qos_plugin=qos_plugin)
-        engine = db_api.context_manager.writer.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
                          '_check_router_needs_rescheduling').start()
         res.return_value = None
