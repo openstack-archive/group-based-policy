@@ -36,7 +36,6 @@ from gbpservice._i18n import _LW
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
-from gbpservice.neutron.db import servicechain_db  # noqa
 from gbpservice.neutron.extensions import driver_proxy_group as proxy_ext
 from gbpservice.neutron.extensions import group_policy as gp_ext
 from gbpservice.neutron.services.grouppolicy import (

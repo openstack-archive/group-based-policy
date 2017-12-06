@@ -14,9 +14,7 @@
 import webob.exc
 
 from neutron import context as nctx
-from neutron.db import api as db_api
 from neutron.tests.unit.extensions import test_l3
-from neutron_lib.db import model_base
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
@@ -57,8 +55,6 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             core_plugin=core_plugin, gp_plugin=gp_plugin,
             service_plugins=service_plugins
         )
-        engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
 
 
 class TestMappedGroupResources(GroupPolicyMappingDbTestCase,

@@ -27,11 +27,9 @@ from apicapi import apic_mapper
 from neutron.common import rpc as n_rpc
 from neutron.conf.agent import securitygroups_rpc as sg_cfg
 from neutron import context
-from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as n_db
 from neutron.extensions import portbindings
 from neutron import manager
-from neutron_lib.db import model_base
 from opflexagent import constants as ocst
 from oslo_config import cfg
 from oslo_serialization import jsonutils
@@ -143,8 +141,6 @@ class ApicMappingTestCase(
         super(ApicMappingTestCase, self).setUp(
             policy_drivers=['implicit_policy', 'apic', 'chain_mapping'],
             ml2_options=ml2_opts, sc_plugin=sc_plugin)
-        engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
         plugin = manager.NeutronManager.get_plugin()
         plugin.remove_networks_from_down_agents = mock.Mock()
         plugin.is_agent_down = mock.Mock(return_value=False)

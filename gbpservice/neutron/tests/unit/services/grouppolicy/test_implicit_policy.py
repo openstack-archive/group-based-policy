@@ -11,14 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron.db import api as db_api
-from neutron_lib.db import model_base
 from oslo_config import cfg
 import webob.exc
 
-from gbpservice.neutron.db import servicechain_db  # noqa
-from gbpservice.neutron.services.servicechain.plugins.ncp import (  # noqa
-    model)  # noqa
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_grouppolicy_plugin as test_plugin)
 
@@ -30,8 +25,6 @@ class ImplicitPolicyTestCase(
         cfg.CONF.set_override('policy_drivers', ['implicit_policy'],
                               group='group_policy')
         super(ImplicitPolicyTestCase, self).setUp()
-        engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
 
 
 class TestImplicitL2Policy(ImplicitPolicyTestCase):

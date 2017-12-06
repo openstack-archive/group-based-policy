@@ -12,9 +12,7 @@
 # limitations under the License.
 
 import mock
-from neutron.db import api as db_api
 from neutron.plugins.common import constants
-from neutron_lib.db import model_base
 from oslo_serialization import jsonutils
 import webob
 
@@ -193,8 +191,6 @@ class NFPNodeDriverTestCase(
             core_plugin=CORE_PLUGIN,
             gp_plugin=GP_PLUGIN_KLASS,
             sc_plugin=SC_PLUGIN_KLASS)
-        engine = db_api.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
 
     def test_manager_initialized(self):
         mgr = self.plugin.driver_manager
