@@ -16,6 +16,7 @@ from neutron.tests.unit import testlib_api
 from oslo_db import exception as exc
 from oslo_utils import importutils
 
+from gbpservice.neutron.db import all_models  # noqa
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     port_ha_ipaddress_binding as ha)
 
