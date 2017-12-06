@@ -14,6 +14,7 @@
 import ast
 import collections
 
+from neutron.common import config
 from neutron import context as n_ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
@@ -49,6 +50,24 @@ class ServiceChainPluginTestCase(test_servicechain_db.ServiceChainDbTestCase):
                                                       sc_plugin=sc_plugin or
                                                       SC_PLUGIN_KLASS,
                                                       gp_plugin=gp_plugin)
+        try:
+            config.cfg.CONF.keystone_authtoken.username
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('username'),
+                'keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.password
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('password'),
+                'keystone_authtoken')
+        try:
+            config.cfg.CONF.keystone_authtoken.project_name
+        except config.cfg.NoSuchOptError:
+            config.cfg.CONF.register_opt(
+                config.cfg.StrOpt('project_name'),
+                'keystone_authtoken')
 
 
 class BaseTestGroupPolicyPluginGroupResources(

@@ -20,17 +20,16 @@ import mock
 from neutron.api import extensions
 from neutron.api.rpc.callbacks.producer import registry
 from neutron import context
-from neutron.db import api as db_api
 from neutron.plugins.common import constants
 from neutron import policy
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from neutron_lib import constants as nl_constants
-from neutron_lib.db import model_base
 from neutron_lib.plugins import directory
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 
+from gbpservice.neutron.db import all_models  # noqa
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import group_policy as gpolicy
@@ -366,8 +365,6 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
-        engine = db_api.context_manager.writer.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
 
         plugins = directory.get_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)

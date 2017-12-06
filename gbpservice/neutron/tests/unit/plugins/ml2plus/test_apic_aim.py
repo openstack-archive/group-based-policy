@@ -50,7 +50,7 @@ from opflexagent import constants as ofcst
 from oslo_config import cfg
 import webob.exc
 
-from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
+from gbpservice.neutron.db import all_models  # noqa
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)

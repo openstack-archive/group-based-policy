@@ -23,7 +23,6 @@ import sqlalchemy as sa
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
-from gbpservice.neutron.db import servicechain_db  # noqa
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
