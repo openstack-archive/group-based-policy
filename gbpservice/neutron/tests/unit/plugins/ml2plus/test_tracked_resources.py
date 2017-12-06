@@ -18,7 +18,6 @@ from neutron.tests.unit.plugins.ml2 import (
     test_tracked_resources as n_tracked)
 from neutron.tests.unit.plugins.ml2 import test_plugin
 
-from gbpservice.neutron.db import implicitsubnetpool_db  # noqa
 import gbpservice.neutron.extensions
 
 PLUGIN_NAME = 'ml2plus'

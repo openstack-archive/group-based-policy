@@ -19,7 +19,6 @@ from keystonemiddleware import auth_token  # noqa
 import mock
 import netaddr
 from neutron import context as nctx
-from neutron.db import api as db_api
 from neutron.db.qos import models as qos_models
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
@@ -29,7 +28,6 @@ from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
 from neutron_lib import constants as cst
-from neutron_lib.db import model_base
 from neutron_lib.plugins import directory
 from oslo_utils import uuidutils
 import unittest2
@@ -102,8 +100,6 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                                                    sc_plugin=sc_plugin,
                                                    qos_plugin=qos_plugin)
 
-        engine = db_api.context_manager.writer.get_engine()
-        model_base.BASEV2.metadata.create_all(engine)
         res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
                          '_check_router_needs_rescheduling').start()
         res.return_value = None
