@@ -4154,6 +4154,9 @@ class TestExternalConnectivityBase(object):
         self.call_wrapper.tearDown()
         super(TestExternalConnectivityBase, self).tearDown()
 
+    def fix_l3out_vrf(self, l3out_tenant_name, l3out_name, vrf_name):
+        pass
+
     def test_external_network_lifecycle(self):
         net1 = self._make_ext_network('net1',
                                       dn=self.dn_t1_l1_n1,
@@ -4286,7 +4289,8 @@ class TestExternalConnectivityBase(object):
         self._delete('subnets', subnet['id'])
         self.mock_ns.delete_subnet.assert_not_called()
 
-    def _do_test_router_interface(self, use_addr_scope=False):
+    def _do_test_router_interface(self, use_addr_scope=False,
+                                  single_tenant=False):
         cv = self.mock_ns.connect_vrf
         dv = self.mock_ns.disconnect_vrf
 
@@ -4305,8 +4309,10 @@ class TestExternalConnectivityBase(object):
         # and then removes the router interfaces one-by-one.
 
         objs = {}
+        tenants = ([self.tenant_1] if single_tenant
+                   else [self.tenant_1, self.tenant_2])
         # Create the networks, subnets, routers etc
-        for t in [self.tenant_1, self.tenant_2]:
+        for t in tenants:
             subnetpool = None
             addr_scope = None
             if use_addr_scope:
@@ -4351,6 +4357,7 @@ class TestExternalConnectivityBase(object):
                 if addr_scope:
                     a_vrf.name = self.name_mapper.address_scope(
                         None, addr_scope['id'])
+                self.fix_l3out_vrf(self.t1_aname, 'l1', a_vrf.name)
                 contract = self.name_mapper.router(None, router['id'])
                 a_ext_net.provided_contract_names.append(contract)
                 a_ext_net.provided_contract_names.extend(
@@ -4382,6 +4389,7 @@ class TestExternalConnectivityBase(object):
                 if addr_scope:
                     a_vrf.name = self.name_mapper.address_scope(
                         None, addr_scope['id'])
+                self.fix_l3out_vrf(self.t1_aname, 'l1', a_vrf.name)
                 contract = self.name_mapper.router(None, router['id'])
                 a_ext_net.provided_contract_names.remove(contract)
                 a_ext_net.consumed_contract_names.remove(contract)
@@ -4459,6 +4467,15 @@ class TestExternalConnectivityBase(object):
         self._router_interface_action('add', router['id'], sub1['id'], None)
         self.mock_ns.connect_vrf.assert_not_called()
 
+        tenant_aname = self.name_mapper.project(
+            None, net['tenant_id'])  # REVISIT
+        a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
+                                 name='DefaultVRF')
+        if use_addr_scope:
+            a_vrf.name = self.name_mapper.address_scope(None, addr_scope['id'])
+        self.fix_l3out_vrf(self.t1_aname, 'l1', a_vrf.name)
+        self.fix_l3out_vrf(self.t1_aname, 'l2', a_vrf.name)
+
         self.mock_ns.reset_mock()
         self._update('routers', router['id'],
                      {'router':
@@ -4469,12 +4486,6 @@ class TestExternalConnectivityBase(object):
             tenant_name=self.t1_aname, l3out_name='l1', name='n1',
             provided_contract_names=sorted(['pr-1', contract]),
             consumed_contract_names=sorted(['co-1', contract]))
-        tenant_aname = self.name_mapper.project(
-            None, net['tenant_id'])  # REVISIT
-        a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
-                                 name='DefaultVRF')
-        if use_addr_scope:
-            a_vrf.name = self.name_mapper.address_scope(None, addr_scope['id'])
         cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
 
         self.mock_ns.reset_mock()
@@ -4532,20 +4543,6 @@ class TestExternalConnectivityBase(object):
         cv = self.mock_ns.connect_vrf
         dv = self.mock_ns.disconnect_vrf
 
-        ext_nets = []
-        a_ext_nets = []
-        for x in range(0, 2):
-            ext_net = self._make_ext_network('ext-net%d' % x,
-                dn='uni/tn-%s/out-l%d/instP-n%d' % (self.t1_aname, x, x))
-            self._make_subnet(
-                self.fmt, {'network': ext_net}, '100.%d.100.1' % x,
-                '100.%d.100.0/24' % x)
-            ext_nets.append(ext_net['id'])
-            a_ext_net = aim_resource.ExternalNetwork(
-                tenant_name=self.t1_aname,
-                l3out_name='l%d' % x, name='n%d' % x)
-            a_ext_nets.append(a_ext_net)
-
         net = self._make_network(self.fmt, 'pvt-net1', True,
                                  tenant_id=self.tenant_1)['network']
         subnetpool = None
@@ -4568,6 +4565,21 @@ class TestExternalConnectivityBase(object):
                                  name='DefaultVRF')
         if use_addr_scope:
             a_vrf.name = self.name_mapper.address_scope(None, addr_scope['id'])
+
+        ext_nets = []
+        a_ext_nets = []
+        for x in range(0, 2):
+            ext_net = self._make_ext_network('ext-net%d' % x,
+                dn='uni/tn-%s/out-l%d/instP-n%d' % (self.t1_aname, x, x))
+            self._make_subnet(
+                self.fmt, {'network': ext_net}, '100.%d.100.1' % x,
+                '100.%d.100.0/24' % x)
+            ext_nets.append(ext_net['id'])
+            a_ext_net = aim_resource.ExternalNetwork(
+                tenant_name=self.t1_aname,
+                l3out_name='l%d' % x, name='n%d' % x)
+            a_ext_nets.append(a_ext_net)
+            self.fix_l3out_vrf(self.t1_aname, 'l%d' % x, a_vrf.name)
 
         routers = []
         contracts = []
@@ -4686,6 +4698,7 @@ class TestExternalConnectivityBase(object):
 
         ext_net1 = self._make_ext_network('ext-net1',
                                           dn=self.dn_t1_l1_n1)
+        self.fix_l3out_vrf(self.t1_aname, 'l1', 'DefaultVRF')
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
@@ -4728,6 +4741,7 @@ class TestExternalConnectivityBase(object):
 
         ext_net1 = self._make_ext_network('ext-net1',
                                           dn=self.dn_t1_l1_n1)
+        self.fix_l3out_vrf(self.t1_aname, 'l1', 'DefaultVRF')
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
@@ -4880,6 +4894,7 @@ class TestExternalConnectivityBase(object):
         # create external stuff
         ext_net1 = self._make_ext_network('ext-net1',
                                           dn=self.dn_t1_l1_n1)
+        self.fix_l3out_vrf(self.t1_aname, 'l1', vrf.name)
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
@@ -4931,9 +4946,19 @@ class TestExternalNoNat(TestExternalConnectivityBase,
     tenant_1 = 't1'
     tenant_2 = 'common'
 
+    def fix_l3out_vrf(self, l3out_tenant_name, l3out_name, vrf_name):
+        l3out = aim_resource.L3Outside(tenant_name=l3out_tenant_name,
+                                       name=l3out_name)
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.update(aim_ctx, l3out, vrf_name=vrf_name)
+
     def test_shared_unscoped_network(self):
         # Skip test since the topology tested is not valid with no-NAT
         pass
+
+    def test_router_interface(self):
+        self._do_test_router_interface(use_addr_scope=False,
+                                       single_tenant=True)
 
 
 class TestSnatIpAllocation(ApicAimTestCase):
