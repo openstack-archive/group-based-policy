@@ -172,7 +172,7 @@ def do_ap_name_change(session, conf=None):
         net_dbs = session.query(models_v2.Network).options(lazyload('*')).all()
         for net_db in net_dbs:
             ext_db = ext_mixin.get_network_extn_db(session, net_db.id)
-            if ext_db and ext_db[ext.EXTERNAL_NETWORK]:
+            if ext_db and ext_db.get(ext.EXTERNAL_NETWORK):
                 alembic_util.msg("Migrating external network: %s" % net_db)
                 # Its a managed external network.
                 ext_net = aim_resource.ExternalNetwork.from_dn(
