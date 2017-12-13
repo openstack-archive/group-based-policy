@@ -77,6 +77,12 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     LOG.exception("APIC AIM extend_network_dict failed")
 
     def process_create_network(self, plugin_context, data, result):
+        is_svi = data.get(cisco_apic.SVI, False)
+        res_dict = {cisco_apic.SVI: is_svi}
+        self.set_network_extn_db(plugin_context.session, result['id'],
+                                 res_dict)
+        result.update(res_dict)
+
         if (data.get(cisco_apic.DIST_NAMES) and
             data[cisco_apic.DIST_NAMES].get(cisco_apic.EXTERNAL_NETWORK)):
             dn = data[cisco_apic.DIST_NAMES][cisco_apic.EXTERNAL_NETWORK]
@@ -85,11 +91,15 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             except aim_exc.InvalidDNForAciResource:
                 raise n_exc.InvalidInput(
                     error_message=('%s is not valid ExternalNetwork DN' % dn))
-            res_dict = {cisco_apic.EXTERNAL_NETWORK: dn,
-                        cisco_apic.NAT_TYPE:
-                        data.get(cisco_apic.NAT_TYPE, 'distributed'),
-                        cisco_apic.EXTERNAL_CIDRS:
-                        data.get(cisco_apic.EXTERNAL_CIDRS, ['0.0.0.0/0'])}
+            if is_svi:
+                res_dict = {cisco_apic.EXTERNAL_NETWORK: dn}
+            else:
+                res_dict = {cisco_apic.EXTERNAL_NETWORK: dn,
+                            cisco_apic.NAT_TYPE:
+                            data.get(cisco_apic.NAT_TYPE, 'distributed'),
+                            cisco_apic.EXTERNAL_CIDRS:
+                            data.get(
+                                cisco_apic.EXTERNAL_CIDRS, ['0.0.0.0/0'])}
             self.set_network_extn_db(plugin_context.session, result['id'],
                                      res_dict)
             result.setdefault(cisco_apic.DIST_NAMES, {})[
