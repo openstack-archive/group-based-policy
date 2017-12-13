@@ -15,6 +15,7 @@
 
 import copy
 import netaddr
+import re
 import sqlalchemy as sa
 
 from aim.aim_lib import nat_strategy
@@ -70,6 +71,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
+DEVICE_OWNER_SVI_PORT = 'apic:svi'
 
 ANY_FILTER_NAME = 'AnyFilter'
 ANY_FILTER_ENTRY_NAME = 'AnyFilterEntry'
@@ -78,6 +80,9 @@ UNROUTED_VRF_NAME = 'UnroutedVRF'
 COMMON_TENANT_NAME = 'common'
 ROUTER_SUBJECT_NAME = 'route'
 DEFAULT_SG_NAME = 'DefaultSecurityGroup'
+L3OUT_NODE_PROFILE_NAME = 'NodeProfile'
+L3OUT_IF_PROFILE_NAME = 'IfProfile'
+L3OUT_EXT_EPG = 'ExtEpg'
 
 AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
@@ -90,6 +95,13 @@ NO_ADDR_SCOPE = object()
 
 DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
 DEFAULT_HOST_DOMAIN = '*'
+
+ACI_CHASSIS_DESCR_STRING = 'topology/pod-%s/node-%s'
+ACI_PORT_DESCR_FORMATS = ('topology/pod-(\d+)/paths-(\d+)/pathep-'
+                          '\[eth(\d+)/(\d+(\/\d+)*)\]')
+ACI_VPCPORT_DESCR_FORMAT = ('topology/pod-(\d+)/protpaths-(\d+)-(\d+)/pathep-'
+                            '\[(.*)\]')
+ROUTER_IDS = ['199.199.199.198', '199.199.199.199']
 
 
 class KeystoneNotificationEndpoint(object):
@@ -201,8 +213,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                             enable_keystone_notification_purge)
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
+        self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
+        self.port_desc_re = re.compile(ACI_PORT_DESCR_FORMATS)
+        self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
         trunk_driver.register()
 
     def _ensure_static_resources(self):
@@ -387,6 +402,42 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     epg = resource
                 elif isinstance(resource, aim_resource.VRF):
                     vrf = resource
+        elif self._is_svi(current):
+            l3out, ext_net, _ = self._get_aim_nat_strategy(current,
+                                                           is_external=False)
+            # This means no DN is being provided. Then we should try to create
+            # the l3out automatically
+            if not ext_net:
+                tenant_aname = self.name_mapper.project(session,
+                                                        current['tenant_id'])
+                vrf = self._map_unrouted_vrf()
+                aname = self.name_mapper.network(session, current['id'])
+                dname = aim_utils.sanitize_display_name(current['name'])
+
+                # TBD: use the AIM external routed domain
+                aim_l3out = aim_resource.L3Outside(
+                    tenant_name=tenant_aname,
+                    name=aname, display_name=dname, vrf_name=vrf.name,
+                    l3_domain_dn=self.l3_domain_dn)
+                if not self.aim.get(aim_ctx, aim_l3out):
+                    self.aim.create(aim_ctx, aim_l3out)
+
+                aim_ext_net = aim_resource.ExternalNetwork(
+                    tenant_name=tenant_aname,
+                    l3out_name=aname, name=L3OUT_EXT_EPG)
+                if not self.aim.get(aim_ctx, aim_ext_net):
+                    self.aim.create(aim_ctx, aim_ext_net)
+
+                aim_ext_subnet = aim_resource.ExternalSubnet(
+                    tenant_name=tenant_aname,
+                    l3out_name=aname,
+                    external_network_name=L3OUT_EXT_EPG, cidr='0.0.0.0/0')
+                if not self.aim.get(aim_ctx, aim_ext_subnet):
+                    self.aim.create(aim_ctx, aim_ext_subnet)
+
+                self._add_network_mapping(session, current['id'], None, None,
+                                          vrf, aim_ext_net)
+            return
         else:
             bd, epg = self._map_network(session, current)
 
@@ -413,6 +464,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         current = context.current
         original = context.original
         LOG.debug("APIC AIM MD updating network: %s", current)
+
+        # TBD: nothing do be done for SVI network
+        if self._is_svi(current):
+            return
 
         # TODO(amitbose) - Handle inter-conversion between external and
         # private networks
@@ -456,6 +511,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # TODO(amitbose) delete L3out only if no other Neutron
             # network is using the L3out
             ns.delete_l3outside(aim_ctx, l3out)
+        elif self._is_svi(current):
+            l3out, ext_net, _ = self._get_aim_nat_strategy(
+                current, is_external=False)
+            aim_l3out = self.aim.get(aim_ctx, l3out)
+            if not aim_l3out:
+                return
+            # this means its pre-existing l3out
+            if aim_l3out.monitored:
+                # just delete everything under NodeProfile
+                aim_l3out_np = aim_resource.L3OutNodeProfile(
+                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                    name=L3OUT_NODE_PROFILE_NAME)
+                self.aim.delete(aim_ctx, aim_l3out_np, cascade=True)
+            else:
+                self.aim.delete(aim_ctx, l3out, cascade=True)
         else:
             mapping = self._get_network_mapping(session, current['id'])
             bd = self._get_network_bd(mapping)
@@ -473,17 +543,30 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         mapping = network_db.aim_mapping
         if mapping:
-            bd = self._get_network_bd(mapping)
-            dist_names[cisco_apic.BD] = bd.dn
-            sync_state = self._merge_status(aim_ctx, sync_state, bd)
+            if mapping.epg_name:
+                bd = self._get_network_bd(mapping)
+                dist_names[cisco_apic.BD] = bd.dn
+                sync_state = self._merge_status(aim_ctx, sync_state, bd)
 
-            epg = self._get_network_epg(mapping)
-            dist_names[cisco_apic.EPG] = epg.dn
-            sync_state = self._merge_status(aim_ctx, sync_state, epg)
+                epg = self._get_network_epg(mapping)
+                dist_names[cisco_apic.EPG] = epg.dn
+                sync_state = self._merge_status(aim_ctx, sync_state, epg)
+            # SVI network which auto l3out
+            elif mapping.l3out_name:
+                l3out_ext_net = self._get_network_l3out_ext_net(mapping)
+                dist_names[cisco_apic.EXTERNAL_NETWORK] = l3out_ext_net.dn
+                sync_state = self._merge_status(aim_ctx, sync_state,
+                                                l3out_ext_net)
 
             vrf = self._get_network_vrf(mapping)
             dist_names[cisco_apic.VRF] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
+        # SVI network with pre-existing l3out
+        else:
+            _, ext_net, _ = self._get_aim_nat_strategy_db(session, network_db,
+                                                          is_external=False)
+            if ext_net:
+                sync_state = self._merge_status(aim_ctx, sync_state, ext_net)
 
         # REVISIT: Should the external network be persisted in the
         # mapping along with the other resources?
@@ -495,6 +578,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
 
+    # TBD: limit 1 subnet per SVI network
     def create_subnet_precommit(self, context):
         current = context.current
         LOG.debug("APIC AIM MD creating subnet: %s", current)
@@ -539,6 +623,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         if (not is_ext and
             current['name'] != original['name']):
+            # nothing do be done for SVI network
+            if self._is_svi(context.network.current):
+                return
 
             bd = self._get_network_bd(network_db.aim_mapping)
 
@@ -609,7 +696,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if sub:
                     dist_names[cisco_apic.SUBNET] = sub.dn
                     sync_state = self._merge_status(aim_ctx, sync_state, sub)
-        elif network_db.aim_mapping:
+        elif network_db.aim_mapping and network_db.aim_mapping.bd_name:
             bd = self._get_network_bd(network_db.aim_mapping)
 
             for gw_ip, router_id in self._subnet_router_ips(session,
@@ -908,16 +995,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
             ip_address, subnet_db, network_db = intf
 
-            bd = self._get_network_bd(network_db.aim_mapping)
-            sn = self._map_subnet(subnet_db, intf.ip_address, bd)
-            dist_names[intf.ip_address] = sn.dn
-            sync_state = self._merge_status(aim_ctx, sync_state, sn)
+            if network_db.aim_mapping and network_db.aim_mapping.bd_name:
+                bd = self._get_network_bd(network_db.aim_mapping)
+                sn = self._map_subnet(subnet_db, intf.ip_address, bd)
+                dist_names[intf.ip_address] = sn.dn
+                sync_state = self._merge_status(aim_ctx, sync_state, sn)
 
             scope_id = (subnet_db.subnetpool and
                         subnet_db.subnetpool.address_scope_id)
             if scope_id:
                 scope_ids.add(scope_id)
-            else:
+            elif network_db.aim_mapping:
                 vrf = self._get_network_vrf(network_db.aim_mapping)
                 if unscoped_vrf and unscoped_vrf.identity != vrf.identity:
                     # This should never happen. If it does, it
@@ -1093,53 +1181,79 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             else:
                 vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
 
-        # Associate or map network, depending on whether it has other
-        # interfaces.
-        if not net_intfs:
-            # First interface for network.
-            bd, epg = self._associate_network_with_vrf(
-                aim_ctx, network_db, vrf, nets_to_notify)
+        epg = None
+        is_svi = False
+        if network_db.aim_mapping:
+            # Associate or map network, depending on whether it has other
+            # interfaces.
+            if not net_intfs:
+                # First interface for network.
+                if network_db.aim_mapping.epg_name:
+                    bd, epg = self._associate_network_with_vrf(
+                        aim_ctx, network_db, vrf, nets_to_notify)
+                elif network_db.aim_mapping.l3out_name:
+                    is_svi = True
+                    l3out, epg = self._associate_network_with_vrf(
+                        aim_ctx, network_db, vrf, nets_to_notify, is_svi=True)
+            else:
+                # Network is already routed.
+                #
+                # REVISIT: For non-isomorphic dual-stack network, may need
+                # to move the BD and EPG from already-routed v6 VRF to
+                # newly-routed v4 VRF, and setup identity NAT for the v6
+                # traffic.
+                if network_db.aim_mapping.epg_name:
+                    bd = self._get_network_bd(network_db.aim_mapping)
+                    epg = self._get_network_epg(network_db.aim_mapping)
+                elif network_db.aim_mapping.l3out_name:
+                    is_svi = True
+                    epg = self._get_network_l3out_ext_net(
+                        network_db.aim_mapping)
+
+            if network_db.aim_mapping.epg_name:
+                # Create AIM Subnet(s) for each added Neutron subnet.
+                for subnet in subnets:
+                    gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
+
+                    dname = aim_utils.sanitize_display_name(
+                        router['name'] + "-" +
+                        (subnet['name'] or subnet['cidr']))
+
+                    sn = self._map_subnet(subnet, gw_ip, bd)
+                    sn.display_name = dname
+                    sn = self.aim.create(aim_ctx, sn)
         else:
-            # Network is already routed.
-            #
-            # REVISIT: For non-isomorphic dual-stack network, may need
-            # to move the BD and EPG from already-routed v6 VRF to
-            # newly-routed v4 VRF, and setup identity NAT for the v6
-            # traffic.
-            bd = self._get_network_bd(network_db.aim_mapping)
-            epg = self._get_network_epg(network_db.aim_mapping)
-
-        # Create AIM Subnet(s) for each added Neutron subnet.
-        for subnet in subnets:
-            gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
-
-            dname = aim_utils.sanitize_display_name(
-                router['name'] + "-" +
-                (subnet['name'] or subnet['cidr']))
-
-            sn = self._map_subnet(subnet, gw_ip, bd)
-            sn.display_name = dname
-            sn = self.aim.create(aim_ctx, sn)
+            is_svi = True
 
         # Ensure network's EPG provides/consumes router's Contract.
-
         contract = self._map_router(session, router, True)
-        epg = self.aim.get(aim_ctx, epg)
+        if epg:
+            # this could be internal or external EPG
+            epg = self.aim.get(aim_ctx, epg)
+        # SVI netowkr with pre-existing l3out
+        else:
+            extn_db = extension_db.ExtensionDbMixin()
+            extn_info = extn_db.get_network_extn_db(session, network_db.id)
+            if extn_info and cisco_apic.EXTERNAL_NETWORK in extn_info:
+                dn = extn_info[cisco_apic.EXTERNAL_NETWORK]
+                a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
+                epg = self.aim.get(aim_ctx, a_ext_net)
 
-        contracts = epg.consumed_contract_names
-        if contract.name not in contracts:
-            contracts.append(contract.name)
-            epg = self.aim.update(aim_ctx, epg,
-                                  consumed_contract_names=contracts)
-
-        contracts = epg.provided_contract_names
-        if contract.name not in contracts:
-            contracts.append(contract.name)
-            epg = self.aim.update(aim_ctx, epg,
-                                  provided_contract_names=contracts)
+        if epg:
+            contracts = epg.consumed_contract_names
+            if contract.name not in contracts:
+                contracts.append(contract.name)
+                epg = self.aim.update(aim_ctx, epg,
+                                      consumed_contract_names=contracts)
+            contracts = epg.provided_contract_names
+            if contract.name not in contracts:
+                contracts.append(contract.name)
+                epg = self.aim.update(aim_ctx, epg,
+                                      provided_contract_names=contracts)
 
         # If external-gateway is set, handle external-connectivity changes.
-        if router.gw_port_id:
+        # external network is not supported for SVI network for now.
+        if router.gw_port_id and not is_svi:
             net = self.plugin.get_network(context,
                                           router.gw_port.network_id)
             # If this is first interface-port, then that will determine
@@ -1190,20 +1304,37 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # stack's scope separately, or at least raise an exception.
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
-        bd = self._get_network_bd(network_db.aim_mapping)
-        epg = self._get_network_epg(network_db.aim_mapping)
-        old_vrf = self._get_network_vrf(network_db.aim_mapping)
-
         router_db = (session.query(l3_db.Router).
                      filter_by(id=router_id).
                      one())
         contract = self._map_router(session, router_db, True)
 
-        # Remove AIM Subnet(s) for each removed Neutron subnet.
-        for subnet in subnets:
-            gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
-            sn = self._map_subnet(subnet, gw_ip, bd)
-            self.aim.delete(aim_ctx, sn)
+        epg = None
+        old_vrf = None
+        is_svi = False
+        if network_db.aim_mapping:
+            old_vrf = self._get_network_vrf(network_db.aim_mapping)
+            if network_db.aim_mapping.epg_name:
+                bd = self._get_network_bd(network_db.aim_mapping)
+                epg = self._get_network_epg(network_db.aim_mapping)
+                # Remove AIM Subnet(s) for each removed Neutron subnet.
+                for subnet in subnets:
+                    gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
+                    sn = self._map_subnet(subnet, gw_ip, bd)
+                    self.aim.delete(aim_ctx, sn)
+            # SVI network with auto l3out
+            elif network_db.aim_mapping.l3out_name:
+                is_svi = True
+                epg = self._get_network_l3out_ext_net(network_db.aim_mapping)
+        # SVI network with pre-existing l3out
+        else:
+            is_svi = True
+            extn_db = extension_db.ExtensionDbMixin()
+            extn_info = extn_db.get_network_extn_db(session, network_db.id)
+            if extn_info and cisco_apic.EXTERNAL_NETWORK in extn_info:
+                dn = extn_info[cisco_apic.EXTERNAL_NETWORK]
+                a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
+                epg = self.aim.get(aim_ctx, a_ext_net)
 
         # Find remaining routers with interfaces to this network.
         router_ids = [r[0] for r in
@@ -1217,7 +1348,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # If network is no longer connected to this router, stop
         # network's EPG from providing/consuming this router's
         # Contract.
-        if router_id not in router_ids:
+        if router_id not in router_ids and epg:
             epg = self.aim.get(aim_ctx, epg)
 
             contracts = [name for name in epg.consumed_contract_names
@@ -1243,7 +1374,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if scope_id == NO_ADDR_SCOPE:
             # If the interface's network has not become unrouted, see
             # if its topology must be moved.
-            if router_ids:
+            if router_ids and old_vrf:
                 intf_topology = self._network_topology(session, network_db)
                 intf_shared_net = self._topology_shared(intf_topology)
                 intf_vrf = self._map_default_vrf(
@@ -1256,7 +1387,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
             # See if the router's topology must be moved.
             router_topology = self._router_topology(session, router_db.id)
-            if router_topology:
+            if router_topology and old_vrf:
                 router_shared_net = self._topology_shared(router_topology)
                 router_vrf = self._map_default_vrf(
                     session,
@@ -1270,14 +1401,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # If network is no longer connected to any router, make the
         # network's BD unrouted.
-        if not router_ids:
+        if not router_ids and old_vrf:
             self._dissassociate_network_from_vrf(
-                aim_ctx, network_db, old_vrf, nets_to_notify)
+                aim_ctx, network_db, old_vrf, nets_to_notify, is_svi=is_svi)
             if scope_id == NO_ADDR_SCOPE:
                 self._cleanup_default_vrf(aim_ctx, old_vrf)
 
         # If external-gateway is set, handle external-connectivity changes.
-        if router_db.gw_port_id:
+        # external network is not supproted for SVI network for now.
+        if router_db.gw_port_id and not is_svi:
             net = self.plugin.get_network(context,
                                           router_db.gw_port.network_id)
             # If this was the last interface for this VRF for this
@@ -1952,47 +2084,73 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return rtr_dbs
 
     def _associate_network_with_vrf(self, aim_ctx, network_db, new_vrf,
-                                    nets_to_notify):
+                                    nets_to_notify, is_svi=False):
         LOG.debug("Associating previously unrouted network %(net_id)s named "
                   "'%(net_name)s' in project %(net_tenant)s with VRF %(vrf)s",
                   {'net_id': network_db.id, 'net_name': network_db.name,
                    'net_tenant': network_db.tenant_id, 'vrf': new_vrf})
 
+        if not network_db.aim_mapping:
+            return
+
         # NOTE: Must only be called for networks that are not yet
         # attached to any router.
 
-        bd = self._get_network_bd(network_db.aim_mapping)
-        epg = self._get_network_epg(network_db.aim_mapping)
+        if not is_svi:
+            bd = self._get_network_bd(network_db.aim_mapping)
+            epg = self._get_network_epg(network_db.aim_mapping)
+            tenant_name = bd.tenant_name
+        else:
+            l3out = self._get_network_l3out(network_db.aim_mapping)
+            tenant_name = l3out.tenant_name
 
         if (new_vrf.tenant_name != COMMON_TENANT_NAME and
-            bd.tenant_name != new_vrf.tenant_name):
+            tenant_name != new_vrf.tenant_name):
             # Move BD and EPG to new VRF's Tenant, set VRF, and make
             # sure routing is enabled.
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
-                      {'old': bd.tenant_name, 'new': new_vrf.tenant_name})
+                      {'old': tenant_name, 'new': new_vrf.tenant_name})
+            if not is_svi:
+                bd = self.aim.get(aim_ctx, bd)
+                self.aim.delete(aim_ctx, bd)
+                bd.tenant_name = new_vrf.tenant_name
+                bd.enable_routing = True
+                bd.vrf_name = new_vrf.name
+                bd = self.aim.create(aim_ctx, bd)
+                self._set_network_bd(network_db.aim_mapping, bd)
 
-            bd = self.aim.get(aim_ctx, bd)
-            self.aim.delete(aim_ctx, bd)
-            bd.tenant_name = new_vrf.tenant_name
-            bd.enable_routing = True
-            bd.vrf_name = new_vrf.name
-            bd = self.aim.create(aim_ctx, bd)
-            self._set_network_bd(network_db.aim_mapping, bd)
-
-            epg = self.aim.get(aim_ctx, epg)
-            self.aim.delete(aim_ctx, epg)
-            # ensure app profile exists in destination tenant
-            ap = aim_resource.ApplicationProfile(
-                tenant_name=new_vrf.tenant_name, name=self.ap_name)
-            if not self.aim.get(aim_ctx, ap):
-                self.aim.create(aim_ctx, ap)
-            epg.tenant_name = new_vrf.tenant_name
-            epg = self.aim.create(aim_ctx, epg)
-            self._set_network_epg(network_db.aim_mapping, epg)
+                epg = self.aim.get(aim_ctx, epg)
+                self.aim.delete(aim_ctx, epg)
+                # ensure app profile exists in destination tenant
+                ap = aim_resource.ApplicationProfile(
+                    tenant_name=new_vrf.tenant_name, name=self.ap_name)
+                if not self.aim.get(aim_ctx, ap):
+                    self.aim.create(aim_ctx, ap)
+                epg.tenant_name = new_vrf.tenant_name
+                epg = self.aim.create(aim_ctx, epg)
+                self._set_network_epg(network_db.aim_mapping, epg)
+            else:
+                old_l3out = self.aim.get(aim_ctx, l3out)
+                l3out = copy.copy(old_l3out)
+                l3out.tenant_name = new_vrf.tenant_name
+                l3out.vrf_name = new_vrf.name
+                l3out = self.aim.create(aim_ctx, l3out)
+                self._set_network_l3out(network_db.aim_mapping,
+                                        l3out)
+                for old_child in self.aim.get_subtree(aim_ctx, old_l3out):
+                    new_child = copy.copy(old_child)
+                    new_child.tenant_name = new_vrf.tenant_name
+                    new_child = self.aim.create(aim_ctx, new_child)
+                    self.aim.delete(aim_ctx, old_child)
+                self.aim.delete(aim_ctx, old_l3out)
         else:
             # Just set VRF and enable routing.
-            bd = self.aim.update(aim_ctx, bd, enable_routing=True,
-                                 vrf_name=new_vrf.name)
+            if not is_svi:
+                bd = self.aim.update(aim_ctx, bd, enable_routing=True,
+                                     vrf_name=new_vrf.name)
+            else:
+                l3out = self.aim.update(aim_ctx, l3out,
+                                        vrf_name=new_vrf.name)
 
         self._set_network_vrf(network_db.aim_mapping, new_vrf)
 
@@ -2001,14 +2159,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Tenants have changed.
         nets_to_notify.add(network_db.id)
 
-        return bd, epg
+        if not is_svi:
+            return bd, epg
+        else:
+            ext_net = self._get_network_l3out_ext_net(network_db.aim_mapping)
+            return l3out, ext_net
 
     def _dissassociate_network_from_vrf(self, aim_ctx, network_db, old_vrf,
-                                        nets_to_notify):
+                                        nets_to_notify, is_svi=False):
         LOG.debug("Dissassociating network %(net_id)s named '%(net_name)s' in "
                   "project %(net_tenant)s from VRF %(vrf)s",
                   {'net_id': network_db.id, 'net_name': network_db.name,
                    'net_tenant': network_db.tenant_id, 'vrf': old_vrf})
+
+        if not network_db.aim_mapping:
+            return
 
         session = aim_ctx.db_session
 
@@ -2024,26 +2189,47 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
                       {'old': old_vrf.tenant_name, 'new': new_tenant_name})
 
-            bd = self._get_network_bd(network_db.aim_mapping)
-            bd = self.aim.get(aim_ctx, bd)
-            self.aim.delete(aim_ctx, bd)
-            bd.tenant_name = new_tenant_name
-            bd.enable_routing = False
-            bd.vrf_name = new_vrf.name
-            bd = self.aim.create(aim_ctx, bd)
-            self._set_network_bd(network_db.aim_mapping, bd)
+            if not is_svi:
+                bd = self._get_network_bd(network_db.aim_mapping)
+                bd = self.aim.get(aim_ctx, bd)
+                self.aim.delete(aim_ctx, bd)
+                bd.tenant_name = new_tenant_name
+                bd.enable_routing = False
+                bd.vrf_name = new_vrf.name
+                bd = self.aim.create(aim_ctx, bd)
+                self._set_network_bd(network_db.aim_mapping, bd)
 
-            epg = self._get_network_epg(network_db.aim_mapping)
-            epg = self.aim.get(aim_ctx, epg)
-            self.aim.delete(aim_ctx, epg)
-            epg.tenant_name = new_tenant_name
-            epg = self.aim.create(aim_ctx, epg)
-            self._set_network_epg(network_db.aim_mapping, epg)
+                epg = self._get_network_epg(network_db.aim_mapping)
+                epg = self.aim.get(aim_ctx, epg)
+                self.aim.delete(aim_ctx, epg)
+                epg.tenant_name = new_tenant_name
+                epg = self.aim.create(aim_ctx, epg)
+                self._set_network_epg(network_db.aim_mapping, epg)
+            else:
+                l3out = self._get_network_l3out(network_db.aim_mapping)
+                old_l3out = self.aim.get(aim_ctx, l3out)
+                l3out = copy.copy(old_l3out)
+                l3out.tenant_name = new_tenant_name
+                l3out.vrf_name = new_vrf.name
+                l3out = self.aim.create(aim_ctx, l3out)
+                self._set_network_l3out(network_db.aim_mapping,
+                                        l3out)
+                for old_child in self.aim.get_subtree(aim_ctx, old_l3out):
+                    new_child = copy.copy(old_child)
+                    new_child.tenant_name = new_tenant_name
+                    new_child = self.aim.create(aim_ctx, new_child)
+                    self.aim.delete(aim_ctx, old_child)
+                self.aim.delete(aim_ctx, old_l3out)
         else:
             # Just set unrouted VRF and disable routing.
-            bd = self._get_network_bd(network_db.aim_mapping)
-            bd = self.aim.update(aim_ctx, bd, enable_routing=False,
-                                 vrf_name=new_vrf.name)
+            if not is_svi:
+                bd = self._get_network_bd(network_db.aim_mapping)
+                bd = self.aim.update(aim_ctx, bd, enable_routing=False,
+                                     vrf_name=new_vrf.name)
+            else:
+                l3out = self._get_network_l3out(network_db.aim_mapping)
+                l3out = self.aim.update(aim_ctx, l3out,
+                                        vrf_name=new_vrf.name)
 
         self._set_network_vrf(network_db.aim_mapping, new_vrf)
 
@@ -2064,6 +2250,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # with topology.
 
         for network_db in topology.itervalues():
+            # this is the SVI network with pre-existing l3out,
+            # nothing to be done here
+            if not network_db.aim_mapping:
+                continue
             if old_vrf.tenant_name != new_vrf.tenant_name:
                 # New VRF is in different Tenant, so move BD, EPG, and
                 # all Subnets to new VRF's Tenant and set BD's VRF.
@@ -2072,32 +2262,55 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           {'net': network_db.id,
                            'old': old_vrf.tenant_name,
                            'new': new_vrf.tenant_name})
+                if network_db.aim_mapping.epg_name:
+                    bd = self._get_network_bd(network_db.aim_mapping)
+                    old_bd = self.aim.get(aim_ctx, bd)
+                    new_bd = copy.copy(old_bd)
+                    new_bd.tenant_name = new_vrf.tenant_name
+                    new_bd.vrf_name = new_vrf.name
+                    bd = self.aim.create(aim_ctx, new_bd)
+                    self._set_network_bd(network_db.aim_mapping, bd)
+                    for subnet in self.aim.find(
+                            aim_ctx, aim_resource.Subnet,
+                            tenant_name=old_bd.tenant_name,
+                            bd_name=old_bd.name):
+                        self.aim.delete(aim_ctx, subnet)
+                        subnet.tenant_name = bd.tenant_name
+                        subnet = self.aim.create(aim_ctx, subnet)
+                    self.aim.delete(aim_ctx, old_bd)
 
-                bd = self._get_network_bd(network_db.aim_mapping)
-                old_bd = self.aim.get(aim_ctx, bd)
-                new_bd = copy.copy(old_bd)
-                new_bd.tenant_name = new_vrf.tenant_name
-                new_bd.vrf_name = new_vrf.name
-                bd = self.aim.create(aim_ctx, new_bd)
-                self._set_network_bd(network_db.aim_mapping, bd)
-                for subnet in self.aim.find(
-                        aim_ctx, aim_resource.Subnet,
-                        tenant_name=old_bd.tenant_name, bd_name=old_bd.name):
-                    self.aim.delete(aim_ctx, subnet)
-                    subnet.tenant_name = bd.tenant_name
-                    subnet = self.aim.create(aim_ctx, subnet)
-                self.aim.delete(aim_ctx, old_bd)
-
-                epg = self._get_network_epg(network_db.aim_mapping)
-                epg = self.aim.get(aim_ctx, epg)
-                self.aim.delete(aim_ctx, epg)
-                epg.tenant_name = new_vrf.tenant_name
-                epg = self.aim.create(aim_ctx, epg)
-                self._set_network_epg(network_db.aim_mapping, epg)
+                    epg = self._get_network_epg(network_db.aim_mapping)
+                    epg = self.aim.get(aim_ctx, epg)
+                    self.aim.delete(aim_ctx, epg)
+                    epg.tenant_name = new_vrf.tenant_name
+                    epg = self.aim.create(aim_ctx, epg)
+                    self._set_network_epg(network_db.aim_mapping, epg)
+                # SVI network with auto l3out
+                elif network_db.aim_mapping.l3out_name:
+                    l3out = self._get_network_l3out(network_db.aim_mapping)
+                    old_l3out = self.aim.get(aim_ctx, l3out)
+                    l3out = copy.copy(old_l3out)
+                    l3out.tenant_name = new_vrf.tenant_name
+                    l3out.vrf_name = new_vrf.name
+                    l3out = self.aim.create(aim_ctx, l3out)
+                    self._set_network_l3out(network_db.aim_mapping,
+                                            l3out)
+                    for old_child in self.aim.get_subtree(aim_ctx, old_l3out):
+                        new_child = copy.copy(old_child)
+                        new_child.tenant_name = new_vrf.tenant_name
+                        new_child = self.aim.create(aim_ctx, new_child)
+                        self.aim.delete(aim_ctx, old_child)
+                    self.aim.delete(aim_ctx, old_l3out)
             else:
-                # New VRF is in same Tenant, so just set BD's VRF.
-                bd = self._get_network_bd(network_db.aim_mapping)
-                bd = self.aim.update(aim_ctx, bd, vrf_name=new_vrf.name)
+                if network_db.aim_mapping.epg_name:
+                    # New VRF is in same Tenant, so just set BD's VRF.
+                    bd = self._get_network_bd(network_db.aim_mapping)
+                    bd = self.aim.update(aim_ctx, bd, vrf_name=new_vrf.name)
+                elif network_db.aim_mapping.l3out_name:
+                    # New VRF is in same Tenant, so just set l3out's VRF.
+                    l3out = self._get_network_l3out(network_db.aim_mapping)
+                    l3out = self.aim.update(aim_ctx, l3out,
+                                            vrf_name=new_vrf.name)
 
             self._set_network_vrf(network_db.aim_mapping, new_vrf)
 
@@ -2357,6 +2570,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _is_external(self, network):
         return network.get('router:external')
 
+    def _is_svi(self, network):
+        return network.get(cisco_apic.SVI)
+
     def _nat_type_to_strategy(self, nat_type):
         ns_cls = nat_strategy.DistributedNatStrategy
         if nat_type == '':
@@ -2368,8 +2584,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         ns.common_scope = self.apic_system_id
         return ns
 
-    def _get_aim_nat_strategy(self, network):
-        if not self._is_external(network):
+    def _get_aim_nat_strategy(self, network, is_external=True):
+        if is_external and not self._is_external(network):
             return None, None, None
         ext_net_dn = (network.get(cisco_apic.DIST_NAMES, {})
                       .get(cisco_apic.EXTERNAL_NETWORK))
@@ -2381,8 +2597,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             tenant_name=aim_ext_net.tenant_name, name=aim_ext_net.l3out_name)
         return aim_l3out, aim_ext_net, self._nat_type_to_strategy(nat_type)
 
-    def _get_aim_nat_strategy_db(self, session, network_db):
-        if network_db.external is not None:
+    def _get_aim_nat_strategy_db(self, session, network_db, is_external=True):
+        if not is_external or network_db.external is not None:
             extn_db = extension_db.ExtensionDbMixin()
             extn_info = extn_db.get_network_extn_db(session, network_db.id)
             if extn_info and cisco_apic.EXTERNAL_NETWORK in extn_info:
@@ -2392,7 +2608,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     tenant_name=a_ext_net.tenant_name,
                     name=a_ext_net.l3out_name)
                 ns = self._nat_type_to_strategy(
-                        extn_info[cisco_apic.NAT_TYPE])
+                        extn_info.get(cisco_apic.NAT_TYPE))
                 return a_l3out, a_ext_net, ns
         return None, None, None
 
@@ -2705,6 +2921,133 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._is_supported_non_opflex_type(
                     bound_segment[api.NETWORK_TYPE]))
 
+    def _update_static_path_for_svi(self, session, port_context, network,
+                                    segment, old_path=None, new_path=None):
+        if new_path and not segment:
+            return
+
+        if segment:
+            if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
+                seg = 'vlan-%s' % segment[api.SEGMENTATION_ID]
+            else:
+                LOG.debug('Unsupported segmentation type for static path '
+                          'binding: %s',
+                          segment.get(api.NETWORK_TYPE))
+                return
+
+        path = new_path
+        if not path:
+            path = old_path
+        nodes = []
+        node_paths = []
+        is_vpc = False
+        match = self.port_desc_re.match(path)
+        if match:
+            pod_id, switch, module, port = match.group(1, 2, 3, 4)
+            nodes.append(switch)
+            node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id, switch))
+        else:
+            match = self.vpcport_desc_re.match(path)
+            if match:
+                pod_id, switch1, switch2, bundle = match.group(1, 2, 3, 4)
+                nodes.append(switch1)
+                nodes.append(switch2)
+                node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id,
+                                                              switch1))
+                node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id,
+                                                              switch2))
+                is_vpc = True
+            else:
+                LOG.error('Unsupported static path format: %s', path)
+                return
+
+        aim_ctx = aim_context.AimContext(db_session=session)
+        l3out, ext_net, _ = self._get_aim_nat_strategy(
+            network, is_external=False)
+        if new_path:
+            aim_l3out_np = aim_resource.L3OutNodeProfile(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                name=L3OUT_NODE_PROFILE_NAME)
+            aim_l3out_np_db = self.aim.get(aim_ctx, aim_l3out_np)
+            if not aim_l3out_np_db:
+                self.aim.create(aim_ctx, aim_l3out_np)
+
+            for idx, node_path in enumerate(node_paths):
+                # TBD: use the real router_id
+                aim_l3out_node = aim_resource.L3OutNode(
+                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                    node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                    node_path=node_path, router_id=ROUTER_IDS[idx],
+                    router_id_loopback=False)
+                aim_l3out_node_db = self.aim.get(aim_ctx, aim_l3out_node)
+                if not aim_l3out_node_db:
+                    self.aim.create(aim_ctx, aim_l3out_node)
+
+            aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                name=L3OUT_IF_PROFILE_NAME)
+            aim_l3out_ip_db = self.aim.get(aim_ctx, aim_l3out_ip)
+            if not aim_l3out_ip_db:
+                self.aim.create(aim_ctx, aim_l3out_ip)
+
+            subnet = (session.query(models_v2.Subnet)
+                      .filter(models_v2.Subnet.id ==
+                              network['subnets'][0]).one())
+            mask = subnet['cidr'].split('/')[1]
+
+            plugin_context = port_context._plugin_context
+            primary_ips = []
+            for node in nodes:
+                filters = {'network_id': [network['id']],
+                           'name': ['apic-svi-port:node-%s' % node]}
+                svi_ports = self.plugin.get_ports(plugin_context, filters)
+                if svi_ports and svi_ports[0]['fixed_ips']:
+                    ip = svi_ports[0]['fixed_ips'][0]['ip_address']
+                    primary_ips.append(ip + '/' + mask)
+                else:
+                    attrs = {'device_id': '',
+                             'device_owner': DEVICE_OWNER_SVI_PORT,
+                             'tenant_id': network['tenant_id'],
+                             'name': 'apic-svi-port:node-%s' % node,
+                             'network_id': network['id'],
+                             'mac_address': n_constants.ATTR_NOT_SPECIFIED,
+                             'fixed_ips': [{'subnet_id':
+                                            network['subnets'][0]}],
+                             'admin_state_up': False}
+                    port = self.plugin.create_port(plugin_context,
+                                                   {'port': attrs})
+                    if port and port['fixed_ips']:
+                        ip = port['fixed_ips'][0]['ip_address']
+                        primary_ips.append(ip + '/' + mask)
+                    else:
+                        LOG.error('cannot allocate a port for the SVI primary'
+                                  ' addr')
+                        return
+            secondary_ip = subnet['gateway_ip'] + '/' + mask
+            aim_l3out_if = aim_resource.L3OutInterface(
+                tenant_name=l3out.tenant_name,
+                l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                interface_profile_name=L3OUT_IF_PROFILE_NAME,
+                interface_path=path, encap=seg,
+                primary_addr_a=primary_ips[0],
+                secondary_addr_a_list=[{'addr': secondary_ip}],
+                primary_addr_b=primary_ips[1] if is_vpc else '',
+                secondary_addr_b_list=[{'addr':
+                                        secondary_ip}] if is_vpc else [])
+            aim_l3out_if_db = self.aim.get(aim_ctx, aim_l3out_if)
+            if not aim_l3out_if_db:
+                self.aim.create(aim_ctx, aim_l3out_if)
+        else:
+            aim_l3out_if = aim_resource.L3OutInterface(
+                tenant_name=l3out.tenant_name,
+                l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                interface_profile_name=L3OUT_IF_PROFILE_NAME,
+                interface_path=path)
+            self.aim.delete(aim_ctx, aim_l3out_if)
+
     def _update_static_path_for_network(self, session, network, segment,
                                         old_path=None, new_path=None):
         if new_path and not segment:
@@ -2774,9 +3117,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 {'host': host, 'interface': interface})
                     continue
                 host_link = host_link[0].path
-                self._update_static_path_for_network(
-                    session, port_context.network.current, segment,
-                    **{'old_path' if remove else 'new_path': host_link})
+                if self._is_svi(port_context.network.current):
+                    self._update_static_path_for_svi(
+                        session, port_context,
+                        port_context.network.current, segment,
+                        **{'old_path' if remove else 'new_path': host_link})
+                else:
+                    self._update_static_path_for_network(
+                        session, port_context.network.current, segment,
+                        **{'old_path' if remove else 'new_path': host_link})
                 static_path_updated = True
 
         # acting as a fallback also
@@ -2788,9 +3137,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             host)
                 return
             host_link = host_link[0].path
-            self._update_static_path_for_network(
-                session, port_context.network.current, segment,
-                **{'old_path' if remove else 'new_path': host_link})
+            if self._is_svi(port_context.network.current):
+                self._update_static_path_for_svi(
+                    session, port_context,
+                    port_context.network.current, segment,
+                    **{'old_path' if remove else 'new_path': host_link})
+            else:
+                self._update_static_path_for_network(
+                    session, port_context.network.current, segment,
+                    **{'old_path' if remove else 'new_path': host_link})
 
     def _release_dynamic_segment(self, port_context, use_original=False):
         top = (port_context.original_top_bound_segment if use_original
@@ -2823,6 +3178,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._associate_domain(port_context, is_vmm=True)
 
     def _associate_domain(self, port_context, is_vmm=True):
+        if self._is_svi(port_context.network.current):
+            return
         port = port_context.current
         session = port_context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
@@ -2888,6 +3245,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     # public interface for aim_mapping GBP policy driver also
     def disassociate_domain(self, port_context, use_original=False):
+        if self._is_svi(port_context.network.current):
+            return
+
         btm = (port_context.original_bottom_bound_segment if use_original
                else port_context.bottom_bound_segment)
         if not btm:
