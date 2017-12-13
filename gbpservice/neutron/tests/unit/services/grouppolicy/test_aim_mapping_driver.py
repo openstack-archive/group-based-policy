@@ -2961,17 +2961,20 @@ class TestPolicyTarget(AIMBaseTestCase):
         return ext_seg, subnet
 
     def _verify_fip_details(self, mapping, fip, ext_epg_tenant,
-                            ext_epg_name):
+                            ext_epg_name, ext_epg_app_profile='OpenStack'):
         self.assertEqual(1, len(mapping['floating_ip']))
         fip = copy.deepcopy(fip)
         fip['nat_epg_name'] = ext_epg_name
         fip['nat_epg_tenant'] = ext_epg_tenant
+        fip['nat_epg_app_profile'] = ext_epg_app_profile
         self.assertEqual(fip, mapping['floating_ip'][0])
 
     def _verify_ip_mapping_details(self, mapping, ext_segment_name,
-                                   ext_epg_tenant, ext_epg_name):
+                                   ext_epg_tenant, ext_epg_name,
+                                   ext_epg_app_profile='OpenStack'):
         self.assertTrue({'external_segment_name': ext_segment_name,
                          'nat_epg_name': ext_epg_name,
+                         'nat_epg_app_profile': ext_epg_app_profile,
                          'nat_epg_tenant': ext_epg_tenant}
                         in mapping['ip_mapping'])
 
