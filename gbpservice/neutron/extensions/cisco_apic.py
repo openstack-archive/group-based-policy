@@ -25,6 +25,7 @@ SYNC_STATE = 'apic:synchronization_state'
 NAT_TYPE = 'apic:nat_type'
 SNAT_HOST_POOL = 'apic:snat_host_pool'
 EXTERNAL_CIDRS = 'apic:external_cidrs'
+SVI = 'apic:svi'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -41,6 +42,14 @@ SYNC_NOT_APPLICABLE = 'N/A'
 APIC_ATTRIBUTES = {
     DIST_NAMES: {'allow_post': False, 'allow_put': False, 'is_visible': True},
     SYNC_STATE: {'allow_post': False, 'allow_put': False, 'is_visible': True}
+}
+
+NET_ATTRIBUTES = {
+    SVI: {
+        'allow_post': True, 'allow_put': False,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
 }
 
 EXT_NET_ATTRIBUTES = {
@@ -104,7 +113,8 @@ ADDRESS_SCOPE_ATTRIBUTES = {
 
 EXTENDED_ATTRIBUTES_2_0 = {
     attributes.NETWORKS: dict(
-        APIC_ATTRIBUTES.items() + EXT_NET_ATTRIBUTES.items()),
+        APIC_ATTRIBUTES.items() + EXT_NET_ATTRIBUTES.items() +
+        NET_ATTRIBUTES.items()),
     attributes.SUBNETS: dict(
         APIC_ATTRIBUTES.items() + EXT_SUBNET_ATTRIBUTES.items()),
     address_scope.ADDRESS_SCOPES: dict(
