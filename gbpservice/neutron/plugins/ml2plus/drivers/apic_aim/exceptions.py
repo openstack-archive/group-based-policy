@@ -53,3 +53,12 @@ class SnatPortsInUse(exceptions.SubnetInUse):
 
 class SnatPoolCannotBeUsedForFloatingIp(exceptions.InvalidInput):
     message = _("Floating IP cannot be allocated in SNAT host pool subnet.")
+
+
+class PreExistingSVICannotBeConnectedToRouter(exceptions.BadRequest):
+    message = _("A SVI network with pre-existing l3out is not allowed to "
+                "be connected to a router.")
+
+
+class OnlyOneSubnetInSVINetwork(exceptions.BadRequest):
+    message = _("Only one subnet is allowed in SVI network.")
