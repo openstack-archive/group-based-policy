@@ -57,6 +57,10 @@ class NetworkMapping(model_base.BASEV2):
     epg_app_profile_name = sa.Column(sa.String(64))
     epg_tenant_name = sa.Column(sa.String(64))
 
+    l3out_name = sa.Column(sa.String(64))
+    l3out_ext_net_name = sa.Column(sa.String(64))
+    l3out_tenant_name = sa.Column(sa.String(64))
+
     vrf_name = sa.Column(sa.String(64))
     vrf_tenant_name = sa.Column(sa.String(64))
 
@@ -88,16 +92,26 @@ class DbMixin(object):
             tenant_name=mapping.vrf_tenant_name,
             name=mapping.vrf_name)
 
-    def _add_network_mapping(self, session, network_id, bd, epg, vrf):
-        mapping = NetworkMapping(
-            network_id=network_id,
-            bd_name=bd.name,
-            bd_tenant_name=bd.tenant_name,
-            epg_name=epg.name,
-            epg_app_profile_name=epg.app_profile_name,
-            epg_tenant_name=epg.tenant_name,
-            vrf_name=vrf.name,
-            vrf_tenant_name=vrf.tenant_name)
+    def _add_network_mapping(self, session, network_id, bd, epg, vrf,
+                             ext_net=None):
+        if not ext_net:
+            mapping = NetworkMapping(
+                network_id=network_id,
+                bd_name=bd.name,
+                bd_tenant_name=bd.tenant_name,
+                epg_name=epg.name,
+                epg_app_profile_name=epg.app_profile_name,
+                epg_tenant_name=epg.tenant_name,
+                vrf_name=vrf.name,
+                vrf_tenant_name=vrf.tenant_name)
+        else:
+            mapping = NetworkMapping(
+                network_id=network_id,
+                l3out_name=ext_net.l3out_name,
+                l3out_ext_net_name=ext_net.name,
+                l3out_tenant_name=ext_net.tenant_name,
+                vrf_name=vrf.name,
+                vrf_tenant_name=vrf.tenant_name)
         session.add(mapping)
         return mapping
 
@@ -135,6 +149,16 @@ class DbMixin(object):
             app_profile_name=mapping.epg_app_profile_name,
             name=mapping.epg_name)
 
+    def _get_network_l3out(self, mapping):
+        return aim_resource.L3Outside(
+            tenant_name=mapping.l3out_tenant_name,
+            name=mapping.l3out_name)
+
+    def _get_network_l3out_ext_net(self, mapping):
+        return aim_resource.ExternalNetwork(
+            tenant_name=mapping.l3out_tenant_name,
+            l3out_name=mapping.l3out_name, name=mapping.l3out_ext_net_name)
+
     def _get_network_vrf(self, mapping):
         return aim_resource.VRF(
             tenant_name=mapping.vrf_tenant_name,
@@ -148,6 +172,10 @@ class DbMixin(object):
         mapping.epg_tenant_name = epg.tenant_name
         mapping.epg_app_profile_name = epg.app_profile_name
         mapping.epg_name = epg.name
+
+    def _set_network_l3out(self, mapping, l3out):
+        mapping.l3out_tenant_name = l3out.tenant_name
+        mapping.l3out_name = l3out.name
 
     def _set_network_vrf(self, mapping, vrf):
         mapping.vrf_tenant_name = vrf.tenant_name
