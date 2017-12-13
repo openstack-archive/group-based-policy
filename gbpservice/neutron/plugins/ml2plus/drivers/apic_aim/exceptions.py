@@ -49,3 +49,7 @@ class SnatPortsInUse(exceptions.SubnetInUse):
 
 class SnatPoolCannotBeUsedForFloatingIp(exceptions.InvalidInput):
     message = _("Floating IP cannot be allocated in SNAT host pool subnet.")
+
+
+class ExternalEPGDnNotProvided(exceptions.BadRequest):
+    message = _("External EPG Dn is not provided.")
