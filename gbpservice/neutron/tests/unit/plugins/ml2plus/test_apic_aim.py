@@ -90,6 +90,7 @@ CIDR = 'apic:external_cidrs'
 PROV = 'apic:external_provided_contracts'
 CONS = 'apic:external_consumed_contracts'
 SNAT_POOL = 'apic:snat_host_pool'
+SVI = 'apic:svi'
 
 aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
@@ -234,7 +235,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
-                                     CIDR, PROV, CONS)
+                                     CIDR, PROV, CONS, SVI)
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
         self.t2_aname = self.name_mapper.project(None, 't2')
@@ -452,6 +453,13 @@ class TestAimMapping(ApicAimTestCase):
             aim_ctx, aim_resource.BridgeDomain, name=bd_name)
         self.assertEqual([], bds)
 
+    def _l3out_should_not_exist(self, l3out_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        l3outs = self.aim_mgr.find(
+            aim_ctx, aim_resource.L3Outside, name=l3out_name)
+        self.assertEqual([], l3outs)
+
     def _get_subnet(self, gw_ip_mask, bd_name, tenant_name):
         session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
@@ -540,6 +548,22 @@ class TestAimMapping(ApicAimTestCase):
         self.assertIsNotNone(entry)
         return entry
 
+    def _get_l3out(self, l3out_name, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        l3out = aim_resource.L3Outside(tenant_name=tenant_name,
+                                       name=l3out_name)
+        l3out = self.aim_mgr.get(aim_ctx, l3out)
+        self.assertIsNotNone(l3out)
+        return l3out
+
+    def _get_l3out_ext_net(self, aim_ext_net):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        aim_ext_net = self.aim_mgr.get(aim_ctx, aim_ext_net)
+        self.assertIsNotNone(aim_ext_net)
+        return aim_ext_net
+
     def _check_network(self, net, routers=None, scope=None, project=None,
                        vrf=None):
         dns = copy.copy(net.get(DN))
@@ -581,32 +605,46 @@ class TestAimMapping(ApicAimTestCase):
             vrf_tenant_aname = 'common'
             vrf_tenant_dname = 'CommonTenant'
 
-        aim_bd = self._get_bd(aname, tenant_aname)
-        self.assertEqual(tenant_aname, aim_bd.tenant_name)
-        self.assertEqual(aname, aim_bd.name)
-        self.assertEqual(net['name'], aim_bd.display_name)
-        self.assertEqual(vrf_aname, aim_bd.vrf_name)
-        self.assertTrue(aim_bd.enable_arp_flood)
-        if routers:
-            self.assertTrue(aim_bd.enable_routing)
+        if net[SVI]:
+            ext_net = aim_resource.ExternalNetwork.from_dn(
+                net[DN]['ExternalNetwork'])
+            ext_net = self._get_l3out_ext_net(ext_net)
+            l3out = self._get_l3out(ext_net.l3out_name, ext_net.tenant_name)
+            self.assertEqual(tenant_aname, l3out.tenant_name)
+            self.assertEqual(aname, l3out.name)
+            self.assertEqual(net['name'], l3out.display_name)
+            self.assertEqual(vrf_aname, l3out.vrf_name)
+            self._check_dn_is_resource(dns, 'ExternalNetwork', ext_net)
         else:
-            self.assertFalse(aim_bd.enable_routing)
-        self.assertTrue(aim_bd.limit_ip_learn_to_subnets)
-        self.assertEqual('proxy', aim_bd.l2_unknown_unicast_mode)
-        self.assertEqual('garp', aim_bd.ep_move_detect_mode)
-        self._check_dn_is_resource(dns, 'BridgeDomain', aim_bd)
+            aim_bd = self._get_bd(aname, tenant_aname)
+            self.assertEqual(tenant_aname, aim_bd.tenant_name)
+            self.assertEqual(aname, aim_bd.name)
+            self.assertEqual(net['name'], aim_bd.display_name)
+            self.assertEqual(vrf_aname, aim_bd.vrf_name)
+            self.assertTrue(aim_bd.enable_arp_flood)
+            if routers:
+                self.assertTrue(aim_bd.enable_routing)
+            else:
+                self.assertFalse(aim_bd.enable_routing)
+            self.assertTrue(aim_bd.limit_ip_learn_to_subnets)
+            self.assertEqual('proxy', aim_bd.l2_unknown_unicast_mode)
+            self.assertEqual('garp', aim_bd.ep_move_detect_mode)
+            self._check_dn_is_resource(dns, 'BridgeDomain', aim_bd)
 
-        aim_epg = self._get_epg(aname, tenant_aname, self._app_profile_name)
-        self.assertEqual(tenant_aname, aim_epg.tenant_name)
-        self.assertEqual(self._app_profile_name, aim_epg.app_profile_name)
-        self.assertEqual(aname, aim_epg.name)
-        self.assertEqual(net['name'], aim_epg.display_name)
-        self.assertEqual(aname, aim_epg.bd_name)
-        self.assertItemsEqual(router_anames, aim_epg.provided_contract_names)
-        self.assertItemsEqual(router_anames, aim_epg.consumed_contract_names)
-        # REVISIT(rkukura): Check openstack_vmm_domain_names and
-        # physical_domain_names?
-        self._check_dn_is_resource(dns, 'EndpointGroup', aim_epg)
+            aim_epg = self._get_epg(aname, tenant_aname,
+                                    self._app_profile_name)
+            self.assertEqual(tenant_aname, aim_epg.tenant_name)
+            self.assertEqual(self._app_profile_name, aim_epg.app_profile_name)
+            self.assertEqual(aname, aim_epg.name)
+            self.assertEqual(net['name'], aim_epg.display_name)
+            self.assertEqual(aname, aim_epg.bd_name)
+            self.assertItemsEqual(router_anames,
+                                  aim_epg.provided_contract_names)
+            self.assertItemsEqual(router_anames,
+                                  aim_epg.consumed_contract_names)
+            # REVISIT(rkukura): Check openstack_vmm_domain_names and
+            # physical_domain_names?
+            self._check_dn_is_resource(dns, 'EndpointGroup', aim_epg)
 
         aim_tenant = self._get_tenant(vrf_tenant_aname)
         self.assertEqual(vrf_tenant_aname, aim_tenant.name)
@@ -624,8 +662,11 @@ class TestAimMapping(ApicAimTestCase):
 
     def _check_network_deleted(self, net):
         aname = self.name_mapper.network(None, net['id'])
-        self._bd_should_not_exist(aname)
-        self._epg_should_not_exist(aname)
+        if net[SVI]:
+            self._l3out_should_not_exist(aname)
+        else:
+            self._bd_should_not_exist(aname)
+            self._epg_should_not_exist(aname)
 
     def _check_subnet(self, subnet, net, expected_gws, unexpected_gw_ips,
                       scope=None, project=None):
@@ -1042,6 +1083,7 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('routers', router_id)
         self._check_router_deleted(router)
 
+    # TBD
     def test_router_interface(self):
         mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
         self.driver.notifier.port_update = mock_notif
@@ -3959,7 +4001,37 @@ class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
     pass
 
 
-class TestExtensionAttributes(ApicAimTestCase):
+class TestExtensionAttributes(TestAimMapping):
+
+    def test_svi_network_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # test create.
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        self.assertEqual(False, net[SVI])
+
+        net = self._make_network(self.fmt, 'net2', True,
+                                 arg_list=self.extension_attributes,
+                                 **{'apic:svi': 'True'}
+                                 )['network']
+        self.assertEqual(True, net[SVI])
+        self._check_network(net)
+
+        # updating SVI flag is not allowed
+        self._update('networks', net['id'], {SVI: 'False'}, 400)
+        self.assertEqual(True, net[SVI])
+        self._check_network(net)
+
+        # Test update the name.
+        data = {'network': {'name': 'newnamefornet'}}
+        net = self._update('networks', net['id'], data)['network']
+        self._check_network(net)
+
+        # test delete
+        self._delete('networks', net['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net['id']))
+        self._check_network_deleted(net)
 
     def test_external_network_lifecycle(self):
         session = db_api.get_reader_session()
