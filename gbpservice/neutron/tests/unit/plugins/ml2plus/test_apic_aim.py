@@ -90,6 +90,7 @@ CIDR = 'apic:external_cidrs'
 PROV = 'apic:external_provided_contracts'
 CONS = 'apic:external_consumed_contracts'
 SNAT_POOL = 'apic:snat_host_pool'
+SVI = 'apic:svi'
 
 aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
@@ -234,7 +235,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
-                                     CIDR, PROV, CONS)
+                                     CIDR, PROV, CONS, SVI)
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
         self.t2_aname = self.name_mapper.project(None, 't2')
@@ -3960,6 +3961,29 @@ class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
 
 
 class TestExtensionAttributes(ApicAimTestCase):
+
+    def test_svi_network_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # test create.
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        self.assertEqual(False, net[SVI])
+
+        net = self._make_network(self.fmt, 'net2', True,
+                                 arg_list=self.extension_attributes,
+                                 **{'apic:svi': 'True',
+                                    DN: {'ExternalNetwork': self.dn_t1_l1_n1}}
+                                 )['network']
+        self.assertEqual(True, net[SVI])
+
+        # update is not allowed
+        self._update('networks', net['id'], {SVI: 'False'}, 400)
+        self.assertEqual(True, net[SVI])
+
+        # test delete
+        self._delete('networks', net['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net['id']))
 
     def test_external_network_lifecycle(self):
         session = db_api.get_session()
