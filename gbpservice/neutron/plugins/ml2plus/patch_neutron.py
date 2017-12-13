@@ -220,3 +220,10 @@ def patched_get_locked_port_and_binding(session, port_id):
 
 
 ml2_db.get_locked_port_and_binding = patched_get_locked_port_and_binding
+
+
+from neutron.db import db_base_plugin_v2
+
+
+DEVICE_OWNER_SVI_PORT = 'apic:svi'
+db_base_plugin_v2.AUTO_DELETE_PORT_OWNERS.append(DEVICE_OWNER_SVI_PORT)
