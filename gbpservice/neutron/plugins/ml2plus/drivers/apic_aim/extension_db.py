@@ -62,6 +62,16 @@ class RouterExtensionContractDb(model_base.BASEV2):
     provides = sa.Column(sa.Boolean, primary_key=True)
 
 
+class NetworkExtensionSviDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_network_svi_extensions'
+
+    network_id = sa.Column(
+        sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"),
+        primary_key=True)
+    svi = sa.Column(sa.Boolean)
+
+
 class ExtensionDbMixin(object):
 
     def _set_if_not_none(self, res_dict, res_attr, db_attr):
@@ -73,6 +83,8 @@ class ExtensionDbMixin(object):
                   network_id=network_id).first())
         db_cidrs = (session.query(NetworkExtensionCidrDb).filter_by(
                     network_id=network_id).all())
+        db_svis = (session.query(NetworkExtensionSviDb).filter_by(
+                   network_id=network_id).first())
         result = {}
         if db_obj:
             self._set_if_not_none(result, cisco_apic.EXTERNAL_NETWORK,
@@ -81,6 +93,9 @@ class ExtensionDbMixin(object):
                                   db_obj['nat_type'])
         if result.get(cisco_apic.EXTERNAL_NETWORK):
             result[cisco_apic.EXTERNAL_CIDRS] = [c['cidr'] for c in db_cidrs]
+
+        if db_svis:
+            self._set_if_not_none(result, cisco_apic.SVI, db_svis['svi'])
         return result
 
     def set_network_extn_db(self, session, network_id, res_dict):
@@ -94,6 +109,14 @@ class ExtensionDbMixin(object):
             if cisco_apic.NAT_TYPE in res_dict:
                 db_obj['nat_type'] = res_dict[cisco_apic.NAT_TYPE]
             session.add(db_obj)
+
+            db_svis = (session.query(NetworkExtensionSviDb).filter_by(
+                       network_id=network_id).first())
+            db_svis = db_svis or NetworkExtensionSviDb(network_id=network_id)
+            if cisco_apic.SVI in res_dict:
+                db_svis['svi'] = res_dict[cisco_apic.SVI]
+            session.add(db_svis)
+
             if cisco_apic.EXTERNAL_CIDRS in res_dict:
                 self._update_list_attr(session, NetworkExtensionCidrDb, 'cidr',
                                        res_dict[cisco_apic.EXTERNAL_CIDRS],
