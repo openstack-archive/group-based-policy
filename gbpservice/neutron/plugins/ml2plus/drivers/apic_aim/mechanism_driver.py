@@ -15,6 +15,7 @@
 
 import copy
 import netaddr
+import re
 import sqlalchemy as sa
 
 from aim.aim_lib import nat_strategy
@@ -67,6 +68,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
+DEVICE_OWNER_SVI_PORT = 'apic:svi'
 
 ANY_FILTER_NAME = 'AnyFilter'
 ANY_FILTER_ENTRY_NAME = 'AnyFilterEntry'
@@ -75,6 +77,8 @@ UNROUTED_VRF_NAME = 'UnroutedVRF'
 COMMON_TENANT_NAME = 'common'
 ROUTER_SUBJECT_NAME = 'route'
 DEFAULT_SG_NAME = 'DefaultSecurityGroup'
+L3OUT_NODE_PROFILE_NAME = 'NodeProfile'
+L3OUT_IF_PROFILE_NAME = 'IfProfile'
 
 AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
@@ -87,6 +91,13 @@ NO_ADDR_SCOPE = object()
 
 DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
 DEFAULT_HOST_DOMAIN = '*'
+
+ACI_CHASSIS_DESCR_STRING = 'topology/pod-%s/node-%s'
+ACI_PORT_DESCR_FORMATS = ('topology/pod-(\d+)/paths-(\d+)/pathep-'
+                          '\[eth(\d+)/(\d+(\/\d+)*)\]')
+ACI_VPCPORT_DESCR_FORMAT = ('topology/pod-(\d+)/protpaths-(\d+)-(\d+)/pathep-'
+                            '\[(.*)\]')
+ROUTER_IDS = ['199.199.199.198', '199.199.199.199']
 
 
 class KeystoneNotificationEndpoint(object):
@@ -200,6 +211,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                          enable_iptables_firewall)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
+        self.port_desc_re = re.compile(ACI_PORT_DESCR_FORMATS)
+        self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
 
     def _ensure_static_resources(self):
         session = db_api.get_session()
@@ -383,6 +396,30 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     epg = resource
                 elif isinstance(resource, aim_resource.VRF):
                     vrf = resource
+        elif self._is_svi(current):
+            # TBD: also support automatically create the l3out
+            l3out, ext_net, _ = self._get_aim_nat_strategy(current,
+                                                           is_external=False)
+            if not ext_net:
+                raise exceptions.ExternalEPGDnNotProvided()
+            """
+            with aim_ctx.store.begin(subtransactions=True):
+                tenant = aim_resource.Tenant(name=l3out.tenant_name)
+                if not self.aim.get(aim_ctx, tenant):
+                    self.aim.create(aim_ctx, tenant)
+                l3out_db = self.aim.get(aim_ctx, l3out)
+                if not l3out_db:
+                    self.aim.create(aim_ctx, l3out)
+                ext_net_db = self.mgr.get(aim_ctx, ext_net)
+                if not ext_net_db:
+                    self.mgr.create(aim_ctx, ext_net)
+                ext_sub_attr = dict(tenant_name=ext_net.tenant_name,
+                                    l3out_name=ext_net.l3out_name,
+                                    external_network_name=ext_net.name)
+                self.mgr.create(aim_ctx, aim_resource.ExternalSubnet(
+                    cidr='0.0.0.0/0', **ext_sub_attr), overwrite=True)
+            """
+            return
         else:
             bd, epg = self._map_network(session, current)
 
@@ -409,6 +446,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         current = context.current
         original = context.original
         LOG.debug("APIC AIM MD updating network: %s", current)
+
+        # nothing do be done for SVI network
+        if self._is_svi(current):
+            return
 
         # TODO(amitbose) - Handle inter-conversion between external and
         # private networks
@@ -452,6 +493,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # TODO(amitbose) delete L3out only if no other Neutron
             # network is using the L3out
             ns.delete_l3outside(aim_ctx, l3out)
+        elif self._is_svi(current):
+            l3out, ext_net, _ = self._get_aim_nat_strategy(
+                current, is_external=False)
+            aim_l3out_np = aim_resource.L3OutNodeProfile(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                name=L3OUT_NODE_PROFILE_NAME)
+            self.aim.delete(aim_ctx, aim_l3out_np, cascade=True)
         else:
             mapping = self._get_network_mapping(session, current['id'])
             bd = self._get_network_bd(mapping)
@@ -537,6 +585,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         if (not is_ext and
             current['name'] != original['name']):
+            # nothing do be done for SVI network
+            if self._is_svi(context.network.current):
+                return
 
             bd = self._get_network_bd(network_db.aim_mapping)
 
@@ -940,6 +991,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
 
+    # TBD: SVI network support
     def add_router_interface(self, context, router, port, subnets):
         LOG.debug("APIC AIM MD adding subnets %(subnets)s to router "
                   "%(router)s as interface port %(port)s",
@@ -2355,6 +2407,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _is_external(self, network):
         return network.get('router:external')
 
+    def _is_svi(self, network):
+        return network.get(cisco_apic.SVI)
+
     def _nat_type_to_strategy(self, nat_type):
         ns_cls = nat_strategy.DistributedNatStrategy
         if nat_type == '':
@@ -2366,8 +2421,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         ns.common_scope = self.apic_system_id
         return ns
 
-    def _get_aim_nat_strategy(self, network):
-        if not self._is_external(network):
+    def _get_aim_nat_strategy(self, network, is_external=True):
+        if is_external and not self._is_external(network):
             return None, None, None
         ext_net_dn = (network.get(cisco_apic.DIST_NAMES, {})
                       .get(cisco_apic.EXTERNAL_NETWORK))
@@ -2703,6 +2758,133 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._is_supported_non_opflex_type(
                     bound_segment[api.NETWORK_TYPE]))
 
+    def _update_static_path_for_svi(self, session, port_context, network,
+                                    segment, old_path=None, new_path=None):
+        if new_path and not segment:
+            return
+
+        if segment:
+            if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
+                seg = 'vlan-%s' % segment[api.SEGMENTATION_ID]
+            else:
+                LOG.debug('Unsupported segmentation type for static path '
+                          'binding: %s',
+                          segment.get(api.NETWORK_TYPE))
+                return
+
+        path = new_path
+        if not path:
+            path = old_path
+        nodes = []
+        node_paths = []
+        is_vpc = False
+        match = self.port_desc_re.match(path)
+        if match:
+            pod_id, switch, module, port = match.group(1, 2, 3, 4)
+            nodes.append(switch)
+            node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id, switch))
+        else:
+            match = self.vpcport_desc_re.match(path)
+            if match:
+                pod_id, switch1, switch2, bundle = match.group(1, 2, 3, 4)
+                nodes.append(switch1)
+                nodes.append(switch2)
+                node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id,
+                                                              switch1))
+                node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id,
+                                                              switch2))
+                is_vpc = True
+            else:
+                LOG.error('Unsupported static path format: %s', path)
+                return
+
+        aim_ctx = aim_context.AimContext(db_session=session)
+        l3out, ext_net, _ = self._get_aim_nat_strategy(
+            network, is_external=False)
+        if new_path:
+            aim_l3out_np = aim_resource.L3OutNodeProfile(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                name=L3OUT_NODE_PROFILE_NAME)
+            aim_l3out_np_db = self.aim.get(aim_ctx, aim_l3out_np)
+            if not aim_l3out_np_db:
+                self.aim.create(aim_ctx, aim_l3out_np)
+
+            for idx, node_path in enumerate(node_paths):
+                # TBD: use the real router_id
+                aim_l3out_node = aim_resource.L3OutNode(
+                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                    node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                    node_path=node_path, router_id=ROUTER_IDS[idx],
+                    router_id_loopback=False)
+                aim_l3out_node_db = self.aim.get(aim_ctx, aim_l3out_node)
+                if not aim_l3out_node_db:
+                    self.aim.create(aim_ctx, aim_l3out_node)
+
+            aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                name=L3OUT_IF_PROFILE_NAME)
+            aim_l3out_ip_db = self.aim.get(aim_ctx, aim_l3out_ip)
+            if not aim_l3out_ip_db:
+                self.aim.create(aim_ctx, aim_l3out_ip)
+
+            subnet = (session.query(models_v2.Subnet)
+                      .filter(models_v2.Subnet.id ==
+                              network['subnets'][0]).one())
+            mask = subnet['cidr'].split('/')[1]
+
+            plugin_context = port_context._plugin_context
+            primary_ips = []
+            for node in nodes:
+                filters = {'network_id': [network['id']],
+                           'name': ['apic-svi-port:node-%s' % node]}
+                svi_ports = self.plugin.get_ports(plugin_context, filters)
+                if svi_ports and svi_ports[0]['fixed_ips']:
+                    ip = svi_ports[0]['fixed_ips'][0]['ip_address']
+                    primary_ips.append(ip + '/' + mask)
+                else:
+                    attrs = {'device_id': '',
+                             'device_owner': DEVICE_OWNER_SVI_PORT,
+                             'tenant_id': network['tenant_id'],
+                             'name': 'apic-svi-port:node-%s' % node,
+                             'network_id': network['id'],
+                             'mac_address': n_constants.ATTR_NOT_SPECIFIED,
+                             'fixed_ips': [{'subnet_id':
+                                            network['subnets'][0]}],
+                             'admin_state_up': False}
+                    port = self.plugin.create_port(plugin_context,
+                                                   {'port': attrs})
+                    if port and port['fixed_ips']:
+                        ip = port['fixed_ips'][0]['ip_address']
+                        primary_ips.append(ip + '/' + mask)
+                    else:
+                        LOG.error('cannot allocate a port for the SVI primary'
+                                  ' addr')
+                        return
+            secondary_ip = subnet['gateway_ip'] + '/' + mask
+            aim_l3out_if = aim_resource.L3OutInterface(
+                tenant_name=l3out.tenant_name,
+                l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                interface_profile_name=L3OUT_IF_PROFILE_NAME,
+                interface_path=path, encap=seg,
+                primary_addr_a=primary_ips[0],
+                secondary_addr_a_list=[{'addr': secondary_ip}],
+                primary_addr_b=primary_ips[1] if is_vpc else '',
+                secondary_addr_b_list=[{'addr':
+                                        secondary_ip}] if is_vpc else [])
+            aim_l3out_if_db = self.aim.get(aim_ctx, aim_l3out_if)
+            if not aim_l3out_if_db:
+                self.aim.create(aim_ctx, aim_l3out_if)
+        else:
+            aim_l3out_if = aim_resource.L3OutInterface(
+                tenant_name=l3out.tenant_name,
+                l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                interface_profile_name=L3OUT_IF_PROFILE_NAME,
+                interface_path=path)
+            self.aim.delete(aim_ctx, aim_l3out_if)
+
     def _update_static_path_for_network(self, session, network, segment,
                                         old_path=None, new_path=None):
         if new_path and not segment:
@@ -2772,9 +2954,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 {'host': host, 'interface': interface})
                     continue
                 host_link = host_link[0].path
-                self._update_static_path_for_network(
-                    session, port_context.network.current, segment,
-                    **{'old_path' if remove else 'new_path': host_link})
+                if self._is_svi(port_context.network.current):
+                    self._update_static_path_for_svi(
+                        session, port_context,
+                        port_context.network.current, segment,
+                        **{'old_path' if remove else 'new_path': host_link})
+                else:
+                    self._update_static_path_for_network(
+                        session, port_context.network.current, segment,
+                        **{'old_path' if remove else 'new_path': host_link})
                 static_path_updated = True
 
         # acting as a fallback also
@@ -2786,9 +2974,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             host)
                 return
             host_link = host_link[0].path
-            self._update_static_path_for_network(
-                session, port_context.network.current, segment,
-                **{'old_path' if remove else 'new_path': host_link})
+            if self._is_svi(port_context.network.current):
+                self._update_static_path_for_svi(
+                    session, port_context,
+                    port_context.network.current, segment,
+                    **{'old_path' if remove else 'new_path': host_link})
+            else:
+                self._update_static_path_for_network(
+                    session, port_context.network.current, segment,
+                    **{'old_path' if remove else 'new_path': host_link})
 
     def _release_dynamic_segment(self, port_context, use_original=False):
         top = (port_context.original_top_bound_segment if use_original
@@ -2821,6 +3015,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._associate_domain(port_context, is_vmm=True)
 
     def _associate_domain(self, port_context, is_vmm=True):
+        if self._is_svi(port_context.network.current):
+            return
         port = port_context.current
         session = port_context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
@@ -2886,6 +3082,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     # public interface for aim_mapping GBP policy driver also
     def disassociate_domain(self, port_context, use_original=False):
+        if self._is_svi(port_context.network.current):
+            return
+
         btm = (port_context.original_bottom_bound_segment if use_original
                else port_context.bottom_bound_segment)
         if not btm:
