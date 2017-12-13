@@ -40,6 +40,11 @@ apic_opts = [
                 default=False,
                 help=("This will enable the iptables firewall implementation "
                       "on those compute nodes.")),
+    # TODO(kentwu): define the corresponding AIM object instead
+    cfg.StrOpt('l3_domain_dn',
+               default='uni/l3dom-l3_ext',
+               help=("The DN of the APIC external routed domain used by the "
+                     "auto l3out created for the SVI networks.")),
 ]
 
 
