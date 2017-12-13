@@ -13,8 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.db import models_v2
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+from sqlalchemy import orm
 
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3
@@ -29,6 +31,12 @@ class NetworkExtensionDb(model_base.BASEV2):
         primary_key=True)
     external_network_dn = sa.Column(sa.String(1024))
     nat_type = sa.Column(sa.Enum('distributed', 'edge', ''))
+    svi = sa.Column(sa.Boolean)
+
+    network = orm.relationship(models_v2.Network,
+                               backref=orm.backref(
+                                   'aim_extension_mapping', lazy='joined',
+                                   uselist=False, cascade='delete'))
 
 
 class NetworkExtensionCidrDb(model_base.BASEV2):
@@ -79,8 +87,10 @@ class ExtensionDbMixin(object):
                                   db_obj['external_network_dn'])
             self._set_if_not_none(result, cisco_apic.NAT_TYPE,
                                   db_obj['nat_type'])
+            self._set_if_not_none(result, cisco_apic.SVI, db_obj['svi'])
         if result.get(cisco_apic.EXTERNAL_NETWORK):
             result[cisco_apic.EXTERNAL_CIDRS] = [c['cidr'] for c in db_cidrs]
+
         return result
 
     def set_network_extn_db(self, session, network_id, res_dict):
@@ -93,7 +103,10 @@ class ExtensionDbMixin(object):
                     res_dict[cisco_apic.EXTERNAL_NETWORK])
             if cisco_apic.NAT_TYPE in res_dict:
                 db_obj['nat_type'] = res_dict[cisco_apic.NAT_TYPE]
+            if cisco_apic.SVI in res_dict:
+                db_obj['svi'] = res_dict[cisco_apic.SVI]
             session.add(db_obj)
+
             if cisco_apic.EXTERNAL_CIDRS in res_dict:
                 self._update_list_attr(session, NetworkExtensionCidrDb, 'cidr',
                                        res_dict[cisco_apic.EXTERNAL_CIDRS],
