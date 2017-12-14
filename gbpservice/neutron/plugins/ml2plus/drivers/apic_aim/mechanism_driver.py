@@ -2264,7 +2264,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return vrf
 
     def _ensure_common_tenant(self, aim_ctx):
-        attrs = aim_resource.Tenant(name=COMMON_TENANT_NAME,
+        attrs = aim_resource.Tenant(
+            name=COMMON_TENANT_NAME, monitored=True,
             display_name=aim_utils.sanitize_display_name('CommonTenant'))
         tenant = self.aim.get(aim_ctx, attrs)
         if not tenant:
