@@ -2269,19 +2269,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=aim_utils.sanitize_display_name('CommonTenant'))
         tenant = self.aim.get(aim_ctx, attrs)
         if not tenant:
+            # We don't need to create-overwrite this object if already exists,
+            # since it's monitored
             LOG.info("Creating common tenant")
             tenant = self.aim.create(aim_ctx, attrs)
         return tenant
 
     def _ensure_unrouted_vrf(self, aim_ctx):
         attrs = self._map_unrouted_vrf()
-        vrf = self.aim.get(aim_ctx, attrs)
-        if not vrf:
-            attrs.display_name = (
-                aim_utils.sanitize_display_name('CommonUnroutedVRF'))
-            LOG.info("Creating common unrouted VRF")
-            vrf = self.aim.create(aim_ctx, attrs)
-        return vrf
+        attrs.display_name = (
+            aim_utils.sanitize_display_name('CommonUnroutedVRF'))
+        LOG.info("Creating common unrouted VRF")
+        return self.aim.create(aim_ctx, attrs, overwrite=True)
 
     def _ensure_any_filter(self, aim_ctx):
         filter_name = self._any_filter_name
@@ -2289,18 +2288,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         filter = aim_resource.Filter(tenant_name=COMMON_TENANT_NAME,
                                      name=filter_name,
                                      display_name=dname)
-        if not self.aim.get(aim_ctx, filter):
-            LOG.info("Creating common Any Filter")
-            self.aim.create(aim_ctx, filter)
+        LOG.info("Creating common Any Filter")
+        self.aim.create(aim_ctx, filter, overwrite=True)
 
         dname = aim_utils.sanitize_display_name("AnyFilterEntry")
         entry = aim_resource.FilterEntry(tenant_name=COMMON_TENANT_NAME,
                                          filter_name=filter_name,
                                          name=ANY_FILTER_ENTRY_NAME,
                                          display_name=dname)
-        if not self.aim.get(aim_ctx, entry):
-            LOG.info("Creating common Any FilterEntry")
-            self.aim.create(aim_ctx, entry)
+        LOG.info("Creating common Any FilterEntry")
+        self.aim.create(aim_ctx, entry, overwrite=True)
 
         return filter
 
