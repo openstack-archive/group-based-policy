@@ -12,9 +12,9 @@
 # limitations under the License.
 
 import mock
-from neutron import context as nctx
 from neutron.plugins.common import constants as pconst
 from neutron_lib import constants
+from neutron_lib import context as nctx
 from neutron_lib.plugins import directory
 import webob.exc
 

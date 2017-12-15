@@ -17,11 +17,11 @@ from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as neutron_exc
-from neutron import context as n_context
 from neutron.db import models_v2
 from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron_lib import constants as n_const
+from neutron_lib import context as n_context
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory

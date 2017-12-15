@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron import context as n_ctx
+from neutron_lib import context as n_ctx
 from oslo_config import cfg
 from sqlalchemy.orm import exc as orm_exc
 

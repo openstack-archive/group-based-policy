@@ -15,7 +15,7 @@ import ast
 import collections
 
 from neutron.common import config
-from neutron import context as n_ctx
+from neutron_lib import context as n_ctx
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 

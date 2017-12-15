@@ -13,8 +13,8 @@
 
 import webob.exc
 
-from neutron import context as nctx
 from neutron.tests.unit.extensions import test_l3
+from neutron_lib import context as nctx
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
