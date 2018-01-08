@@ -5,6 +5,7 @@ NEW_BASE="$BASE/new"
 SCRIPTS_DIR="/usr/os-testr-env/bin"
 LOGS_DIR="$NEW_BASE/logs"
 ARCHIVE_LOGS_DIR="$BASE/logs"
+LOCAL_CONF=$TOP_DIR/local.conf
 
 # The following config is legacy and is used for GBP non-devstack plugin
 # install
@@ -38,9 +39,17 @@ function prepare_gbp_devstack_post {
     source $TOP_DIR/functions-common
 }
 
+function prepend_to_localconf {
+    # REVISIT: Instead of using the subnet directly here, ideally we
+    # should be doing something similar to what is being done in here:
+    # https://github.com/openstack/neutron/commit/96a821c48b7de0017d00c43a3f9da91585873354
+    sudo sed -i "1i IPV4_ADDRS_SAFE_TO_USE=10.1.0.0/20\n" $TOP_DIR/local.conf
+}
+
 function prepare_gbp_devstack {
     prepare_gbp_devstack_pre
     sudo mv $GBP_DIR/devstack/local-gbp.conf $TOP_DIR/local.conf
+    prepend_to_localconf
     sudo cp -r $CONTRIB_DIR/devstack/gbp-templates $TOP_DIR
     sudo cp $CONTRIB_DIR/devstack/exercises/*.sh $TOP_DIR/exercises/
     prepare_gbp_devstack_post
@@ -49,6 +58,7 @@ function prepare_gbp_devstack {
 function prepare_nfp_devstack {
     cd $TOP_DIR
     sudo cp $CONTRIB_DIR/devstack/local-nfp.conf $TOP_DIR/local.conf
+    prepend_to_localconf
     sudo rm -rf $TOP_DIR/exercises/*.sh
     sudo cp $CONTRIB_DIR/devstack/exercises-nfp/*.sh $TOP_DIR/exercises/
     #sudo cp $CONTRIB_DIR/devstack/exercises-nfp/lb.sh $TOP_DIR/exercises/
@@ -63,6 +73,7 @@ function prepare_nfp_devstack {
 function prepare_gbp_aim_devstack {
     prepare_gbp_devstack_pre
     sudo cp $CONTRIB_DIR/devstack/local-aim.conf $TOP_DIR/local.conf
+    prepend_to_localconf
     sudo cp $CONTRIB_DIR/devstack/exercises-aim/gbp_aim.sh $TOP_DIR/exercises/
     # Use the aim version of the shared PRS test
     sudo mv $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py.aim $GBP_FUNC_DIR/testcases/tc_gbp_prs_pr_shared_func.py
@@ -129,5 +140,6 @@ function check_residual_resources {
     neutron router-list
     neutron net-list
     neutron subnet-list
+    neutron subnetpool-list
     neutron port-list
 }
