@@ -5,6 +5,7 @@ NEW_BASE="$BASE/new"
 SCRIPTS_DIR="/usr/os-testr-env/bin"
 LOGS_DIR="$NEW_BASE/logs"
 ARCHIVE_LOGS_DIR="$BASE/logs"
+LOCAL_CONF=$TOP_DIR/local.conf
 
 # The following config is legacy and is used for GBP non-devstack plugin
 # install
