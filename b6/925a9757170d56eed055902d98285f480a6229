@@ -1,0 +1,13 @@
+Code-Review+1: Dai Dang Van <daidv@vn.fujitsu.com>
+Code-Review+1: Nguyen Van Trung <trungnv@vn.fujitsu.com>
+Code-Review+1: tianhui <tianhui@awcloud.com>
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Mon, 08 Jan 2018 19:39:09 +0000
+Reviewed-on: https://review.openstack.org/514807
+Project: openstack/group-based-policy
+Branch: refs/heads/master
