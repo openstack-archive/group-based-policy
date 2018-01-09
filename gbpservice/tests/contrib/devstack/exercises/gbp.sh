@@ -34,7 +34,7 @@ source $TOP_DIR/openrc demo demo
 # an error.  It is also useful for following allowing as the install occurs.
 set -o xtrace
 
-ACTIVE_TIMEOUT=120
+ACTIVE_TIMEOUT=240
 
 function confirm_server_active {
     local VM_UUID=$1
