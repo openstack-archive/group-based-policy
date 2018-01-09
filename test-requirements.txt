@@ -6,12 +6,12 @@
 
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
--e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
+-e git+https://github.com/noironetworks/python-opflex-agent.git@stable/ocata#egg=python-opflexagent-agent
 
 -e git+https://github.com/openstack/vmware-nsx.git@stable/ocata#egg=vmware_nsx
 -e git+https://github.com/openstack/vmware-nsxlib.git@stable/ocata#egg=vmware_nsxlib
 
--e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
+-e git+https://git.openstack.org/openstack/python-group-based-policy-client@stable/ocata#egg=gbpclient
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/ocata#egg=neutron-vpnaas
 -e git+https://git.openstack.org/openstack/neutron-lbaas@stable/ocata#egg=neutron-lbaas
 -e git+https://git.openstack.org/openstack/neutron-fwaas@stable/ocata#egg=neutron-fwaas
