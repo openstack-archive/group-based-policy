@@ -4391,6 +4391,9 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def setUp(self):
         qos_plugin = 'qos'
+        # The following forces the QoS driver to be reset
+        # and subsequently reinitialized for every test in this class.
+        qos_ovs_driver.DRIVER = None
         super(TestNetworkServicePolicy, self).setUp(qos_plugin=qos_plugin)
 
     def test_create_nsp_multiple_ptgs(self):
