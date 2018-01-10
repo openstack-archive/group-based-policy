@@ -3527,9 +3527,9 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
 
         # Verify deleting external network deletes BD and EPG.
         self._delete('networks', net2_id)
-        bd = self._find_by_dn(net1_bd, aim_resource.BridgeDomain)
+        bd = self._find_by_dn(net2_bd, aim_resource.BridgeDomain)
         self.assertIsNone(bd)
-        epg = self._find_by_dn(net1_epg, aim_resource.EndpointGroup)
+        epg = self._find_by_dn(net2_epg, aim_resource.EndpointGroup)
         self.assertIsNone(epg)
 
     def test_ap_name_change(self):
