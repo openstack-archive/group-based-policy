@@ -23,15 +23,15 @@ GIT_BASE=${GIT_BASE:-https://git.openstack.org}
 
 # Git repositories needed to deploy GBP:
 GBPSERVICE_REPO=${GBPSERVICE_REPO:-${GIT_BASE}/openstack/group-based-policy.git}
-GBPSERVICE_BRANCH=${GBPSERVICE_BRANCH:-master}
+GBPSERVICE_BRANCH=${GBPSERVICE_BRANCH:-stable/pike}
 GBPCLIENT_REPO=${GBPCLIENT_REPO:-${GIT_BASE}/openstack/python-group-based-policy-client.git}
-GBPCLIENT_BRANCH=${GBPCLIENT_BRANCH:-master}
+GBPCLIENT_BRANCH=${GBPCLIENT_BRANCH:-stable/pike}
 GBPUI_REPO=${GBPUI_REPO:-${GIT_BASE}/openstack/group-based-policy-ui.git}
-GBPUI_BRANCH=${GBPUI_BRANCH:-master}
+GBPUI_BRANCH=${GBPUI_BRANCH:-stable/pike}
 GBPHEAT_REPO=${GBPHEAT_REPO:-${GIT_BASE}/openstack/group-based-policy-automation.git}
-GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-master}
+GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-stable/pike}
 AIM_BRANCH=${AIM_BRANCH:-master}
-OPFLEX_BRANCH=${OPFLEX_BRANCH:-master}
+OPFLEX_BRANCH=${OPFLEX_BRANCH:-stable/pike}
 APICAPI_BRANCH=${APICAPI_BRANCH:-master}
 
 # Enable necessary services, including group-policy (and disable others)
