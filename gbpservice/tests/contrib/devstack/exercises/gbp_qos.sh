@@ -120,6 +120,9 @@ gbp policy-classifier-delete icmp-traffic
 
 gbp policy-action-delete allow
 
+# Delete Network Service Policy that includes QoS parameters
+gbp network-service-policy-delete "qos"
+
 set +o xtrace
 echo "*********************************************************************"
 echo "SUCCESS: End DevStack Exercise: $0"

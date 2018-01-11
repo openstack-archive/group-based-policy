@@ -1764,7 +1764,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                                        'scope'})['policy_target_group']
         self._test_policy_target_group_aim_mappings(
             ptg, prs_lists, l2p)
-        # the test policy.json restricts auto-ptg access to admin
+        # Shared status cannot be updated
         self.update_policy_target_group(
             ptg['id'], is_admin_context=True, shared=(not shared),
             expected_res_status=webob.exc.HTTPBadRequest.code)
@@ -3831,6 +3831,8 @@ class TestPolicyRuleSetRollback(AIMBaseTestCase):
 
 
 class NotificationTest(AIMBaseTestCase):
+
+    block_dhcp_notifier = False
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, **kwargs):
