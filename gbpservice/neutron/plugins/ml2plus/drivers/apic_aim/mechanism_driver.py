@@ -114,7 +114,7 @@ class KeystoneNotificationEndpoint(object):
             # we only update tenants which have been created in APIC. For other
             # cases, their nameAlias will be set when the first resource is
             # being created under that tenant
-            session = db_api.get_session()
+            session = db_api.get_writer_session()
             tenant_aname = self._driver.name_mapper.project(session, tenant_id)
             aim_ctx = aim_context.AimContext(session)
             tenant = aim_resource.Tenant(name=tenant_aname)
@@ -133,7 +133,7 @@ class KeystoneNotificationEndpoint(object):
             self._driver.project_name_cache.purge_gbp(self)
 
             # delete the tenant and AP in AIM also
-            session = db_api.get_session()
+            session = db_api.get_writer_session()
             tenant_aname = self._driver.name_mapper.project(session, tenant_id)
             aim_ctx = aim_context.AimContext(session)
             ap = aim_resource.ApplicationProfile(tenant_name=tenant_aname,
@@ -202,7 +202,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._ensure_static_resources()
 
     def _ensure_static_resources(self):
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
         aim_ctx = aim_context.AimContext(session)
         self._ensure_common_tenant(aim_ctx)
         self._ensure_unrouted_vrf(aim_ctx)

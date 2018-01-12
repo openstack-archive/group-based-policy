@@ -348,7 +348,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         return self.deserialize(self.fmt, res)
 
     def _get_sg(self, sg_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
                                         name=sg_name)
@@ -357,14 +357,14 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         return sg
 
     def _sg_should_not_exist(self, sg_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         sgs = self.aim_mgr.find(
             aim_ctx, aim_resource.SecurityGroup, name=sg_name)
         self.assertEqual([], sgs)
 
     def _get_sg_subject(self, sg_subject_name, sg_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         sg_subject = aim_resource.SecurityGroupSubject(
             tenant_name=tenant_name, security_group_name=sg_name,
@@ -375,7 +375,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _get_sg_rule(self, sg_rule_name, sg_subject_name, sg_name,
                      tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         sg_rule = aim_resource.SecurityGroupRule(
             tenant_name=tenant_name, security_group_name=sg_name,
@@ -385,7 +385,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         return sg_rule
 
     def _sg_rule_should_not_exist(self, sg_rule_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         sg_rules = self.aim_mgr.find(
             aim_ctx, aim_resource.SecurityGroupRule, name=sg_rule_name)
@@ -411,7 +411,7 @@ class TestAimMapping(ApicAimTestCase):
         super(TestAimMapping, self).tearDown()
 
     def _get_tenant(self, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         tenant = aim_resource.Tenant(name=tenant_name)
         tenant = self.aim_mgr.get(aim_ctx, tenant)
@@ -419,7 +419,7 @@ class TestAimMapping(ApicAimTestCase):
         return tenant
 
     def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         vrf = aim_resource.VRF(tenant_name=tenant_name,
                                name=vrf_name)
@@ -431,13 +431,13 @@ class TestAimMapping(ApicAimTestCase):
             self.assertIsNone(vrf)
 
     def _vrf_should_not_exist(self, vrf_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         vrfs = self.aim_mgr.find(aim_ctx, aim_resource.VRF, name=vrf_name)
         self.assertEqual([], vrfs)
 
     def _get_bd(self, bd_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
                                        name=bd_name)
@@ -446,14 +446,14 @@ class TestAimMapping(ApicAimTestCase):
         return bd
 
     def _bd_should_not_exist(self, bd_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         bds = self.aim_mgr.find(
             aim_ctx, aim_resource.BridgeDomain, name=bd_name)
         self.assertEqual([], bds)
 
     def _get_subnet(self, gw_ip_mask, bd_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         subnet = aim_resource.Subnet(tenant_name=tenant_name,
                                      bd_name=bd_name,
@@ -463,7 +463,7 @@ class TestAimMapping(ApicAimTestCase):
         return subnet
 
     def _subnet_should_not_exist(self, gw_ip_mask, bd_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         subnets = self.aim_mgr.find(
             aim_ctx, aim_resource.Subnet, bd_name=bd_name,
@@ -481,14 +481,14 @@ class TestAimMapping(ApicAimTestCase):
         return epg
 
     def _epg_should_not_exist(self, epg_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         epgs = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup,
                                  name=epg_name)
         self.assertEqual([], epgs)
 
     def _get_contract(self, contract_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         contract = aim_resource.Contract(tenant_name=tenant_name,
                                          name=contract_name)
@@ -497,14 +497,14 @@ class TestAimMapping(ApicAimTestCase):
         return contract
 
     def _contract_should_not_exist(self, contract_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         contracts = self.aim_mgr.find(aim_ctx, aim_resource.Contract,
                                       name=contract_name)
         self.assertEqual([], contracts)
 
     def _get_subject(self, subject_name, contract_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         subject = aim_resource.ContractSubject(tenant_name=tenant_name,
                                                contract_name=contract_name,
@@ -514,7 +514,7 @@ class TestAimMapping(ApicAimTestCase):
         return subject
 
     def _subject_should_not_exist(self, subject_name, contract_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         subjects = self.aim_mgr.find(
             aim_ctx, aim_resource.ContractSubject,
@@ -522,7 +522,7 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual([], subjects)
 
     def _get_filter(self, filter_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         filter = aim_resource.Filter(tenant_name=tenant_name,
                                      name=filter_name)
@@ -531,7 +531,7 @@ class TestAimMapping(ApicAimTestCase):
         return filter
 
     def _get_filter_entry(self, entry_name, filter_name, tenant_name):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         entry = aim_resource.FilterEntry(tenant_name=tenant_name,
                                          filter_name=filter_name,
@@ -3962,7 +3962,7 @@ class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
 class TestExtensionAttributes(ApicAimTestCase):
 
     def test_external_network_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
 
         # create with APIC DN, nat_typeand default CIDR
@@ -4040,7 +4040,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self._update('networks', net1['id'], {'apic:nat_type': ''}, 400)
 
     def test_external_subnet_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
 
         net1 = self._make_ext_network('net1',
@@ -4088,7 +4088,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertTrue(subnet2[SNAT_POOL])
 
     def test_router_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
 
         # create router with default values
@@ -4138,7 +4138,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual([], rtr2[CONS])
 
     def test_address_scope_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
         aim_ctx = aim_context.AimContext(db_session=session)
 
         # Create VRF.
@@ -4225,7 +4225,8 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertIn('is not valid VRF DN', resp['NeutronError']['message'])
 
         # Update APIC DN
-        aim_ctx = aim_context.AimContext(db_session=db_api.get_session())
+        aim_ctx = aim_context.AimContext(
+                db_session=db_api.get_writer_session())
         self.aim_mgr.create(
             aim_ctx, aim_resource.Tenant(name=self.t1_aname, monitored=True))
         vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='default',
