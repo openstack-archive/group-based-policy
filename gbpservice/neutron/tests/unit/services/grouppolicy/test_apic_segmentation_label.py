@@ -78,7 +78,7 @@ class ExtensionDriverTestCaseMixin(object):
         self.assertItemsEqual(labels, pt['segmentation_labels'])
 
         self.delete_policy_target(pt['id'], expected_res_status=204)
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         rows = (session.query(db.ApicSegmentationLabelDB).filter_by(
                 policy_target_id=pt['id']).all())
         self.assertEqual([], rows)

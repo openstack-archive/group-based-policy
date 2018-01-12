@@ -48,7 +48,7 @@ class HAIPAddressToPortAssocation(model_base.BASEV2):
 class PortForHAIPAddress(object):
 
     def __init__(self):
-        self.session = db_api.get_session()
+        self.session = db_api.get_writer_session()
 
     def _get_ha_ipaddress(self, port_id, ipaddress):
         return self.session.query(HAIPAddressToPortAssocation).filter_by(

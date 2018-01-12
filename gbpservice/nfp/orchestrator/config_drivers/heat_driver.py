@@ -235,7 +235,7 @@ class HeatDriver(object):
 
     def loadbalancer_post_stack_create(self, network_function_details):
         db_handler = nfp_db.NFPDbBase()
-        db_session = db_api.get_session()
+        db_session = db_api.get_writer_session()
         service_details = self.get_service_details(network_function_details)
         service_profile = service_details['service_profile']
         if service_profile['service_type'] == pconst.LOADBALANCERV2:
@@ -1310,7 +1310,7 @@ class HeatDriver(object):
 
     def get_service_details(self, network_function_details):
         db_handler = nfp_db.NFPDbBase()
-        db_session = db_api.get_session()
+        db_session = db_api.get_writer_session()
         network_function = network_function_details['network_function']
         network_function_instance = network_function_details.get(
             'network_function_instance')

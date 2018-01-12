@@ -268,7 +268,7 @@ class DeviceOrchestrator(nfp_api.NfpEventHandler):
 
     @property
     def db_session(self):
-        return db_api.get_session()
+        return db_api.get_writer_session()
 
     def event_method_mapping(self, event_id):
         event_handler_mapping = {

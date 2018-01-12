@@ -80,7 +80,7 @@ class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):
 
         self.delete_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
                               expected_res_status=204)
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         rows = (session.query(db.ApicAllowedVMNameDB).filter_by(
                 l3_policy_id=l3p['id']).all())
         self.assertEqual([], rows)

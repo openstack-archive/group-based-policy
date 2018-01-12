@@ -228,7 +228,7 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                 for x in range(0, DELETE_VIP_PORT_RETRIES):
                     # We intentionally get a new session so as to be
                     # able to read the updated DB
-                    session = db_api.get_session()
+                    session = db_api.get_reader_session()
                     vip_port = session.query(ndb.Port).filter_by(
                         id=vip_port_id).all()
                     if vip_port:

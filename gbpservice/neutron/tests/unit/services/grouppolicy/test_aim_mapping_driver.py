@@ -138,7 +138,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin, qos_plugin=qos_plugin)
-        self.db_session = db_api.get_session()
+        self.db_session = db_api.get_writer_session()
         self.initialize_db_config(self.db_session)
         self.l3_plugin = directory.get_plugin(n_constants.L3)
         config.cfg.CONF.set_override('network_vlan_ranges',
@@ -1815,7 +1815,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
 
     def _test_epg_policy_enforcement_attr(self, ptg):
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            db_api.get_session(), ptg['id'],
+            db_api.get_writer_session(), ptg['id'],
             context=self._neutron_context)
         aim_epg = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup,

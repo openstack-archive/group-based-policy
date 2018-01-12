@@ -72,7 +72,7 @@ class NFPDBTestCase(SqlTestCase):
         super(NFPDBTestCase, self).setUp()
         self.ctx = context.get_admin_context()
         self.nfp_db = NFPDB()
-        self.session = db_api.get_session()
+        self.session = db_api.get_writer_session()
 
     def create_network_function(self, attributes=None):
         if attributes is None:
