@@ -5,7 +5,6 @@ DEST=/opt/stack
 LOGFILE=$DEST/logs/stack.sh.log
 VERBOSE=True
 LOG_COLOR=False
-SCREEN_LOGDIR=$DEST/logs/screen
 
 # Credentials
 ADMIN_PASSWORD=mysecret
