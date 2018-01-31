@@ -5199,6 +5199,39 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             expected_calls,
             self.driver.aim_mech_driver._notify_port_update.call_args_list)
 
+    def test_port_bound_other_agent(self):
+        self._register_agent('h1', test_aim_md.AGENT_CONF_OPFLEX)
+        self._register_agent('h2', test_aim_md.AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+
+        # test compute port
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:')['port']
+        p1 = self._bind_port_to_host(p1['id'], 'h2')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        self.assertNotEqual('h1', details['host'])
+        self.assertEqual('h2', details['host'])
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h2')
+        self.assertNotEqual('h1', details['host'])
+        self.assertEqual('h2', details['host'])
+
+        p1 = self._bind_port_to_host(p1['id'], 'h1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        self.assertEqual('h1', details['host'])
+        self.assertNotEqual('h2', details['host'])
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h2')
+        self.assertEqual('h1', details['host'])
+        self.assertNotEqual('h2', details['host'])
+
 
 class TestPerL3PImplicitContractsConfig(TestL2PolicyWithAutoPTG):
 
