@@ -18,6 +18,7 @@ from neutron.db import db_base_plugin_common
 from neutron.objects import base as objects_base
 from neutron.objects import trunk as trunk_objects
 from neutron.plugins.ml2 import rpc as ml2_rpc
+from neutron_lib.api.definitions import portbindings
 from opflexagent import rpc as o_rpc
 from oslo_log import log
 
@@ -198,7 +199,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                        'mac_address': port['mac_address'],
                        'app_profile_name': epg.app_profile_name,
                        'tenant_id': port['tenant_id'],
-                       'host': host,
+                       'host': port[portbindings.HOST_ID],
                        # TODO(ivar): scope names, possibly through AIM or the
                        # name mapper
                        'ptg_tenant': epg.tenant_name,
