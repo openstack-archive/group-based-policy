@@ -2347,7 +2347,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def get_aim_domains(self, aim_ctx):
         vmms = [{'name': x.name, 'type': x.type}
             for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
-                if x.type in utils.KNOWN_VMM_TYPES.values()]
+            if x.type == utils.OPENSTACK_VMM_TYPE]
         phys = [{'name': x.name}
             for x in self.aim.find(aim_ctx, aim_resource.PhysicalDomain)]
         return vmms, phys
