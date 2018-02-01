@@ -2157,6 +2157,10 @@ class TestPolicyTargetGroupVmmDomains(AIMBaseTestCase):
                                                    name='vm2'),
                             overwrite=True)
         self.aim_mgr.create(self._aim_context,
+                            aim_resource.VMMDomain(type='VMware',
+                                                   name='vm3'),
+                            overwrite=True)
+        self.aim_mgr.create(self._aim_context,
                             aim_resource.PhysicalDomain(name='ph1'),
                             overwrite=True)
         self.aim_mgr.create(self._aim_context,
@@ -2664,6 +2668,10 @@ class TestPolicyTarget(AIMBaseTestCase):
                             aim_resource.VMMDomain(type='OpenStack',
                                                    name='vm2'),
                             overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='VMware',
+                                                   name='vm3'),
+                            overwrite=True)
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
         pt = self.create_policy_target(
@@ -2712,6 +2720,10 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.aim_mgr.create(aim_ctx,
                             aim_resource.VMMDomain(type='OpenStack',
                                                    name='vm2'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='VMware',
+                                                   name='vm3'),
                             overwrite=True)
         with self.port() as port:
             port_id = port['port']['id']
