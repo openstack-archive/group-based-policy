@@ -920,6 +920,40 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('68', sg_rule.to_port)
         self.assertEqual('normal', sg_rule.conn_track)
 
+        # Check DHCP6 egress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp6_egress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp6_egress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcp6EgressRule', sg_rule.display_name)
+        self.assertEqual('egress', sg_rule.direction)
+        self.assertEqual('ipv6', sg_rule.ethertype)
+        self.assertEqual('udp', sg_rule.ip_protocol)
+        self.assertEqual([], sg_rule.remote_ips)
+        self.assertEqual('547', sg_rule.from_port)
+        self.assertEqual('547', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check DHCP6 ingress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp6_ingress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp6_ingress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcp6IngressRule', sg_rule.display_name)
+        self.assertEqual('ingress', sg_rule.direction)
+        self.assertEqual('ipv6', sg_rule.ethertype)
+        self.assertEqual('udp', sg_rule.ip_protocol)
+        self.assertEqual([], sg_rule.remote_ips)
+        self.assertEqual('546', sg_rule.from_port)
+        self.assertEqual('546', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
     def test_network_lifecycle(self):
         # Test create.
         net = self._make_network(self.fmt, 'net1', True)['network']
