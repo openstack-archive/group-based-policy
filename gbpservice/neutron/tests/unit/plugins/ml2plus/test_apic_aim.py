@@ -6094,6 +6094,45 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                              set(self._doms(epg1.physical_domains,
                                             with_type=False)))
 
+    def test_no_host_domain_mappings(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='OpenStack',
+                                                   name='ostack1'),
+                            overwrite=True)
+        self.aim_mgr.create(aim_ctx,
+                            aim_resource.VMMDomain(type='VMware',
+                                                   name='vmware1'),
+                            overwrite=True)
+        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+        self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=('provider:physical_network', 'provider:network_type'),
+            **{'provider:physical_network': 'physnet3',
+               'provider:network_type': 'opflex'})['network']
+        epg1 = self._net_2_epg(net1)
+
+        with self.subnet(network={'network': net1}) as sub1:
+
+            # "normal" port on opflex host
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([('ostack1', 'OpenStack')]),
+                                 set(self._doms(epg1.vmm_domains)))
+                self.assertEqual(set([]),
+                                 set(self._doms(epg1.physical_domains,
+                                                with_type=False)))
+                # move port to another host
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-2')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([('ostack1', 'OpenStack')]),
+                                 set(self._doms(epg1.vmm_domains)))
+                self.assertEqual(set([]),
+                                 set(self._doms(epg1.physical_domains,
+                                                with_type=False)))
+
 
 class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
     # Tests for binding port on physical node where no other ML2 mechanism
