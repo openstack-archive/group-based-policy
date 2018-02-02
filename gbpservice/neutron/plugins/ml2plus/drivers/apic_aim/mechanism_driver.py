@@ -285,6 +285,38 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             conn_track='normal')
         self.aim.create(aim_ctx, dhcp_ingress_rule, overwrite=True)
 
+        dname = aim_utils.sanitize_display_name(
+            'DefaultSecurityGroupDhcp6EgressRule')
+        dhcp6_egress_rule = aim_resource.SecurityGroupRule(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=sg_name,
+            security_group_subject_name='default',
+            name='dhcp6_egress',
+            display_name=dname,
+            direction='egress',
+            ethertype='ipv6',
+            ip_protocol='udp',
+            from_port='547',
+            to_port='547',
+            conn_track='normal')
+        self.aim.create(aim_ctx, dhcp6_egress_rule, overwrite=True)
+
+        dname = aim_utils.sanitize_display_name(
+            'DefaultSecurityGroupDhcp6IngressRule')
+        dhcp6_ingress_rule = aim_resource.SecurityGroupRule(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=sg_name,
+            security_group_subject_name='default',
+            name='dhcp6_ingress',
+            display_name=dname,
+            direction='ingress',
+            ethertype='ipv6',
+            ip_protocol='udp',
+            from_port='546',
+            to_port='546',
+            conn_track='normal')
+        self.aim.create(aim_ctx, dhcp6_ingress_rule, overwrite=True)
+
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(
                     exchange=self.keystone_notification_exchange,
