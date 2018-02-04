@@ -4340,7 +4340,8 @@ class TestExternalConnectivityBase(object):
                                       cidrs=['20.10.0.0/16', '4.4.4.0/24'])
         self.mock_ns.create_l3outside.assert_called_once_with(
             mock.ANY,
-            aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'))
+            aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'),
+            vmm_domains=[])
         a_ext_net = aim_resource.ExternalNetwork(
             tenant_name=self.t1_aname, l3out_name='l1', name='n1')
         self.mock_ns.create_external_network.assert_called_once_with(
@@ -5105,6 +5106,70 @@ class TestExternalConnectivityBase(object):
                                       None)
         cv.assert_not_called()
         dv.assert_called_once_with(mock.ANY, a_ext_net1, vrf)
+
+    def _create_domains_and_mappings(self, ctx, mappings, create_hds=False):
+        # The vmm_domains contains the domains that should be
+        # associated in the create_l3outside call in AIM
+        vmm_domains = []
+        for dom in mappings:
+            if dom['type'] == 'OpenStack':
+                self.aim_mgr.create(ctx,
+                                    aim_resource.VMMDomain(type=dom['type'],
+                                                           name=dom['name']),
+                                    overwrite=True)
+                if (not create_hds and dom['host'] == '*') or (
+                    create_hds and dom['host'] != '*'):
+                    vmm_domains.append({'name': dom['name'],
+                                        'type': dom['type']})
+            if create_hds:
+                hd_mapping = aim_infra.HostDomainMappingV2(
+                    host_name=dom['host'], domain_name=dom['name'],
+                    domain_type=dom['type'])
+                self.aim_mgr.create(ctx, hd_mapping)
+        return vmm_domains
+
+    def _test_external_network_lifecycle_with_domains(self, create_hds=False):
+        mappings = [{'host': 'opflex-1', 'name': 'vm1', 'type': 'OpenStack'},
+                    {'host': 'opflex-2', 'name': 'vm2', 'type': 'OpenStack'},
+                    {'host': 'esx-1', 'name': 'vm3', 'type': 'VMware'},
+                    {'host': '*', 'name': 'vm1', 'type': 'OpenStack'},
+                    {'host': '*', 'name': 'vm2', 'type': 'OpenStack'},
+                    {'host': '*', 'name': 'vm3', 'type': 'VMware'},
+                    {'host': 'h1', 'name': 'ph1', 'type': 'PhysDom'},
+                    {'host': 'h2', 'name': 'ph2', 'type': 'PhysDom'},
+                    {'host': 'h3', 'name': 'ph3', 'type': 'PhysDom'}]
+        aim_ctx = aim_context.AimContext(self.db_session)
+        # test setup
+        vmm_domains = self._create_domains_and_mappings(aim_ctx, mappings,
+                                                        create_hds=create_hds)
+
+        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+        self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
+        self._make_ext_network('net1',
+                               dn=self.dn_t1_l1_n1,
+                               cidrs=['20.10.0.0/16', '4.4.4.0/24'])
+        self.mock_ns.create_l3outside.assert_called_once_with(
+            mock.ANY,
+            aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'),
+            vmm_domains=vmm_domains)
+        a_ext_net = aim_resource.ExternalNetwork(
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1')
+        self.mock_ns.create_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net)
+        self.mock_ns.update_external_cidrs.assert_called_once_with(
+            mock.ANY, a_ext_net, ['20.10.0.0/16', '4.4.4.0/24'])
+        ext_epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup,
+                                    tenant_name=self.t1_aname,
+                                    app_profile_name=self._app_profile_name,
+                                    name='EXT-l1')
+        self.assertEqual(1, len(ext_epg))
+        self.assertEqual(ext_epg[0].vmm_domains, vmm_domains)
+
+    def test_external_network_default_domains(self):
+        self._test_external_network_lifecycle_with_domains()
+
+    def test_external_network_host_domains(self):
+        self._test_external_network_lifecycle_with_domains(create_hds=True)
 
 
 class TestExternalDistributedNat(TestExternalConnectivityBase,

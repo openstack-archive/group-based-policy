@@ -396,6 +396,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                  if not self._is_dependent_port_change(p)]
             self._notify_port_update_bulk(plugin_context, affected_port_ids)
 
+    def _get_unique_domains(self, mappings):
+        domains = []
+        unique_domains = set()
+        for mapping in mappings:
+            if mapping.domain_name not in unique_domains:
+                unique_domains.add(mapping.domain_name)
+                domains.append({'type': mapping.domain_type,
+                                'name': mapping.domain_name})
+        return domains
+
     def create_network_precommit(self, context):
         current = context.current
         LOG.debug("APIC AIM MD creating network: %s", current)
@@ -407,7 +417,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
                 return  # Unmanaged external network
-            ns.create_l3outside(aim_ctx, l3out)
+            aim_hd_mappings = self.aim.find(aim_ctx,
+                aim_infra.HostDomainMappingV2,
+                domain_type=utils.OPENSTACK_VMM_TYPE)
+
+            domains = []
+            if aim_hd_mappings:
+                domains = self._get_unique_domains(aim_hd_mappings)
+            if not domains:
+                domains, _ = self.get_aim_domains(aim_ctx)
+
+            ns.create_l3outside(aim_ctx, l3out, vmm_domains=domains)
             ns.create_external_network(aim_ctx, ext_net)
             ns.update_external_cidrs(aim_ctx, ext_net,
                                      current[cisco_apic.EXTERNAL_CIDRS])
