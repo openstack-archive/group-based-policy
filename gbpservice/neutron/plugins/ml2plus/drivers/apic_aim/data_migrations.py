@@ -13,12 +13,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import netaddr
+
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim import context as aim_context
+from aim import utils as aim_utils
 from alembic import util as alembic_util
 from neutron.db.models import address_scope as as_db
+from neutron.db.models import securitygroup as sg_models
 from neutron.db.migration.cli import *  # noqa
 from neutron.db import models_v2
 from neutron.db import segments_db  # noqa
@@ -230,3 +234,75 @@ def do_ap_name_change(session, conf=None):
                         ext_net.consumed_contract_names = clone_ext_nets[
                             eid].consumed_contract_names
                     ns.connect_vrf(aim_ctx, ext_net, vrf)
+
+
+def do_apic_aim_security_group_migration(session):
+    alembic_util.msg(
+        "Starting data migration for SGs and its rules.")
+
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+    mapper = apic_mapper.APICNameMapper()
+    with session.begin(subtransactions=True):
+        # Migrate SG.
+        sg_dbs = (session.query(sg_models.SecurityGroup).
+                  all())
+        for sg_db in sg_dbs:
+            alembic_util.msg("Migrating SG: %s" % sg_db)
+            tenant_aname = mapper.project(session, sg_db['tenant_id'])
+            sg_aim = aim_resource.SecurityGroup(
+                tenant_name=tenant_aname, name=sg_db['id'],
+                display_name=aim_utils.sanitize_display_name(sg_db['name']))
+            aim.create(aim_ctx, sg_aim, overwrite=True)
+            # Always create this default subject
+            sg_subject = aim_resource.SecurityGroupSubject(
+                tenant_name=tenant_aname,
+                security_group_name=sg_db['id'], name='default')
+            aim.create(aim_ctx, sg_subject, overwrite=True)
+
+        # Migrate SG rules.
+        sg_rule_dbs = (session.query(sg_models.SecurityGroupRule).
+                       all())
+        for sg_rule_db in sg_rule_dbs:
+            tenant_aname = mapper.project(session, sg_rule_db['tenant_id'])
+            if sg_rule_db.get('remote_group_id'):
+                ip_version = 0
+                if sg_rule_db['ethertype'] == 'IPv4':
+                    ip_version = 4
+                elif sg_rule_db['ethertype'] == 'IPv6':
+                    ip_version = 6
+                remote_ips = []
+                sg_ports = (session.query(models_v2.Port).
+                            join(sg_models.SecurityGroupPortBinding,
+                                 sg_models.SecurityGroupPortBinding.port_id ==
+                                 models_v2.Port.id).
+                            filter(sg_models.SecurityGroupPortBinding.
+                                   security_group_id ==
+                                   sg_rule_db['remote_group_id']).
+                            all())
+                for sg_port in sg_ports:
+                    for fixed_ip in sg_port['fixed_ips']:
+                        if ip_version == netaddr.IPAddress(
+                                fixed_ip['ip_address']).version:
+                            remote_ips.append(fixed_ip['ip_address'])
+            else:
+                remote_ips = ([sg_rule_db['remote_ip_prefix']]
+                              if sg_rule_db['remote_ip_prefix'] else '')
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                tenant_name=tenant_aname,
+                security_group_name=sg_rule_db['security_group_id'],
+                security_group_subject_name='default',
+                name=sg_rule_db['id'],
+                direction=sg_rule_db['direction'],
+                ethertype=sg_rule_db['ethertype'].lower(),
+                ip_protocol=(sg_rule_db['protocol'] if sg_rule_db['protocol']
+                             else 'unspecified'),
+                remote_ips=remote_ips,
+                from_port=(sg_rule_db['port_range_min']
+                           if sg_rule_db['port_range_min'] else 'unspecified'),
+                to_port=(sg_rule_db['port_range_max']
+                         if sg_rule_db['port_range_max'] else 'unspecified'))
+            aim.create(aim_ctx, sg_rule_aim, overwrite=True)
+
+    alembic_util.msg(
+        "Finished data migration for SGs and its rules.")
