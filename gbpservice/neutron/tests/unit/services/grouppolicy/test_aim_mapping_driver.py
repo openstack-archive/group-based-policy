@@ -28,10 +28,12 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.callbacks import registry
 from neutron.common import utils as n_utils
 from neutron.db import api as db_api
+from neutron.db.models import securitygroup as sg_models
 from neutron.extensions import dns
 from neutron.notifiers import nova
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
+from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib.plugins import directory
@@ -2593,7 +2595,8 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
         self.dummy.delete_l3_policy_precommit = orig_func
 
 
-class TestPolicyTarget(AIMBaseTestCase):
+class TestPolicyTarget(AIMBaseTestCase,
+                       test_securitygroup.SecurityGroupsTestCase):
 
     def setUp(self, *args, **kwargs):
         super(TestPolicyTarget, self).setUp(*args, **kwargs)
@@ -3080,6 +3083,16 @@ class TestPolicyTarget(AIMBaseTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt2['port_id'], 'h1')
 
+        # As admin, create a SG in a different tenant then associate
+        # with the same port
+        sg = self._make_security_group(
+            self.fmt, 'sg_1', 'test',
+            tenant_id='test-tenant-2')['security_group']
+        port = self._plugin.get_port(self._context, pt2['port_id'])
+        port['security_groups'].append(sg['id'])
+        port = self._plugin.update_port(
+            self._context, port['id'], {'port': port})
+
         mapping = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt2['port_id'],
             host='h2')
@@ -3092,13 +3105,17 @@ class TestPolicyTarget(AIMBaseTestCase):
             'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
         self.assertEqual(1000, mapping['interface_mtu'])
         self.assertEqual(100, mapping['dhcp_lease_time'])
-
-        port = self._plugin.get_port(self._context, pt2['port_id'])
-        port_tenant = self.name_mapper.project(None, port['tenant_id'])
         sg_list = []
-        for sg_id in port['security_groups']:
+        ctx = nctx.get_admin_context()
+        port_sgs = (ctx.session.query(sg_models.SecurityGroup.id,
+                                      sg_models.SecurityGroup.tenant_id).
+                    filter(sg_models.SecurityGroup.id.
+                           in_(port['security_groups'])).
+                    all())
+        for sg_id, tenant_id in port_sgs:
+            sg_tenant = self.name_mapper.project(None, tenant_id)
             sg_list.append(
-                {'policy-space': port_tenant,
+                {'policy-space': sg_tenant,
                  'name': sg_id})
         sg_list.append({'policy-space': 'common',
                         'name': self.driver.aim_mech_driver.apic_system_id +
