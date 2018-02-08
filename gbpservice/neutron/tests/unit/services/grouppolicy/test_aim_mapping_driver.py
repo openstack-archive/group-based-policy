@@ -3106,11 +3106,12 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.assertEqual(100, mapping['dhcp_lease_time'])
 
         port = self._plugin.get_port(self._context, pt2['port_id'])
-        port_tenant = self.name_mapper.project(None, port['tenant_id'])
         sg_list = []
         for sg_id in port['security_groups']:
+            sg = self._plugin.get_security_group(self._context, sg_id)
+            sg_tenant = self.name_mapper.project(None, sg['tenant_id'])
             sg_list.append(
-                {'policy-space': port_tenant,
+                {'policy-space': sg_tenant,
                  'name': sg_id})
         sg_list.append({'policy-space': 'common',
                         'name': self.driver.aim_mech_driver.apic_system_id +
