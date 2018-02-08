@@ -258,12 +258,15 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return
         details['security_group'] = []
 
-        tenant_aname = self.aim_mech_driver.name_mapper.project(
-            context.session, port['tenant_id'])
-        for sg_id in port['security_groups']:
+        filters = {'id': port['security_groups']}
+        port_sgs = self.aim_mech_driver.plugin.get_security_groups(context,
+                                                                   filters)
+        for port_sg in port_sgs:
+            tenant_aname = self.aim_mech_driver.name_mapper.project(
+                context.session, port_sg['tenant_id'])
             details['security_group'].append(
                 {'policy-space': tenant_aname,
-                 'name': sg_id})
+                 'name': port_sg['id']})
         # Always include this SG which has the default arp & dhcp rules
         details['security_group'].append(
             {'policy-space': 'common',
