@@ -82,6 +82,20 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         self.set_network_extn_db(plugin_context.session, result['id'],
                                  res_dict)
         result.update(res_dict)
+        # TODO(kiran): Should disallow update or create with bgp attr on
+        # pre-existing external networks.
+        is_bgp_enabled = data.get(cisco_apic.BGP, False)
+        bgp_type = data.get(cisco_apic.BGP_TYPE, "")
+        local_asn = data.get(cisco_apic.LOCAL_ASN, "0")
+        asn = data.get(cisco_apic.ASN, "0")
+        res_dict = {cisco_apic.BGP: is_bgp_enabled,
+                    cisco_apic.BGP_TYPE: bgp_type,
+                    cisco_apic.LOCAL_ASN: local_asn,
+                    cisco_apic.ASN: asn
+                    }
+        self.set_network_extn_db(plugin_context.session, result['id'],
+                                 res_dict)
+        result.update(res_dict)
 
         if (data.get(cisco_apic.DIST_NAMES) and
             data[cisco_apic.DIST_NAMES].get(cisco_apic.EXTERNAL_NETWORK)):
@@ -108,13 +122,40 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             result.update(res_dict)
 
     def process_update_network(self, plugin_context, data, result):
-        # only CIDRs can be updated
-        if not cisco_apic.EXTERNAL_CIDRS in data:
+        # can update CIDR, bgp_enable,scope,aggregate
+        if cisco_apic.EXTERNAL_CIDRS not in data and \
+                        cisco_apic.BGP not in data and \
+                cisco_apic.BGP_TYPE not in data and \
+                cisco_apic.LOCAL_ASN not in data and \
+                cisco_apic.ASN not in data:
             return
         if result.get(cisco_apic.DIST_NAMES, {}).get(
             cisco_apic.EXTERNAL_NETWORK):
-            res_dict = {cisco_apic.EXTERNAL_CIDRS:
-                        data[cisco_apic.EXTERNAL_CIDRS]}
+            if data.get(cisco_apic.EXTERNAL_CIDRS):
+                res_dict = {cisco_apic.EXTERNAL_CIDRS:
+                            data[cisco_apic.EXTERNAL_CIDRS]}
+                self.set_network_extn_db(plugin_context.session, result['id'],
+                                         res_dict)
+                result.update(res_dict)
+        # TODO(kiran): Should disallow update or create with bgp attr on
+        # pre-existing external networks.
+        if cisco_apic.BGP in data:
+            res_dict = {cisco_apic.BGP: data[cisco_apic.BGP]}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.update(res_dict)
+        if cisco_apic.BGP_TYPE in data:
+            res_dict = {cisco_apic.BGP_TYPE: data[cisco_apic.BGP_TYPE]}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.update(res_dict)
+        if cisco_apic.LOCAL_ASN in data:
+            res_dict = {cisco_apic.LOCAL_ASN: data[cisco_apic.LOCAL_ASN]}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.update(res_dict)
+        if cisco_apic.ASN in data:
+            res_dict = {cisco_apic.ASN: data[cisco_apic.ASN]}
             self.set_network_extn_db(plugin_context.session, result['id'],
                                      res_dict)
             result.update(res_dict)

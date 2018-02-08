@@ -27,6 +27,10 @@ NAT_TYPE = 'apic:nat_type'
 SNAT_HOST_POOL = 'apic:snat_host_pool'
 EXTERNAL_CIDRS = 'apic:external_cidrs'
 SVI = 'apic:svi'
+BGP = 'apic:bgp_enable'
+LOCAL_ASN = 'apic:local_asn'
+ASN = 'apic:asn'
+BGP_TYPE = 'apic:bgp_type'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -50,6 +54,26 @@ NET_ATTRIBUTES = {
         'allow_post': True, 'allow_put': False,
         'is_visible': True, 'default': False,
         'convert_to': conv.convert_to_boolean,
+    },
+    BGP: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
+    BGP_TYPE: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': '',
+        'validate': {'type:values': ['DefaultExport', '']},
+    },
+    LOCAL_ASN: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': "0",
+        'validate': {'type:string': ""},
+    },
+    ASN: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': "0",
+        'validate': {'type:string': ""},
     },
 }
 
