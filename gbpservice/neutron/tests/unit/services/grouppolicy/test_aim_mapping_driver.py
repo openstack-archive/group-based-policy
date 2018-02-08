@@ -28,6 +28,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.callbacks import registry
 from neutron.common import utils as n_utils
 from neutron.db import api as db_api
+from neutron.db.models import securitygroup as sg_models
 from neutron.extensions import dns
 from neutron.notifiers import nova
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
@@ -3094,11 +3095,18 @@ class TestPolicyTarget(AIMBaseTestCase):
         self.assertEqual(100, mapping['dhcp_lease_time'])
 
         port = self._plugin.get_port(self._context, pt2['port_id'])
-        port_tenant = self.name_mapper.project(None, port['tenant_id'])
         sg_list = []
-        for sg_id in port['security_groups']:
+
+        ctx = nctx.get_admin_context()
+        port_sgs = (ctx.session.query(sg_models.SecurityGroup.id,
+                                      sg_models.SecurityGroup.tenant_id).
+                    filter(sg_models.SecurityGroup.id.
+                           in_(port['security_groups'])).
+                    all())
+        for sg_id, tenant_id in port_sgs:
+            sg_tenant = self.name_mapper.project(None, tenant_id)
             sg_list.append(
-                {'policy-space': port_tenant,
+                {'policy-space': sg_tenant,
                  'name': sg_id})
         sg_list.append({'policy-space': 'common',
                         'name': self.driver.aim_mech_driver.apic_system_id +
