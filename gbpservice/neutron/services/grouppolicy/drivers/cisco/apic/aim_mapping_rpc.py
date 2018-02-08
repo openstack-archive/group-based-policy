@@ -15,6 +15,7 @@ from neutron.common import topics
 from neutron.db import api as db_api
 
 from neutron.db import db_base_plugin_common
+from neutron.db.models import securitygroup as sg_models
 from neutron.objects import base as objects_base
 from neutron.objects import trunk as trunk_objects
 from neutron.plugins.ml2 import rpc as ml2_rpc
@@ -258,12 +259,17 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return
         details['security_group'] = []
 
-        tenant_aname = self.aim_mech_driver.name_mapper.project(
-            context.session, port['tenant_id'])
-        for sg_id in port['security_groups']:
+        port_sgs = (context.session.query(sg_models.SecurityGroup.id,
+                                          sg_models.SecurityGroup.tenant_id).
+                    filter(sg_models.SecurityGroup.id.
+                           in_(port['security_groups'])).
+                    all())
+        for port_sg in port_sgs:
+            tenant_aname = self.aim_mech_driver.name_mapper.project(
+                context.session, port_sg[1])
             details['security_group'].append(
                 {'policy-space': tenant_aname,
-                 'name': sg_id})
+                 'name': port_sg[0]})
         # Always include this SG which has the default arp & dhcp rules
         details['security_group'].append(
             {'policy-space': 'common',
