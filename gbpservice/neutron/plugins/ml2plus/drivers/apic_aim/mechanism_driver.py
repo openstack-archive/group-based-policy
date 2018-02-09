@@ -36,6 +36,7 @@ from neutron.db import models_v2
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
 from neutron.extensions import portbindings
+from neutron.extensions import external_net
 from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import models
@@ -422,10 +423,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 domain_type=utils.OPENSTACK_VMM_TYPE)
 
             domains = []
-            if aim_hd_mappings:
-                domains = self._get_unique_domains(aim_hd_mappings)
-            if not domains:
-                domains, _ = self.get_aim_domains(aim_ctx)
+            if not isinstance(ns, nat_strategy.NoNatStrategy):
+                if aim_hd_mappings:
+                    domains = self._get_unique_domains(aim_hd_mappings)
+                if not domains:
+                    domains, _ = self.get_aim_domains(aim_ctx)
 
             ns.create_l3outside(aim_ctx, l3out, vmm_domains=domains)
             ns.create_external_network(aim_ctx, ext_net)
@@ -2874,10 +2876,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         port_context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(port_context, is_vmm=True)
 
+    def _skip_domain_processing(self, port_context):
+        ext_net = port_context.network.current
+        # skip domain processing if it's not managed by us, or
+        # for external networks with NAT (FIPs or SNAT),
+        if not ext_net:
+            return True
+        if ext_net[external_net.EXTERNAL] is True:
+            _, _, ns = self._get_aim_nat_strategy(ext_net)
+            if not isinstance(ns, nat_strategy.NoNatStrategy):
+                return True
+        return False
+
     def _associate_domain(self, port_context, is_vmm=True):
         port = port_context.current
         session = port_context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        if self._skip_domain_processing(port_context):
+            return
         ptg = None
         # TODO(kentwu): remove this coupling with policy driver if possible
         if self.gbp_driver:
@@ -2899,6 +2915,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         domains = []
         try:
             if is_vmm:
+                # Get all the openstack VMM domains. We either
+                # get domains from a lookup of the HostDomainMappingV2
+                # table, or we get all the applicable VMM domains
+                # found in AIM. We then apply these to the EPG.
                 if aim_hd_mappings:
                     domains = [{'type': mapping.domain_type,
                                 'name': mapping.domain_name}
@@ -2917,6 +2937,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         vmms = aim_epg.vmm_domains
                         self.aim.update(aim_ctx, epg, vmm_domains=vmms)
             else:
+                # Get all the Physical domains. We either get domains
+                # from a lookup of the HostDomainMappingV2
+                # table, or we get all the applicable Physical
+                # domains found in AIM. We then apply these to the EPG.
                 if aim_hd_mappings:
                     domains = [{'name': mapping.domain_name}
                                for mapping in aim_hd_mappings
@@ -2947,16 +2971,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         port = port_context.current
         if (self._is_opflex_type(btm[api.NETWORK_TYPE]) or
                 self._is_supported_non_opflex_type(btm[api.NETWORK_TYPE])):
+            if self._skip_domain_processing(port_context):
+                return
             host_id = (port_context.original_host if use_original
                        else port_context.host)
             session = port_context._plugin_context.session
             aim_ctx = aim_context.AimContext(session)
-            aim_hd_mappings = (self.aim.find(aim_ctx,
-                                             aim_infra.HostDomainMappingV2,
-                                             host_name=host_id) or
-                               self.aim.find(aim_ctx,
-                                             aim_infra.HostDomainMappingV2,
-                                             host_name=DEFAULT_HOST_DOMAIN))
+            aim_hd_mappings = self.aim.find(aim_ctx,
+                                            aim_infra.HostDomainMappingV2,
+                                            host_name=host_id)
             if not aim_hd_mappings:
                 return
 
@@ -2984,16 +3007,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if self.gbp_driver:
                 ptg, pt = self.gbp_driver._port_id_to_ptg(
                     port_context._plugin_context, port['id'])
+
+            def _bound_port_query(session, port, hosts=None):
+                ports = (session.query(models.PortBindingLevel).
+                         join(models_v2.Port, models_v2.Port.id ==
+                              models.PortBindingLevel.port_id))
+                if hosts:
+                    ports = ports.filter(
+                        models.PortBindingLevel.host.in_(hosts))
+                ports = ports.filter(
+                    models.PortBindingLevel.port_id != port['id'])
+                return ports
+
             if ptg:
                 # if there are no other ports under this PTG bound to those
                 # hosts under this vmm, release the domain
-                bound_ports = (session
-                     .query(models.PortBindingLevel)
-                     .join(models_v2.Port,
-                           models_v2.Port.id ==
-                           models.PortBindingLevel.port_id)
-                     .filter(models.PortBindingLevel.host.in_(hosts))
-                     .filter(models.PortBindingLevel.port_id != port['id']))
+                bound_ports = _bound_port_query(session, port, hosts=hosts)
                 bound_ports = [x['port_id'] for x in bound_ports]
                 ptg_ports = self.gbp_driver.get_ptg_port_ids(
                     port_context._plugin_context, ptg)
@@ -3004,17 +3033,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             else:
                 # if there are no other ports under this network bound to those
                 # hosts under this vmm, release the domain
-                ports = (session
-                         .query(models.PortBindingLevel)
-                         .join(models_v2.Port,
-                               models_v2.Port.id ==
-                               models.PortBindingLevel.port_id)
-                         .filter(models_v2.Port.network_id ==
-                                 port['network_id'])
-                         .filter(models.PortBindingLevel.host.in_(hosts))
-                         .filter(models.PortBindingLevel.port_id != port['id'])
-                         .first())
-                if ports:
+                ports = _bound_port_query(session, port, hosts=hosts)
+                if ports.first():
                     return
                 mapping = self._get_network_mapping(
                     session, port['network_id'])
