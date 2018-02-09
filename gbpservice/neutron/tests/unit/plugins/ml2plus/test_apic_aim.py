@@ -5150,6 +5150,8 @@ class TestExternalConnectivityBase(object):
         self._make_ext_network('net1',
                                dn=self.dn_t1_l1_n1,
                                cidrs=['20.10.0.0/16', '4.4.4.0/24'])
+        if self.nat_type is not 'distributed' and self.nat_type is not 'edge':
+            vmm_domains = []
         self.mock_ns.create_l3outside.assert_called_once_with(
             mock.ANY,
             aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'),
@@ -6231,6 +6233,243 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self.assertEqual(set([]),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
+
+    def _external_net_test_setup(self, aim_ctx, domains, mappings,
+                                 agents, nat_type=None):
+        for domain in domains:
+            self.aim_mgr.create(aim_ctx,
+                                aim_resource.VMMDomain(type=domain['type'],
+                                                       name=domain['name'],
+                                overwrite=True))
+        for mapping in mappings:
+            hd_mapping = aim_infra.HostDomainMappingV2(
+                host_name=mapping['host'],
+                domain_name=mapping['name'],
+                domain_type=mapping['type'])
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+        for agent in agents:
+            self._register_agent(agent, AGENT_CONF_OPFLEX)
+        net1 = self._make_ext_network('net1',
+                                      dn=self.dn_t1_l1_n1,
+                                      nat_type=nat_type)
+        epg1 = self._net_2_epg(net1)
+        epg1 = self.aim_mgr.get(aim_ctx, epg1)
+        return net1, epg1
+
+    def test_no_nat_external_net_default_domains(self):
+        # no-NAT external networks rely on port-binding
+        # to dynamically associate domains to the external EPG
+        aim_ctx = aim_context.AimContext(self.db_session)
+        domains = [{'type': 'OpenStack', 'name': 'cloud-rtp-1-VMM'},
+                   {'type': 'OpenStack', 'name': 'vm1'}]
+        mappings = []
+        agents = ['opflex-1', 'opflex-2']
+        net1, epg1 = self._external_net_test_setup(aim_ctx, domains,
+                                                   mappings, agents,
+                                                   nat_type='')
+
+        self.assertEqual(set([]),
+                         set(self._doms(epg1.vmm_domains)))
+        self.assertEqual(set([]),
+                         set(self._doms(epg1.physical_domains,
+                                        with_type=False)))
+
+        with self.subnet(network={'network': net1}) as sub1:
+
+            # "normal" port on opflex host
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                      ('vm1', 'OpenStack')]),
+                                 set(self._doms(epg1.vmm_domains)))
+                self.assertEqual(set([]),
+                                 set(self._doms(epg1.physical_domains,
+                                                with_type=False)))
+                with self.port(subnet=sub1) as p2:
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'opflex-2')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # unbind the port - should still have both, since
+                    # we don't know that we can delete the wildcard entry
+                    p2 = self._bind_port_to_host(p2['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'opflex-2')
+                    p1 = self._bind_port_to_host(p1['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # unbind port 1 -- domains left in place, as all default
+                    # domain cases should leave domains associated (to keep
+                    # backwards compatibility).
+                    p2 = self._bind_port_to_host(p2['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+
+    def test_no_nat_external_net_specific_domains(self):
+        # no-NAT external networks rely on port-binding
+        # to dynamically associate domains to the external EPG
+        aim_ctx = aim_context.AimContext(self.db_session)
+        domains = [{'type': 'OpenStack', 'name': 'cloud-rtp-1-VMM'},
+                   {'type': 'OpenStack', 'name': 'vm1'}]
+        mappings = [{'type': 'OpenStack',
+                     'host': '*',
+                     'name': 'cloud-rtp-1-VMM'},
+                    {'type': 'OpenStack',
+                     'host': 'opflex-1',
+                     'name': 'vm1'}]
+        agents = ['opflex-1', 'opflex-2']
+        net1, epg1 = self._external_net_test_setup(aim_ctx, domains,
+                                                   mappings, agents,
+                                                   nat_type='')
+
+        self.assertEqual(set([]),
+                         set(self._doms(epg1.vmm_domains)))
+        self.assertEqual(set([]),
+                         set(self._doms(epg1.physical_domains,
+                                        with_type=False)))
+
+        with self.subnet(network={'network': net1}) as sub1:
+
+            # "normal" port on opflex host
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([('vm1', 'OpenStack')]),
+                                 set(self._doms(epg1.vmm_domains)))
+                self.assertEqual(set([]),
+                                 set(self._doms(epg1.physical_domains,
+                                                with_type=False)))
+                with self.port(subnet=sub1) as p2:
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'opflex-2')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # unbind the port - should still have both, since
+                    # we don't know that we can delete the wildcard entry
+                    p2 = self._bind_port_to_host(p2['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'opflex-2')
+                    p1 = self._bind_port_to_host(p1['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # unbind port 1 -- should remove all domains, as
+                    # there aren't any ports left in the EPG
+                    p2 = self._bind_port_to_host(p2['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+
+    def test_nat_external_net_specific_domains(self):
+        # no-NAT external networks rely on port-binding
+        # to dynamically associate domains to the external EPG
+        aim_ctx = aim_context.AimContext(self.db_session)
+        domains = [{'type': 'OpenStack', 'name': 'cloud-rtp-1-VMM'},
+                   {'type': 'OpenStack', 'name': 'vm1'}]
+        mappings = [{'type': 'OpenStack',
+                     'host': '*',
+                     'name': 'cloud-rtp-1-VMM'},
+                    {'type': 'OpenStack',
+                     'host': 'opflex-1',
+                     'name': 'vm1'}]
+        agents = ['opflex-1', 'opflex-1']
+        net1, epg1 = self._external_net_test_setup(aim_ctx, domains,
+                                                   mappings, agents)
+
+        self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                              ('vm1', 'OpenStack')]),
+                         set(self._doms(epg1.vmm_domains)))
+        self.assertEqual(set([]),
+                         set(self._doms(epg1.physical_domains,
+                                        with_type=False)))
+
+        with self.subnet(network={'network': net1}) as sub1:
+
+            # "normal" port on opflex host
+            with self.port(subnet=sub1) as p1:
+                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                      ('vm1', 'OpenStack')]),
+                                 set(self._doms(epg1.vmm_domains)))
+                self.assertEqual(set([]),
+                                 set(self._doms(epg1.physical_domains,
+                                                with_type=False)))
+                with self.port(subnet=sub1) as p2:
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'opflex-2')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # unbind the port - should still have both, since
+                    # we don't know that we can delete the wildcard entry
+                    p2 = self._bind_port_to_host(p2['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'opflex-2')
+                    p1 = self._bind_port_to_host(p1['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # unbind port 1 -- should remove all domains, as
+                    # there aren't any ports left in the EPG
+                    p2 = self._bind_port_to_host(p2['port']['id'], None)
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('cloud-rtp-1-VMM', 'OpenStack'),
+                                          ('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
 
 
 class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
