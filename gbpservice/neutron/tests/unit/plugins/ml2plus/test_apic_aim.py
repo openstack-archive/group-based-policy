@@ -91,6 +91,10 @@ PROV = 'apic:external_provided_contracts'
 CONS = 'apic:external_consumed_contracts'
 SNAT_POOL = 'apic:snat_host_pool'
 SVI = 'apic:svi'
+BGP = 'apic:bgp_enable'
+LOCAL_ASN = 'apic:local_asn'
+ASN = 'apic:asn'
+BGP_TYPE = 'apic:bgp_type'
 
 aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
@@ -235,7 +239,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
-                                     CIDR, PROV, CONS, SVI)
+                                     CIDR, PROV, CONS, SVI,
+                                     BGP, BGP_TYPE, ASN, LOCAL_ASN
+                                     )
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
         self.t2_aname = self.name_mapper.project(None, 't2')
@@ -4129,6 +4135,51 @@ class TestExtensionAttributes(TestAimMapping):
         self._delete('networks', net['id'])
         self.assertFalse(extn.get_network_extn_db(session, net['id']))
         self._check_network_deleted(net)
+
+    def test_bgp_enabled_network_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # test create.
+        net1 = self._make_network(self.fmt, 'net1', True,
+                                  arg_list=self.extension_attributes,
+                                  **{'apic:svi': 'True'}
+                                  )['network']
+        self.assertEqual(True, net1[SVI])
+        self.assertEqual(False, net1[BGP])
+        self.assertEqual("", net1[BGP_TYPE])
+        self.assertEqual("1", net1[LOCAL_ASN])
+        self.assertEqual("0", net1[ASN])
+
+        net = self._make_network(self.fmt, 'net2', True,
+                                 arg_list=self.extension_attributes,
+                                 **{'apic:svi': True,
+                                    BGP: True,
+                                    BGP_TYPE: "DefaultExport",
+                                    LOCAL_ASN: "1",
+                                    ASN: "65000"
+                                    })['network']
+        self.assertEqual(True, net[BGP])
+        self.assertEqual("DefaultExport", net[BGP_TYPE])
+        self.assertEqual("1", net[LOCAL_ASN])
+        self.assertEqual("65000", net[ASN])
+
+        #test update
+        net1 = self._update('networks', net1['id'],
+                            {'network': {BGP: True,
+                                         BGP_TYPE: "DefaultExport",
+                                         LOCAL_ASN: "2",
+                                         ASN: "100"}})['network']
+        self.assertEqual(True, net1[BGP])
+        self.assertEqual("DefaultExport", net1[BGP_TYPE])
+        self.assertEqual("2", net1[LOCAL_ASN])
+        self.assertEqual("100", net1[ASN])
+
+        # test delete
+        self._delete('networks', net1['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        self._delete('networks', net['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net['id']))
 
     def test_external_network_lifecycle(self):
         session = db_api.get_reader_session()
