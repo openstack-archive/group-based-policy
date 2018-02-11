@@ -81,7 +81,7 @@ class Gbp_Config(object):
         cmd_out = commands.getoutput(cmd)
         _log.info(cmd_out)
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         if self.cmd_error_check(cmd_out) == 0:
             return 0
         # If "create" cmd succeeded then parse the cmd_out to extract the UUID
@@ -116,7 +116,7 @@ class Gbp_Config(object):
         # Execute the policy-classifier-config-cmd
         cmd_out = commands.getoutput(cmd)
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         if self.cmd_error_check(cmd_out) == 0:
             return 0
         # If try clause succeeds for "create" cmd then parse the cmd_out
@@ -179,7 +179,7 @@ class Gbp_Config(object):
         cmd_out = commands.getoutput(cmd)
         #_log.info(cmd_out)
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         if self.cmd_error_check(cmd_out) == 0:
             return 0
         # If try clause succeeds for "create" cmd then parse the cmd_out to
@@ -260,7 +260,7 @@ class Gbp_Config(object):
         cmd_out = commands.getoutput(cmd)
         #_log.info(cmd_out)
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         if self.cmd_error_check(cmd_out) == 0:
             return 0
         return 1
@@ -341,7 +341,7 @@ class Gbp_Config(object):
         cmd_out = commands.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         if self.cmd_error_check(cmd_out) == 0:
             return 0
         if cmd_val == 1:
@@ -384,7 +384,7 @@ class Gbp_Config(object):
         cmd_out = commands.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         if self.cmd_error_check(cmd_out) == 0:
             return 0
         if cmd_val == 1:

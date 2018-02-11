@@ -73,7 +73,7 @@ class Gbp_Verify(object):
         cmd_out = commands.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         for err in self.err_strings:
             if re.search('\\b%s\\b' % (err), cmd_out, re.I):
                 _log.info(cmd_out)
@@ -127,7 +127,7 @@ class Gbp_Verify(object):
         cmd_out = commands.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
-        # succeded
+        # succeeded
         for err in self.err_strings:
             if re.search('\\b%s\\b' % (err), cmd_out, re.I):
                 _log.info(cmd_out)
