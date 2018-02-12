@@ -166,7 +166,7 @@ Step 1 creates a rule set describing a policy for a set of web servers. The rule
    gbp group-update client-2 --consumed-policy-rule-sets "web-ruleset=scope"
    gbp group-update web --provided-policy-rule-sets "web-ruleset=scope"
 
-Step 2 creates the groups and attached the appropriate rule sets. Rule sets describe a bidirectional set of rules. However, the API is designed to allow a group to “provide” a rule set describing its behavior, and other groups to “consume” that rule set to connect to it. The model intends for groups to provide rule sets that describe their behavior, which other groups can then choose to access.
+Step 2 creates the groups and attached the appropriate rule sets. Rule sets describe a bidirectional set of rules. However, the API is designed to allow a group to "provide" a rule set describing its behavior, and other groups to "consume" that rule set to connect to it. The model intends for groups to provide rule sets that describe their behavior, which other groups can then choose to access.
 
 3. Create Group Members
 

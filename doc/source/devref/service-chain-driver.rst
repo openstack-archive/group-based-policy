@@ -111,7 +111,7 @@ This provides a reusable implementation for managing existing Neutron
 services.
 
 Node Driver
-This configures the service based on the “config” provided in the Service
+This configures the service based on the "config" provided in the Service
 Node definition.
 
 Node Plumber
