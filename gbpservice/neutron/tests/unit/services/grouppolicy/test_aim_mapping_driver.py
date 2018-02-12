@@ -210,13 +210,13 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         net = self._make_network(self.fmt, name, True,
                                  arg_list=extn_attr,
                                  **kwargs)['network']
-        self._make_subnet(
+        subnet = self._make_subnet(
             self.fmt, {'network': net}, '100.100.0.1',
             '100.100.0.0/16')['subnet']
         router = self._make_router(
             self.fmt, router_tenant or net['tenant_id'], 'router1',
             external_gateway_info={'network_id': net['id']})['router']
-        return net, router
+        return net, router, subnet
 
     def _bind_port_to_host(self, port_id, host):
         data = {'port': {'binding:host_id': host,
@@ -2930,13 +2930,14 @@ class TestPolicyTarget(AIMBaseTestCase,
 
     def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
                                        expected_epg_name, expected_epg_tenant,
-                                       subnet, default_route=None):
+                                       subnet, default_route=None,
+                                       map_tenant_name=True):
         self.assertEqual(mapping, req_mapping['gbp_details'])
         self.assertEqual(port_id, mapping['port_id'])
         self.assertEqual(expected_epg_name, mapping['endpoint_group_name'])
-        self.assertEqual(
-            self.name_mapper.project(None, expected_epg_tenant),
-            mapping['ptg_tenant'])
+        exp_tenant = (self.name_mapper.project(None, expected_epg_tenant)
+                      if map_tenant_name else expected_epg_tenant)
+        self.assertEqual(exp_tenant, mapping['ptg_tenant'])
         self.assertEqual('someid', mapping['vm-name'])
         self.assertTrue(mapping['enable_dhcp_optimization'])
         self.assertFalse(mapping['enable_metadata_optimization'])
@@ -3139,9 +3140,9 @@ class TestPolicyTarget(AIMBaseTestCase,
             name='as2', address_scope_id=address_scope['id'],
             tenant_id=self._tenant_id)
 
-        ext_net1, router1 = self._setup_external_network(
+        ext_net1, router1, _ = self._setup_external_network(
             'l1', dn='uni/tn-t1/out-l1/instP-n1')
-        ext_net2, router2 = self._setup_external_network(
+        ext_net2, router2, _ = self._setup_external_network(
             'l2', dn='uni/tn-t1/out-l2/instP-n2')
         ext_net2_sub2 = self._make_subnet(
             self.fmt, {'network': ext_net2}, '200.200.0.1',
@@ -3257,6 +3258,71 @@ class TestPolicyTarget(AIMBaseTestCase,
 
     def test_get_gbp_details_no_pt_no_as_unrouted(self):
         self._do_test_gbp_details_no_pt(use_as=False, routed=False)
+
+    def test_gbp_details_ext_net_no_pt(self):
+        # Test ports created on Neutron external networks
+        ext_net1, _, sn1 = self._setup_external_network(
+            'l1', dn='uni/tn-common/out-l1/instP-n1')
+        sn1 = {'subnet': sn1}
+        ext_net2, _, sn2 = self._setup_external_network(
+            'l2', dn='uni/tn-t1/out-l2/instP-n2')
+        sn2 = {'subnet': sn2}
+
+        with self.port(subnet=sn1) as port:
+            port_id = port['port']['id']
+            self._bind_port_to_host(port_id, 'h1')
+            sn1_1 = self._make_subnet(self.fmt, {'network': ext_net1},
+                                      '200.200.0.1', '200.200.0.0/16')
+
+            mapping = self.driver.get_gbp_details(
+                self._neutron_admin_context, device='tap%s' % port_id,
+                host='h1')
+            req_mapping = self.driver.request_endpoint_details(
+                self._neutron_admin_context,
+                request={'device': 'tap%s' % port_id,
+                         'timestamp': 0, 'request_id': 'request_id'},
+                host='h1')
+            self._verify_gbp_details_assertions(
+                mapping, req_mapping, port_id, "EXT-l1", "common", sn1,
+                map_tenant_name=False)
+
+            vrf_id = '%s %s' % ("common", "openstack_EXT-l1")
+            vrf_mapping = self.driver.get_vrf_details(
+                    self._neutron_admin_context, vrf_id=vrf_id)
+
+            supernet = [sn1['subnet']['cidr'], sn1_1['subnet']['cidr']]
+            self._verify_vrf_details_assertions(
+                mapping, "openstack_EXT-l1", vrf_id, supernet, "common")
+            self._verify_vrf_details_assertions(
+                vrf_mapping, "openstack_EXT-l1", vrf_id, supernet, "common")
+
+        with self.port(subnet=sn2) as port:
+            port_id = port['port']['id']
+            self._bind_port_to_host(port_id, 'h1')
+            sn2_1 = self._make_subnet(self.fmt, {'network': ext_net2},
+                                      '250.250.0.1', '250.250.0.0/16')
+
+            mapping = self.driver.get_gbp_details(
+                self._neutron_admin_context, device='tap%s' % port_id,
+                host='h1')
+            req_mapping = self.driver.request_endpoint_details(
+                nctx.get_admin_context(),
+                request={'device': 'tap%s' % port_id,
+                         'timestamp': 0, 'request_id': 'request_id'},
+                host='h1')
+            self._verify_gbp_details_assertions(
+                mapping, req_mapping, port_id, "EXT-l2", "t1", sn2,
+                map_tenant_name=False)
+
+            vrf_id = '%s %s' % ("t1", "EXT-l2")
+            vrf_mapping = self.driver.get_vrf_details(
+                self._neutron_admin_context, vrf_id=vrf_id)
+
+            supernet = [sn2['subnet']['cidr'], sn2_1['subnet']['cidr']]
+            self._verify_vrf_details_assertions(
+                mapping, "EXT-l2", vrf_id, supernet, "t1")
+            self._verify_vrf_details_assertions(
+                vrf_mapping, "EXT-l2", vrf_id, supernet, "t1")
 
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
@@ -5162,7 +5228,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
 
         # set allowed-address as fixed-IP of ports p3 and p4, which also have
         # floating-IPs. Verify that FIP is "stolen" by p1 and p2
-        net_ext, rtr = self._setup_external_network(
+        net_ext, rtr, _ = self._setup_external_network(
             'l1', dn='uni/tn-t1/out-l1/instP-n1')
         p3 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:',

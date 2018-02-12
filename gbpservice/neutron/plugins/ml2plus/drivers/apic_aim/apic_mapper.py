@@ -108,6 +108,5 @@ class APICNameMapper(object):
         if self._map(session, "", type_tag, prefix) == name[:pos]:
             return name[pos:]
         elif enforce:
-            LOG.error(_LE("Attempted to reverse-map invalid APIC name '%s'"),
-                      name)
-            raise exceptions.InternalError()
+            msg = _LE("Attempted to reverse-map invalid APIC name '%s'") % name
+            raise exceptions.InternalError(details=msg)
