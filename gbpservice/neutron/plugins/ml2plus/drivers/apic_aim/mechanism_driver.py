@@ -2396,6 +2396,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mapping = self._get_network_mapping(session, network['id'])
         return mapping and self._get_network_vrf(mapping)
 
+    # Used by policy driver.
+    def get_network_ids_for_bd(self, session, bd):
+        mapping = self._get_network_mappings_for_bd(session, bd)
+        return [m.network_id for m in mapping]
+
     def get_aim_domains(self, aim_ctx):
         vmms = [{'name': x.name, 'type': x.type}
             for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)

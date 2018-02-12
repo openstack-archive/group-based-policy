@@ -112,6 +112,12 @@ class DbMixin(object):
                           vrf_name=vrf.name).
                 all())
 
+    def _get_network_mappings_for_bd(self, session, bd):
+        return (session.query(NetworkMapping).
+                filter_by(bd_tenant_name=bd.tenant_name,
+                          bd_name=bd.name).
+                all())
+
     def _is_vrf_used_by_networks(self, session, vrf):
         return (session.query(NetworkMapping.network_id).
                 filter_by(vrf_tenant_name=vrf.tenant_name,
