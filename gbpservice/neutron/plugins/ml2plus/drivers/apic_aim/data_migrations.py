@@ -28,6 +28,7 @@ from neutron.db import models_v2
 from neutron.db import segments_db  # noqa
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+from sqlalchemy.orm import lazyload
 
 from gbpservice.neutron.extensions import cisco_apic as ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
@@ -59,8 +60,8 @@ def do_apic_aim_persist_migration(session):
 
     with session.begin(subtransactions=True):
         # Migrate address scopes.
-        scope_dbs = (session.query(as_db.AddressScope).
-                     all())
+        scope_dbs = (session.query(as_db.AddressScope)
+                     .options(lazyload('*')).all())
         for scope_db in scope_dbs:
             alembic_util.msg("Migrating address scope: %s" % scope_db)
             vrf = None
@@ -89,8 +90,8 @@ def do_apic_aim_persist_migration(session):
                     "No AIM VRF found for address scope: %s" % scope_db)
 
         # Migrate networks.
-        net_dbs = (session.query(models_v2.Network).
-                   all())
+        net_dbs = (session.query(models_v2.Network)
+                   .options(lazyload('*')).all())
         for net_db in net_dbs:
             alembic_util.msg("Migrating network: %s" % net_db)
             bd = None
@@ -168,7 +169,7 @@ def do_ap_name_change(session, conf=None):
     ext_mixin = extension_db.ExtensionDbMixin()
     db_mixin = db.DbMixin()
     with session.begin(subtransactions=True):
-        net_dbs = session.query(models_v2.Network).all()
+        net_dbs = session.query(models_v2.Network).options(lazyload('*')).all()
         for net_db in net_dbs:
             ext_db = ext_mixin.get_network_extn_db(session, net_db.id)
             if ext_db and ext_db[ext.EXTERNAL_NETWORK]:
@@ -246,7 +247,7 @@ def do_apic_aim_security_group_migration(session):
     with session.begin(subtransactions=True):
         # Migrate SG.
         sg_dbs = (session.query(sg_models.SecurityGroup).
-                  all())
+                  options(lazyload('*')).all())
         for sg_db in sg_dbs:
             alembic_util.msg("Migrating SG: %s" % sg_db)
             tenant_aname = mapper.project(session, sg_db['tenant_id'])
@@ -262,7 +263,7 @@ def do_apic_aim_security_group_migration(session):
 
         # Migrate SG rules.
         sg_rule_dbs = (session.query(sg_models.SecurityGroupRule).
-                       all())
+                       options(lazyload('*')).all())
         for sg_rule_db in sg_rule_dbs:
             tenant_aname = mapper.project(session, sg_rule_db['tenant_id'])
             if sg_rule_db.get('remote_group_id'):
@@ -279,7 +280,7 @@ def do_apic_aim_security_group_migration(session):
                             filter(sg_models.SecurityGroupPortBinding.
                                    security_group_id ==
                                    sg_rule_db['remote_group_id']).
-                            all())
+                            options(lazyload('*')).all())
                 for sg_port in sg_ports:
                     for fixed_ip in sg_port['fixed_ips']:
                         if ip_version == netaddr.IPAddress(

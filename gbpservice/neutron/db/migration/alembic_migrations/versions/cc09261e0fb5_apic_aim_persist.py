@@ -74,8 +74,6 @@ def upgrade():
         except ImportError:
             util.warn("AIM schema present, but failed to import AIM libraries"
                       " - data not migrated.")
-        except Exception as e:
-            util.warn("Caught exception migrating AIM data: %s" % e)
 
     op.drop_table('apic_aim_addr_scope_extensions')
 
