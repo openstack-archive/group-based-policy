@@ -17,7 +17,11 @@ from neutron_lib import exceptions
 
 
 class InternalError(exceptions.NeutronException):
-    message = _("Internal mechanism driver error - see error log for details.")
+    message = _("Internal mechanism driver error - %(details)s.")
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault('details', _("See error log for details"))
+        super(InternalError, self).__init__(**kwargs)
 
 
 class UnsupportedRoutingTopology(exceptions.BadRequest):

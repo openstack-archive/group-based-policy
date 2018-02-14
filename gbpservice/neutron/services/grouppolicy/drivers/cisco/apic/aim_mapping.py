@@ -40,6 +40,8 @@ from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
 from gbpservice.neutron.extensions import cisco_apic_l3
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    exceptions as md_exc)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.services.grouppolicy.common import (
@@ -1905,14 +1907,26 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     other_vrfs = self.aim.find(aim_ctx, aim_resource.VRF,
                                                name=vrf_name)
                     bd_tenants = set([x.tenant_name for x in bds])
-                    vrf_tenants = set([x.tenant_name for x in other_vrfs])
+                    vrf_tenants = set([x.tenant_name for x in other_vrfs
+                                       if x.tenant_name != vrf_tenant_name])
                     valid_tenants = bd_tenants - vrf_tenants
                     # Only keep BDs that don't have a VRF with that name
                     # already
                     bds = [x for x in bds if x.tenant_name in valid_tenants]
                 # Retrieve subnets from BDs
-                net_ids = [self.name_mapper.reverse_network(session, bd.name)
-                           for bd in bds]
+                net_ids = []
+                for bd in bds:
+                    try:
+                        net_ids.append(self.name_mapper.reverse_network(
+                            session, bd.name))
+                    except md_exc.InternalError as aie:
+                        # Check if BD maps to an external network
+                        ext_ids = self.aim_mech_driver.get_network_ids_for_bd(
+                            session, bd)
+                        if not ext_ids:
+                            LOG.error("%s", aie)
+                            raise
+                        net_ids.extend(ext_ids)
                 if net_ids:
                     subnets = self._get_subnets(plugin_context,
                                                 {'network_id': net_ids})
