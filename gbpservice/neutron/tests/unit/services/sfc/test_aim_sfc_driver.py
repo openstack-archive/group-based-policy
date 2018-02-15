@@ -553,8 +553,10 @@ class TestPortPair(TestAIMServiceFunctionChainingBase):
         p2 = self._make_port(self.fmt, net2['network']['id'])['port']
         sp1 = self._make_port(self.fmt, snet1['network']['id'])['port']
         sp2 = self._make_port(self.fmt, snet2['network']['id'])['port']
-        trunk1 = self._create_resource('trunk', port_id=p1['id'])
-        trunk2 = self._create_resource('trunk', port_id=p2['id'])
+        trunk1 = self._create_resource('trunk', port_id=p1['id'],
+                                       expected_res_status=201)
+        trunk2 = self._create_resource('trunk', port_id=p2['id'],
+                                       expected_res_status=201)
         self._bind_port_to_host(p1['id'], 'h1')
         self._bind_port_to_host(p2['id'], 'h2')
         self._bind_subport(self._ctx, trunk1, sp1)
