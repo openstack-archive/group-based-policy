@@ -3989,7 +3989,10 @@ class NotificationTest(AIMBaseTestCase):
             self.orig_send_or_queue_registry_notification(session,
                 transaction_key, resource, event, trigger, **kwargs)
             if session:
-                self.notification_queue = session.notification_queue
+                try:
+                    self.notification_queue = session.notification_queue
+                except KeyError:
+                    pass
 
         local_api.send_or_queue_registry_notification = (
             send_or_queue_registry_notification)
