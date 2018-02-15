@@ -99,7 +99,7 @@ class ApiManagerMixin(object):
             is_admin_context else self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
         if expected_res_status:
-            self.assertEqual(expected_res_status, res.status_int)
+            self.assertEqual(expected_res_status, res.status_int, res.__dict__g)
         elif deserialize and res.status_int >= webob.exc.HTTPClientError.code:
             raise webob.exc.HTTPClientError(code=res.status_int)
 
