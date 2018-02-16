@@ -471,23 +471,33 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 aim_l3out = aim_resource.L3Outside(
                     tenant_name=tenant_aname,
                     name=aname, display_name=dname, vrf_name=vrf.name,
-                    l3_domain_dn=self.l3_domain_dn)
+                    l3_domain_dn=self.l3_domain_dn,
+                    bgp_enable=current.get(cisco_apic.BGP)
+                    if cisco_apic.BGP in current else False)
                 self.aim.create(aim_ctx, aim_l3out)
 
                 aim_ext_net = aim_resource.ExternalNetwork(
                     tenant_name=tenant_aname,
                     l3out_name=aname, name=L3OUT_EXT_EPG)
                 self.aim.create(aim_ctx, aim_ext_net)
-
+                scope = "import-security"
+                aggregate = ""
+                if current.get(cisco_apic.BGP_TYPE) == 'DefaultExport':
+                    scope = "export-rtctrl,import-security"
+                    aggregate = "export-rtctrl"
                 aim_ext_subnet_ipv4 = aim_resource.ExternalSubnet(
                     tenant_name=tenant_aname,
                     l3out_name=aname,
-                    external_network_name=L3OUT_EXT_EPG, cidr='0.0.0.0/0')
+                    external_network_name=L3OUT_EXT_EPG, cidr='0.0.0.0/0',
+                    scope=scope,
+                    aggregate=aggregate)
                 self.aim.create(aim_ctx, aim_ext_subnet_ipv4)
                 aim_ext_subnet_ipv6 = aim_resource.ExternalSubnet(
                     tenant_name=tenant_aname,
                     l3out_name=aname,
-                    external_network_name=L3OUT_EXT_EPG, cidr='::/0')
+                    external_network_name=L3OUT_EXT_EPG, cidr='::/0',
+                    scope=scope,
+                    aggregate=aggregate)
                 self.aim.create(aim_ctx, aim_ext_subnet_ipv6)
 
                 self._add_network_mapping(session, current['id'], None, None,
@@ -550,7 +560,72 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 new = sorted(current[cisco_apic.EXTERNAL_CIDRS])
                 if old != new:
                     ns.update_external_cidrs(aim_ctx, ext_net, new)
-                # TODO(amitbose) Propagate name updates to AIM
+            # TODO(amitbose) Propagate name updates to AIM
+        else:
+            # BGP enable state update
+            if current.get(cisco_apic.BGP) != original.get(cisco_apic.BGP):
+                l3out = self._get_network_l3out(mapping)
+                self.aim.update(aim_ctx, l3out,
+                                bgp_enable=current.get(cisco_apic.BGP))
+            # ASN update
+            asn_changed = (current.get(cisco_apic.ASN) !=
+                           original.get(cisco_apic.ASN))
+            asn = current.get(cisco_apic.ASN) if \
+                cisco_apic.ASN in current else \
+                original[cisco_apic.ASN]
+            if asn_changed:
+                l3out_bgp_peers = \
+                    self.aim.find(aim_ctx, aim_resource.L3OutInterfaceBgpPeerP,
+                                  tenant_name=mapping.l3out_tenant_name,
+                                  l3out_name=mapping.l3out_name)
+                for peer in l3out_bgp_peers:
+                    self.aim.update(aim_ctx, peer, asn=asn)
+            if current.get(cisco_apic.BGP_TYPE) != \
+                    original.get(cisco_apic.BGP_TYPE):
+                l3out_ext_subnet = \
+                    self._get_network_l3out_default_ext_subnet(mapping)
+                scope = "import-security"
+                aggregate = ""
+                if current.get(cisco_apic.BGP_TYPE) == 'DefaultExport':
+                    scope = "export-rtctrl,import-security"
+                    aggregate = "export-rtctrl"
+                    l3out_ifs = \
+                        self.aim.find(aim_ctx, aim_resource.L3OutInterface,
+                                      tenant_name=mapping.l3out_tenant_name,
+                                      l3out_name=mapping.l3out_name,
+                                      )
+                    for l3out_if in l3out_ifs:
+                        if not l3out_if.monitored:
+                            primary = \
+                                netaddr.IPNetwork(
+                                    l3out_if.primary_addr_a)
+                            subnet = str(primary.cidr)
+                            aim_bgp_peer_prefix = \
+                                aim_resource.L3OutInterfaceBgpPeerP(
+                                    tenant_name=l3out_if.tenant_name,
+                                    l3out_name=l3out_if.l3out_name,
+                                    node_profile_name=
+                                    l3out_if.node_profile_name,
+                                    interface_profile_name=
+                                    l3out_if.interface_profile_name,
+                                    interface_path=l3out_if.interface_path,
+                                    addr=subnet,
+                                    asn=asn)
+                            aim_bgp_peer_prefix_db = \
+                                self.aim.get(aim_ctx, aim_bgp_peer_prefix)
+                            if not aim_bgp_peer_prefix_db:
+                                self.aim.create(aim_ctx, aim_bgp_peer_prefix)
+                elif current.get(cisco_apic.BGP_TYPE) == '':
+                    l3out_bgp_peers = \
+                        self.aim.find(aim_ctx,
+                                      aim_resource.L3OutInterfaceBgpPeerP,
+                                      tenant_name=mapping.l3out_tenant_name,
+                                      l3out_name=mapping.l3out_name)
+                    for peer in l3out_bgp_peers:
+                        if not peer.monitored:
+                            self.aim.delete(aim_ctx, peer)
+                self.aim.update(aim_ctx, l3out_ext_subnet, scope=scope,
+                                aggregate=aggregate)
 
     def delete_network_precommit(self, context):
         current = context.current
@@ -3034,7 +3109,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_l3out_ip_db = self.aim.get(aim_ctx, aim_l3out_ip)
             if not aim_l3out_ip_db:
                 self.aim.create(aim_ctx, aim_l3out_ip)
-
             subnet = (session.query(models_v2.Subnet)
                       .filter(models_v2.Subnet.id ==
                               network['subnets'][0]).one())
@@ -3083,7 +3157,36 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_l3out_if_db = self.aim.get(aim_ctx, aim_l3out_if)
             if not aim_l3out_if_db:
                 self.aim.create(aim_ctx, aim_l3out_if)
+            network_db = self.plugin._get_network(plugin_context,
+                                                  network['id'])
+            extn_db = extension_db.ExtensionDbMixin()
+            extn_info = extn_db.get_network_extn_db(session, network_db.id)
+            if extn_info and (cisco_apic.BGP in extn_info) and (
+                        cisco_apic.BGP_TYPE in extn_info):
+                if extn_info[cisco_apic.BGP] and (
+                            extn_info[cisco_apic.BGP_TYPE] == "DefaultExport"):
+                    aim_bgp_peer_prefix = aim_resource.L3OutInterfaceBgpPeerP(
+                        tenant_name=l3out.tenant_name,
+                        l3out_name=l3out.name,
+                        node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=L3OUT_IF_PROFILE_NAME,
+                        interface_path=path,
+                        addr=subnet['cidr'],
+                        asn=extn_info[cisco_apic.ASN])
+                    aim_bgp_peer_prefix_db = self.aim.get(aim_ctx,
+                                                          aim_bgp_peer_prefix)
+                    if not aim_bgp_peer_prefix_db:
+                        self.aim.create(aim_ctx, aim_bgp_peer_prefix)
         else:
+            bgp_peer_prefixes = self.aim.find(
+                aim_ctx, aim_resource.L3OutInterfaceBgpPeerP,
+                tenant_name=l3out.tenant_name,
+                l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                interface_profile_name=L3OUT_IF_PROFILE_NAME,
+                interface_path=path)
+            for peer in bgp_peer_prefixes:
+                self.aim.delete(aim_ctx, peer)
             aim_l3out_if = aim_resource.L3OutInterface(
                 tenant_name=l3out.tenant_name,
                 l3out_name=l3out.name,
