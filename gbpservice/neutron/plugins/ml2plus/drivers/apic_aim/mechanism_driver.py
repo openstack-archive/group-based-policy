@@ -26,9 +26,11 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
+from neutron.callbacks import resources
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import api as db_api
+from neutron.db import provisioning_blocks
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db.models import l3 as l3_db
@@ -1593,6 +1595,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         port = context.current
         self._really_update_sg_rule_with_remote_group_set(
             context, port, port['security_groups'], is_delete=False)
+        self._insert_provisioning_block(context)
+
+    def _insert_provisioning_block(self, context):
+        # we insert a status barrier to prevent the port from transitioning
+        # to active until the agent reports back that the wiring is done
+        port = context.current
+        if not context.host or port['status'] == n_constants.PORT_STATUS_ACTIVE:
+            # no point in putting in a block if the status is already ACTIVE
+            return
+        vnic_type = port.get(portbindings.VNIC_TYPE,
+                             portbindings.VNIC_NORMAL)
+        supported_vnic_types=[portbindings.VNIC_NORMAL,
+                             portbindings.VNIC_DIRECT]
+        if vnic_type not in supported_vnic_types:
+            # we check the VNIC type because there could be multiple agents
+            # on a single host with different VNIC types
+            return
+        agent_type=ofcst.AGENT_TYPE_OPFLEX_OVS
+        if context.host_agents(agent_type):
+            provisioning_blocks.add_provisioning_component(
+                context._plugin_context, port['id'], resources.PORT,
+                provisioning_blocks.L2_AGENT_ENTITY)
 
     def update_port_precommit(self, context):
         port = context.current
@@ -1612,6 +1636,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
         self._update_sg_rule_with_remote_group_set(context, port)
+        self._insert_provisioning_block(context)
 
     def update_port_postcommit(self, context):
         port = context.current
