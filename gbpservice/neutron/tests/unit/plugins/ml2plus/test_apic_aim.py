@@ -36,10 +36,12 @@ from neutron.api import extensions
 from neutron.callbacks import registry
 from neutron import context as n_context
 from neutron.db import api as db_api
+from neutron.db import provisioning_blocks
 from neutron import manager
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import config
 from neutron.plugins.ml2 import db as ml2_db
+from neutron.plugins.ml2 import driver_context
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
@@ -2920,6 +2922,38 @@ class TestAimMapping(ApicAimTestCase):
             tenant_id='t2', shared=True, admin=True,
             is_implicit=True)['subnetpool']
         self.assertTrue(sp3['is_implicit'])
+
+    def test_dhcp_provisioning_blocks_inserted_on_update(self):
+        ctx = n_context.get_admin_context()
+        plugin = self.plugin
+
+        def _fake_dhcp_agent():
+            agent = mock.Mock()
+            plugin = self.plugin
+            return mock.patch.object(
+                plugin, 'get_dhcp_agents_hosting_networks',
+                return_value=[agent]).start()
+
+        dhcp_agt_mock = _fake_dhcp_agent()
+        update_dict = {'binding:host_id': 'newhost'}
+
+        def _host_agents(self, agent_type):
+            if agent_type == ofcst.AGENT_TYPE_OPFLEX_OVS:
+                fake_agent = {"alive": False}
+                return [fake_agent]
+
+        orig_host_agents = getattr(driver_context.PortContext, "host_agents")
+        setattr(driver_context.PortContext, "host_agents", _host_agents)
+
+        with self.port() as port:
+            with mock.patch.object(provisioning_blocks,
+                                   'add_provisioning_component') as ap:
+                port['port'].update(update_dict)
+                plugin.update_port(ctx, port['port']['id'], port)
+                ap.assert_called()
+
+        setattr(driver_context.PortContext, "host_agents", orig_host_agents)
+        dhcp_agt_mock.stop()
 
 
 class TestSyncState(ApicAimTestCase):
