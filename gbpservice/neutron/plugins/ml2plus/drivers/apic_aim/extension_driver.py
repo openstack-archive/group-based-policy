@@ -79,6 +79,16 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
     def process_create_network(self, plugin_context, data, result):
         is_svi = data.get(cisco_apic.SVI, False)
         res_dict = {cisco_apic.SVI: is_svi}
+        if is_svi:
+            is_bgp_enabled = data.get(cisco_apic.BGP, False)
+            bgp_type = ""
+            asn = "0"
+            if is_bgp_enabled:
+                bgp_type = data.get(cisco_apic.BGP_TYPE)
+                asn = data.get(cisco_apic.ASN, "0")
+            res_dict.update({cisco_apic.BGP: is_bgp_enabled,
+                             cisco_apic.BGP_TYPE: bgp_type,
+                             cisco_apic.ASN: asn})
         self.set_network_extn_db(plugin_context.session, result['id'],
                                  res_dict)
         result.update(res_dict)
@@ -108,13 +118,54 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             result.update(res_dict)
 
     def process_update_network(self, plugin_context, data, result):
-        # only CIDRs can be updated
-        if not cisco_apic.EXTERNAL_CIDRS in data:
+        # can update CIDR, bgp_enable,scope,aggregate
+        if cisco_apic.EXTERNAL_CIDRS not in data and \
+                cisco_apic.BGP not in data and \
+                cisco_apic.BGP_TYPE not in data and \
+                cisco_apic.ASN not in data:
             return
         if result.get(cisco_apic.DIST_NAMES, {}).get(
             cisco_apic.EXTERNAL_NETWORK):
-            res_dict = {cisco_apic.EXTERNAL_CIDRS:
-                        data[cisco_apic.EXTERNAL_CIDRS]}
+            if cisco_apic.EXTERNAL_CIDRS in data:
+                res_dict = {cisco_apic.EXTERNAL_CIDRS:
+                            data[cisco_apic.EXTERNAL_CIDRS]}
+                self.set_network_extn_db(plugin_context.session, result['id'],
+                                         res_dict)
+                result.update(res_dict)
+        # BGP updates only for SVI networks
+        # Fact that a network is SVI cannot be updated currently.
+        # if this changes handle bgp updates with current status
+        # of whether network is SVI
+        if not result.get(cisco_apic.SVI):
+            return
+        bgp_enable_trigger = False
+        if cisco_apic.BGP in data:
+            if not result.get(cisco_apic.BGP) and data.get(cisco_apic.BGP):
+                bgp_enable_trigger = True
+            res_dict = {cisco_apic.BGP: data[cisco_apic.BGP]}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.update(res_dict)
+        # BGP disable trigger
+        if not result.get(cisco_apic.BGP):
+            if result.get(cisco_apic.BGP_TYPE) != "":
+                res_dict = {cisco_apic.BGP_TYPE: "",
+                            cisco_apic.ASN: "0"}
+                result.update(res_dict)
+            return
+        if cisco_apic.BGP_TYPE in data:
+            res_dict = {cisco_apic.BGP_TYPE: data[cisco_apic.BGP_TYPE]}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.update(res_dict)
+        elif bgp_enable_trigger:
+            res_dict = {cisco_apic.BGP_TYPE: "default_export",
+                        cisco_apic.ASN: "0"}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.update(res_dict)
+        if cisco_apic.ASN in data:
+            res_dict = {cisco_apic.ASN: data[cisco_apic.ASN]}
             self.set_network_extn_db(plugin_context.session, result['id'],
                                      res_dict)
             result.update(res_dict)
