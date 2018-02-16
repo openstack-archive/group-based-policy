@@ -91,6 +91,9 @@ PROV = 'apic:external_provided_contracts'
 CONS = 'apic:external_consumed_contracts'
 SNAT_POOL = 'apic:snat_host_pool'
 SVI = 'apic:svi'
+BGP = 'apic:bgp_enable'
+ASN = 'apic:asn'
+BGP_TYPE = 'apic:bgp_type'
 
 aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
@@ -235,7 +238,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
-                                     CIDR, PROV, CONS, SVI)
+                                     CIDR, PROV, CONS, SVI,
+                                     BGP, BGP_TYPE, ASN
+                                     )
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
         self.t2_aname = self.name_mapper.project(None, 't2')
@@ -4163,6 +4168,75 @@ class TestExtensionAttributes(TestAimMapping):
         self.assertFalse(extn.get_network_extn_db(session, net['id']))
         self._check_network_deleted(net)
 
+    def test_bgp_enabled_network_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # test create.
+        net1 = self._make_network(self.fmt, 'net1', True,
+                                  arg_list=self.extension_attributes,
+                                  **{'apic:svi': 'True'})['network']
+        self.assertEqual(True, net1[SVI])
+        self.assertEqual(False, net1[BGP])
+        self.assertEqual("default_export", net1[BGP_TYPE])
+        self.assertEqual("0", net1[ASN])
+
+        # test create bgp non-svi
+        net11 = self._make_network(self.fmt, 'net11', True,
+                                  arg_list=self.extension_attributes,
+                                  **{'apic:svi': 'False',
+                                     BGP: True,
+                                     BGP_TYPE: "default_export",
+                                     ASN: "65000"})['network']
+        self.assertEqual(False, net11[SVI])
+        self.assertEqual(True, net11[BGP])
+        self.assertEqual("default_export", net11[BGP_TYPE])
+        self.assertEqual("65000", net11[ASN])
+
+        # test update bgp non-svi
+        net11 = self._update('networks', net11['id'],
+                            {'network': {BGP: True,
+                                         BGP_TYPE: "default_export",
+                                         ASN: "100"}})['network']
+        self.assertEqual(False, net11[SVI])
+        self.assertEqual(True, net11[BGP])
+        self.assertEqual("default_export", net11[BGP_TYPE])
+        self.assertEqual("100", net11[ASN])
+
+        # test update bgp non-svi
+        net11 = self._update('networks', net11['id'],
+                             {'network': {BGP: False,
+                                          BGP_TYPE: "",
+                                          ASN: "10"}})['network']
+        self.assertEqual(False, net11[SVI])
+        self.assertEqual(False, net11[BGP])
+        self.assertEqual("", net11[BGP_TYPE])
+        self.assertEqual("10", net11[ASN])
+
+        net2 = self._make_network(self.fmt, 'net2', True,
+                                 arg_list=self.extension_attributes,
+                                 **{'apic:svi': True,
+                                    BGP: True,
+                                    ASN: "65000"})['network']
+        self.assertEqual(True, net2[BGP])
+        self.assertEqual("default_export", net2[BGP_TYPE])
+        self.assertEqual("65000", net2[ASN])
+
+        #test update
+        net1 = self._update('networks', net1['id'],
+                            {'network': {BGP: True,
+                                         BGP_TYPE: "",
+                                         ASN: "100"}})['network']
+        self.assertEqual(True, net1[BGP])
+        self.assertEqual("", net1[BGP_TYPE])
+        self.assertEqual("100", net1[ASN])
+
+        # test delete
+        self._delete('networks', net1['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        self._delete('networks', net2['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+
     def test_external_network_lifecycle(self):
         session = db_api.get_session()
         extn = extn_db.ExtensionDbMixin()
@@ -5795,16 +5869,146 @@ class TestPortVlanNetwork(ApicAimTestCase):
     def test_port_lifecycle_external_network(self):
         self._do_test_port_lifecycle(external_net=True)
 
-    def _test_multiple_ports_on_host(self, is_svi=False):
+    def test_pre_existing_l3out_svi_bgp(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=self.extension_attributes,
+            **{'apic:svi': 'True',
+               DN: {'ExternalNetwork': self.dn_t1_l1_n1},
+               'apic:bgp_enable': 'True',
+               'apic:asn': '2'})['network']
+        net2 = self._make_network(
+            self.fmt, 'net2', True,
+            arg_list=self.extension_attributes,
+            **{'apic:svi': 'True',
+                DN: {'ExternalNetwork': self.dn_t1_l2_n2}})['network']
+
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                # bind p1 to host h1
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
+                vlan_p1 = self._check_binding(p1['port']['id'])
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    net1[DN]['ExternalNetwork'])
+                l3out_if = aim_resource.L3OutInterface(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=self.hlink1.path)
+                l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan_p1)
+                self.assertEqual(l3out_if.secondary_addr_a_list,
+                                 [{'addr': '10.0.0.1/24'}])
+                primary = netaddr.IPNetwork(l3out_if.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_peer = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=self.hlink1.path,
+                    addr=subnet)
+                bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                self.assertEqual(bgp_peer.asn, '2')
+                self._delete('ports', p1['port']['id'])
+                self._check_no_dynamic_segment(net1['id'])
+                l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                self.assertIsNone(l3out_if)
+                bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                self.assertIsNone(bgp_peer)
+
+        with self.subnet(network={'network': net2}) as sub2:
+            with self.port(subnet=sub2) as p2:
+                # bind p2 to host h1
+                p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                vlan_p2 = self._check_binding(p2['port']['id'])
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    net2[DN]['ExternalNetwork'])
+                l3out_if2 = aim_resource.L3OutInterface(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=self.hlink1.path)
+                l3out_if2 = self.aim_mgr.get(aim_ctx, l3out_if2)
+                self.assertEqual(l3out_if2.encap, 'vlan-%s' % vlan_p2)
+                self.assertEqual(l3out_if2.secondary_addr_a_list,
+                                 [{'addr': '10.0.0.1/24'}])
+                # Check for no bgp peer status on l3out
+                primary = netaddr.IPNetwork(l3out_if2.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_no_peer = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=self.hlink1.path,
+                    addr=subnet)
+                bgp_no_peer = self.aim_mgr.get(aim_ctx, bgp_no_peer)
+                self.assertIsNone(bgp_no_peer)
+
+                # test bgp enable update trigger
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP: True,
+                                                 ASN: "3"}})['network']
+                primary = netaddr.IPNetwork(l3out_if2.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_peer2 = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=self.hlink1.path,
+                    addr=subnet)
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertEqual(bgp_peer2.asn, '3')
+                # test bgp disable update trigger
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP: False}})['network']
+                bgp_no_peer = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertIsNone(bgp_no_peer)
+                # test bgp type update
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP: True,
+                                                 BGP_TYPE: ""}})['network']
+                bgp_no_peer = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertIsNone(bgp_no_peer)
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP_TYPE: "default_export"
+                                                 }})['network']
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertEqual(bgp_peer2.asn, '3')
+                # test bgp asn update
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {ASN: "6"
+                                                 }})['network']
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertEqual(bgp_peer2.asn, '6')
+
+                self._delete('ports', p2['port']['id'])
+                self._check_no_dynamic_segment(net2['id'])
+
+    def _test_multiple_ports_on_host(self, is_svi=False, bgp_enabled=False):
         aim_ctx = aim_context.AimContext(self.db_session)
 
         if not is_svi:
             net1 = self._make_network(self.fmt, 'net1', True)['network']
             epg = self._net_2_epg(net1)
         else:
-            net1 = self._make_network(self.fmt, 'net1', True,
+            if bgp_enabled:
+                net1 = self._make_network(self.fmt, 'net1', True,
                                       arg_list=self.extension_attributes,
-                                      **{'apic:svi': 'True'})['network']
+                                      **{'apic:svi': 'True',
+                                         'apic:bgp_enable': 'True',
+                                         'apic:asn': '2'})['network']
+            else:
+                net1 = self._make_network(self.fmt, 'net1', True,
+                                          arg_list=self.extension_attributes,
+                                          **{'apic:svi': 'True'})['network']
+
         with self.subnet(network={'network': net1}) as sub1:
             with self.port(subnet=sub1) as p1:
                 # bind p1 to host h1
@@ -5829,6 +6033,18 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan_p1)
                     self.assertEqual(l3out_if.secondary_addr_a_list,
                                      [{'addr': '10.0.0.1/24'}])
+                    if bgp_enabled:
+                        primary = netaddr.IPNetwork(l3out_if.primary_addr_a)
+                        subnet = str(primary.cidr)
+                        bgp_peer = aim_resource.L3OutInterfaceBgpPeerP(
+                            tenant_name=ext_net.tenant_name,
+                            l3out_name=ext_net.l3out_name,
+                            node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                            interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                            interface_path=self.hlink1.path,
+                            addr=subnet)
+                        bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                        self.assertEqual(bgp_peer.asn, '2')
 
                 with self.port(subnet=sub1) as p2:
                     # bind p2 to host h1
@@ -5846,6 +6062,9 @@ class TestPortVlanNetwork(ApicAimTestCase):
                         self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan_p1)
                         self.assertEqual(l3out_if.secondary_addr_a_list,
                                          [{'addr': '10.0.0.1/24'}])
+                        if bgp_enabled:
+                            bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                            self.assertEqual(bgp_peer.asn, '2')
 
                     self._delete('ports', p2['port']['id'])
                     self._check_binding(p1['port']['id'])
@@ -5860,6 +6079,9 @@ class TestPortVlanNetwork(ApicAimTestCase):
                         self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan_p1)
                         self.assertEqual(l3out_if.secondary_addr_a_list,
                                          [{'addr': '10.0.0.1/24'}])
+                        if bgp_enabled:
+                            bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                            self.assertEqual(bgp_peer.asn, '2')
 
                 self._delete('ports', p1['port']['id'])
                 self._check_no_dynamic_segment(net1['id'])
@@ -5869,23 +6091,34 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 else:
                     l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
                     self.assertIsNone(l3out_if)
+                    if bgp_enabled:
+                        bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                        self.assertIsNone(bgp_peer)
 
     def test_multiple_ports_on_host(self):
         self._test_multiple_ports_on_host()
 
     def test_multiple_ports_on_host_svi(self):
         self._test_multiple_ports_on_host(is_svi=True)
+        self._test_multiple_ports_on_host(is_svi=True, bgp_enabled=True)
 
-    def _test_multiple_networks_on_host(self, is_svi=False):
+    def _test_multiple_networks_on_host(self, is_svi=False, bgp_enabled=False):
         aim_ctx = aim_context.AimContext(self.db_session)
 
         if not is_svi:
             net1 = self._make_network(self.fmt, 'net1', True)['network']
             epg1 = self._net_2_epg(net1)
         else:
-            net1 = self._make_network(self.fmt, 'net1', True,
+            if bgp_enabled:
+                net1 = self._make_network(self.fmt, 'net1', True,
                                       arg_list=self.extension_attributes,
-                                      **{'apic:svi': 'True'})['network']
+                                      **{'apic:svi': 'True',
+                                         'apic:bgp_enable': 'True',
+                                         'apic:asn': '2'})['network']
+            else:
+                net1 = self._make_network(self.fmt, 'net1', True,
+                                          arg_list=self.extension_attributes,
+                                          **{'apic:svi': 'True'})['network']
 
         with self.subnet(network={'network': net1}) as sub1:
             with self.port(subnet=sub1) as p1:
@@ -5913,6 +6146,19 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self.assertEqual(l3out_if1.encap, 'vlan-%s' % vlan_p1)
             self.assertEqual(l3out_if1.secondary_addr_a_list,
                              [{'addr': '10.0.0.1/24'}])
+            if bgp_enabled:
+                primary = netaddr.IPNetwork(l3out_if1.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_peer1 = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=self.hlink1.path,
+                    addr=subnet)
+                bgp_peer1 = self.aim_mgr.get(aim_ctx, bgp_peer1)
+                self.assertEqual(bgp_peer1.asn, '2')
+
             net2 = self._make_network(self.fmt, 'net2', True,
                                       arg_list=self.extension_attributes,
                                       **{'apic:svi': 'True'})['network']
@@ -5943,6 +6189,57 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self.assertEqual(l3out_if2.encap, 'vlan-%s' % vlan_p2)
             self.assertEqual(l3out_if2.secondary_addr_a_list,
                              [{'addr': '10.0.0.1/24'}])
+            # Check for no bgp peer status on l3out
+            primary = netaddr.IPNetwork(l3out_if2.primary_addr_a)
+            subnet = str(primary.cidr)
+            bgp_no_peer = aim_resource.L3OutInterfaceBgpPeerP(
+                tenant_name=ext_net.tenant_name,
+                l3out_name=ext_net.l3out_name,
+                node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                interface_path=self.hlink1.path,
+                addr=subnet)
+            bgp_no_peer = self.aim_mgr.get(aim_ctx, bgp_no_peer)
+            self.assertIsNone(bgp_no_peer)
+
+            if bgp_enabled:
+                # test bgp enable update trigger
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP: True,
+                                                 ASN: "3"}})['network']
+                primary = netaddr.IPNetwork(l3out_if2.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_peer2 = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=self.hlink1.path,
+                    addr=subnet)
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertEqual(bgp_peer2.asn, '3')
+                # test bgp disable update trigger
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP: False}})['network']
+                bgp_no_peer = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertIsNone(bgp_no_peer)
+                # test bgp type update
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP: True,
+                                                 BGP_TYPE: ""}})['network']
+                bgp_no_peer = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertIsNone(bgp_no_peer)
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {BGP_TYPE: "default_export"
+                                                 }})['network']
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertEqual(bgp_peer2.asn, '3')
+                # test bgp asn update
+                net2 = self._update('networks', net2['id'],
+                                    {'network': {ASN: "6"
+                                                 }})['network']
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertEqual(bgp_peer2.asn, '6')
 
         self._delete('ports', p2['port']['id'])
         self._check_no_dynamic_segment(net2['id'])
@@ -5961,14 +6258,20 @@ class TestPortVlanNetwork(ApicAimTestCase):
                              [{'addr': '10.0.0.1/24'}])
             l3out_if2 = self.aim_mgr.get(aim_ctx, l3out_if2)
             self.assertIsNone(l3out_if2)
+            if bgp_enabled:
+                bgp_peer1 = self.aim_mgr.get(aim_ctx, bgp_peer1)
+                self.assertEqual(bgp_peer1.asn, '2')
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertIsNone(bgp_peer2)
 
     def test_multiple_networks_on_host(self):
         self._test_multiple_networks_on_host()
 
     def test_multiple_networks_on_host_svi(self):
         self._test_multiple_networks_on_host(is_svi=True)
+        self._test_multiple_networks_on_host(is_svi=True, bgp_enabled=True)
 
-    def _test_ports_with_2_hostlinks(self, is_svi=False):
+    def _test_ports_with_2_hostlinks(self, is_svi=False, bgp_enabled=False):
         aim_ctx = aim_context.AimContext(self.db_session)
         hlink_1a = aim_infra.HostLink(
             host_name='h1',
@@ -6003,13 +6306,25 @@ class TestPortVlanNetwork(ApicAimTestCase):
                    'provider:network_type': net_type})['network']
             epg1 = self._net_2_epg(net1)
         else:
-            net1 = self._make_network(
-                self.fmt, 'net1', True,
-                arg_list=('provider:physical_network',
-                          'provider:network_type', SVI),
-                **{'provider:physical_network': 'physnet3',
-                   'provider:network_type': net_type,
-                   'apic:svi': 'True'})['network']
+            if bgp_enabled:
+                net1 = self._make_network(
+                    self.fmt, 'net1', True,
+                    arg_list=('provider:physical_network',
+                              'provider:network_type', SVI,
+                              BGP, BGP_TYPE, ASN),
+                    **{'provider:physical_network': 'physnet3',
+                       'provider:network_type': net_type,
+                       'apic:svi': 'True',
+                       'apic:bgp_enable': 'True',
+                       'apic:asn': '3'})['network']
+            else:
+                net1 = self._make_network(
+                    self.fmt, 'net1', True,
+                    arg_list=('provider:physical_network',
+                              'provider:network_type', SVI),
+                    **{'provider:physical_network': 'physnet3',
+                       'provider:network_type': net_type,
+                       'apic:svi': 'True'})['network']
 
         with self.subnet(network={'network': net1}) as sub1:
             with self.port(subnet=sub1) as p1:
@@ -6048,6 +6363,29 @@ class TestPortVlanNetwork(ApicAimTestCase):
                              [{'addr': '10.0.0.1/24'}])
             self.assertEqual(l3out_if1a.primary_addr_a,
                              l3out_if1b.primary_addr_a)
+            if bgp_enabled:
+                primary = netaddr.IPNetwork(l3out_if1a.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_peer1a = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=hlink_1a.path,
+                    addr=subnet)
+                bgp_peer1a = self.aim_mgr.get(aim_ctx, bgp_peer1a)
+                self.assertEqual(bgp_peer1a.asn, '3')
+                primary = netaddr.IPNetwork(l3out_if1b.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_peer1b = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=hlink_1b.path,
+                    addr=subnet)
+                bgp_peer1b = self.aim_mgr.get(aim_ctx, bgp_peer1b)
+                self.assertEqual(bgp_peer1b.asn, '3')
 
         # test the fallback
         if not is_svi:
@@ -6059,13 +6397,25 @@ class TestPortVlanNetwork(ApicAimTestCase):
                    'provider:network_type': net_type})['network']
             epg2 = self._net_2_epg(net2)
         else:
-            net2 = self._make_network(
-                self.fmt, 'net2', True,
-                arg_list=('provider:physical_network',
-                          'provider:network_type', SVI),
-                **{'provider:physical_network': 'physnet2',
-                   'provider:network_type': net_type,
-                   'apic:svi': 'True'})['network']
+            if not bgp_enabled:
+                net2 = self._make_network(
+                    self.fmt, 'net2', True,
+                    arg_list=('provider:physical_network',
+                              'provider:network_type', SVI),
+                    **{'provider:physical_network': 'physnet2',
+                       'provider:network_type': net_type,
+                       'apic:svi': 'True'})['network']
+            else:
+                net2 = self._make_network(
+                    self.fmt, 'net2', True,
+                    arg_list=('provider:physical_network',
+                              'provider:network_type', SVI,
+                              BGP, BGP_TYPE, ASN),
+                    **{'provider:physical_network': 'physnet2',
+                       'provider:network_type': net_type,
+                       'apic:svi': 'True',
+                       'apic:bgp_enable': 'True',
+                       'apic:asn': '4'})['network']
 
         with self.subnet(network={'network': net2}) as sub2:
             with self.port(subnet=sub2) as p2:
@@ -6095,6 +6445,18 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self.assertEqual(l3out_if2.encap, 'vlan-%s' % vlan_p2)
             self.assertEqual(l3out_if2.secondary_addr_a_list,
                              [{'addr': '10.0.0.1/24'}])
+            if bgp_enabled:
+                primary = netaddr.IPNetwork(l3out_if2.primary_addr_a)
+                subnet = str(primary.cidr)
+                bgp_peer2 = aim_resource.L3OutInterfaceBgpPeerP(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                    interface_path=host_links[0].path,
+                    addr=subnet)
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertEqual(bgp_peer2.asn, '4')
 
         self._delete('ports', p2['port']['id'])
         self._check_no_dynamic_segment(net2['id'])
@@ -6110,6 +6472,9 @@ class TestPortVlanNetwork(ApicAimTestCase):
         else:
             l3out_if2 = self.aim_mgr.get(aim_ctx, l3out_if2)
             self.assertIsNone(l3out_if2)
+            if bgp_enabled:
+                bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
+                self.assertIsNone(bgp_peer2)
             l3out_if1a = self.aim_mgr.get(aim_ctx, l3out_if1a)
             self.assertEqual(l3out_if1a.encap, 'vlan-%s' % vlan_p1)
             self.assertEqual(l3out_if1a.secondary_addr_a_list,
@@ -6120,7 +6485,11 @@ class TestPortVlanNetwork(ApicAimTestCase):
                              [{'addr': '10.0.0.1/24'}])
             self.assertEqual(l3out_if1a.primary_addr_a,
                              l3out_if1b.primary_addr_a)
-
+            if bgp_enabled:
+                bgp_peer1a = self.aim_mgr.get(aim_ctx, bgp_peer1a)
+                self.assertEqual(bgp_peer1a.asn, '3')
+                bgp_peer1b = self.aim_mgr.get(aim_ctx, bgp_peer1b)
+                self.assertEqual(bgp_peer1b.asn, '3')
         self._delete('ports', p1['port']['id'])
         self._check_no_dynamic_segment(net1['id'])
 
@@ -6132,23 +6501,42 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self.assertIsNone(l3out_if1a)
             l3out_if1b = self.aim_mgr.get(aim_ctx, l3out_if1b)
             self.assertIsNone(l3out_if1b)
+            if bgp_enabled:
+                bgp_peer1a = self.aim_mgr.get(aim_ctx, bgp_peer1a)
+                self.assertIsNone(bgp_peer1a)
+                bgp_peer1b = self.aim_mgr.get(aim_ctx, bgp_peer1b)
+                self.assertIsNone(bgp_peer1b)
+        self.aim_mgr.delete(aim_ctx, hlink_1a)
+        self.aim_mgr.delete(aim_ctx, hlink_1b)
+        self.aim_mgr.delete(aim_ctx, hlink_net_lable1)
+        self.aim_mgr.delete(aim_ctx, hlink_net_lable2)
+        self.aim_mgr.delete(aim_ctx, hlink_net_lable3)
 
     def test_ports_with_2_hostlinks(self):
         self._test_ports_with_2_hostlinks()
 
     def test_ports_with_2_hostlinks_svi(self):
         self._test_ports_with_2_hostlinks(is_svi=True)
+        self._test_ports_with_2_hostlinks(is_svi=True, bgp_enabled=True)
 
-    def _test_network_on_multiple_hosts(self, is_svi=False):
+    def _test_network_on_multiple_hosts(self, is_svi=False, bgp_enabled=False):
         aim_ctx = aim_context.AimContext(self.db_session)
 
         if not is_svi:
             net1 = self._make_network(self.fmt, 'net1', True)['network']
             epg1 = self._net_2_epg(net1)
         else:
-            net1 = self._make_network(self.fmt, 'net1', True,
-                                      arg_list=self.extension_attributes,
-                                      **{'apic:svi': 'True'})['network']
+            if bgp_enabled:
+                net1 = self._make_network(
+                    self.fmt, 'net1', True,
+                    arg_list=self.extension_attributes,
+                    **{'apic:svi': 'True',
+                       'apic:bgp_enable': 'True',
+                       'apic:asn': '5'})['network']
+            else:
+                net1 = self._make_network(self.fmt, 'net1', True,
+                                          arg_list=self.extension_attributes,
+                                          **{'apic:svi': 'True'})['network']
 
         hlink2 = aim_infra.HostLink(
             host_name='h2',
@@ -6196,6 +6584,29 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self.assertEqual(l3out_if1b.encap, 'vlan-%s' % vlan_p1)
                 self.assertEqual(l3out_if1b.secondary_addr_a_list,
                                  [{'addr': '10.0.0.1/24'}])
+                if bgp_enabled:
+                    primary = netaddr.IPNetwork(l3out_if1a.primary_addr_a)
+                    subnet = str(primary.cidr)
+                    bgp_peer1a = aim_resource.L3OutInterfaceBgpPeerP(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                        interface_path=self.hlink1.path,
+                        addr=subnet)
+                    bgp_peer1a = self.aim_mgr.get(aim_ctx, bgp_peer1a)
+                    self.assertEqual(bgp_peer1a.asn, '5')
+                    primary = netaddr.IPNetwork(l3out_if1b.primary_addr_a)
+                    subnet = str(primary.cidr)
+                    bgp_peer1b = aim_resource.L3OutInterfaceBgpPeerP(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                        interface_path=hlink2.path,
+                        addr=subnet)
+                    bgp_peer1b = self.aim_mgr.get(aim_ctx, bgp_peer1b)
+                    self.assertEqual(bgp_peer1b.asn, '5')
 
             self._delete('ports', p2['port']['id'])
             if not is_svi:
@@ -6210,7 +6621,11 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self.assertEqual(l3out_if1a.encap, 'vlan-%s' % vlan_p1)
                 self.assertEqual(l3out_if1a.secondary_addr_a_list,
                                  [{'addr': '10.0.0.1/24'}])
-
+                if bgp_enabled:
+                    bgp_peer1b = self.aim_mgr.get(aim_ctx, bgp_peer1b)
+                    self.assertIsNone(bgp_peer1b)
+                    bgp_peer1a = self.aim_mgr.get(aim_ctx, bgp_peer1a)
+                    self.assertEqual(bgp_peer1a.asn, '5')
             self._delete('ports', p1['port']['id'])
             self._check_no_dynamic_segment(net1['id'])
 
@@ -6220,12 +6635,17 @@ class TestPortVlanNetwork(ApicAimTestCase):
             else:
                 l3out_if1a = self.aim_mgr.get(aim_ctx, l3out_if1a)
                 self.assertIsNone(l3out_if1a)
+                if bgp_enabled:
+                    bgp_peer1a = self.aim_mgr.get(aim_ctx, bgp_peer1a)
+                    self.assertIsNone(bgp_peer1a)
+        self.aim_mgr.delete(aim_ctx, hlink2)
 
     def test_network_on_multiple_hosts(self):
         self._test_network_on_multiple_hosts()
 
     def test_network_on_multiple_hosts_svi(self):
         self._test_network_on_multiple_hosts(is_svi=True)
+        self._test_network_on_multiple_hosts(is_svi=True, bgp_enabled=True)
 
     def test_port_binding_missing_hostlink(self):
         aim_ctx = aim_context.AimContext(self.db_session)
