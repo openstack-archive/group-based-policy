@@ -168,6 +168,20 @@ class DbMixin(object):
             tenant_name=mapping.l3out_tenant_name,
             l3out_name=mapping.l3out_name, name=mapping.l3out_ext_net_name)
 
+    def _get_network_l3out_default_ext_subnet(self, mapping):
+        return aim_resource.ExternalSubnet(
+            tenant_name=mapping.l3out_tenant_name,
+            l3out_name=mapping.l3out_name,
+            external_network_name=mapping.l3out_ext_net_name,
+            cidr="0.0.0.0/0")
+
+    def _get_network_l3out_default_ext_subnetv6(self, mapping):
+        return aim_resource.ExternalSubnet(
+            tenant_name=mapping.l3out_tenant_name,
+            l3out_name=mapping.l3out_name,
+            external_network_name=mapping.l3out_ext_net_name,
+            cidr="0::0/0")
+
     def _get_network_vrf(self, mapping):
         return aim_resource.VRF(
             tenant_name=mapping.vrf_tenant_name,

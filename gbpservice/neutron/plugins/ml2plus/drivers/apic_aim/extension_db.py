@@ -32,6 +32,10 @@ class NetworkExtensionDb(model_base.BASEV2):
     external_network_dn = sa.Column(sa.String(1024))
     nat_type = sa.Column(sa.Enum('distributed', 'edge', ''))
     svi = sa.Column(sa.Boolean)
+    bgp_enable = sa.Column(sa.Boolean, default=False, nullable=False)
+    bgp_type = sa.Column(sa.Enum('DefaultExport', ''), default='',
+                         nullable=False)
+    asn = sa.Column(sa.String(64), default='0', nullable=False)
 
     network = orm.relationship(models_v2.Network,
                                backref=orm.backref(
@@ -88,6 +92,9 @@ class ExtensionDbMixin(object):
             self._set_if_not_none(result, cisco_apic.NAT_TYPE,
                                   db_obj['nat_type'])
             self._set_if_not_none(result, cisco_apic.SVI, db_obj['svi'])
+            result[cisco_apic.BGP] = db_obj['bgp_enable']
+            result[cisco_apic.BGP_TYPE] = db_obj['bgp_type']
+            result[cisco_apic.ASN] = db_obj['asn']
         if result.get(cisco_apic.EXTERNAL_NETWORK):
             result[cisco_apic.EXTERNAL_CIDRS] = [c['cidr'] for c in db_cidrs]
 
@@ -105,6 +112,12 @@ class ExtensionDbMixin(object):
                 db_obj['nat_type'] = res_dict[cisco_apic.NAT_TYPE]
             if cisco_apic.SVI in res_dict:
                 db_obj['svi'] = res_dict[cisco_apic.SVI]
+            if cisco_apic.BGP in res_dict:
+                db_obj['bgp_enable'] = res_dict[cisco_apic.BGP]
+            if cisco_apic.BGP_TYPE in res_dict:
+                db_obj['bgp_type'] = res_dict[cisco_apic.BGP_TYPE]
+            if cisco_apic.ASN in res_dict:
+                db_obj['asn'] = res_dict[cisco_apic.ASN]
             session.add(db_obj)
 
             if cisco_apic.EXTERNAL_CIDRS in res_dict:
