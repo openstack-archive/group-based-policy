@@ -1,0 +1,9 @@
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Sat, 17 Feb 2018 01:46:06 +0000
+Reviewed-on: https://review.openstack.org/533317
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
