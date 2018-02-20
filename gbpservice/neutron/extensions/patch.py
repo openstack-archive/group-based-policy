@@ -450,3 +450,8 @@ def _delete_address_scope(self, context, id):
 
 address_scope_db.AddressScopeDbMixin.delete_address_scope = (
     _delete_address_scope)
+
+from gbpservice.neutron.plugins.ml2plus import db_api_patch
+from neutron.services.trunk import plugin as trunk_plugin
+
+trunk_plugin.db_api = db_api_patch
