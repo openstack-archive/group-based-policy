@@ -305,7 +305,7 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                      'mac': eprt['mac_address']} for eprt in eprts]),
             erp.destinations)
 
-    def _verify_pc_mapping(self, pc):
+    def _verify_pc_mapping(self, pc, multiple=False):
         ctx = self._aim_context
         flowcs = [self.show_flow_classifier(x)['flow_classifier'] for x in
                   pc['flow_classifiers']]
@@ -314,19 +314,22 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
             for flowc in flowcs])
         ppgs = [self.show_port_pair_group(x)['port_pair_group'] for x in
                 pc['port_pair_groups']]
-        self.assertEqual(
-            len(flowcs), len(self.aim_mgr.find(ctx, aim_res.Contract)))
-        self.assertEqual(
-            len(flowcs), len(self.aim_mgr.find(ctx, aim_res.ContractSubject)))
-        self.assertEqual(
-            len(flowc_tenants) * len(ppgs),
-            len(self.aim_mgr.find(ctx, aim_sg.DeviceClusterContext)))
-        self.assertEqual(
-            len(flowc_tenants) * len(ppgs) * 2,
-            len(self.aim_mgr.find(ctx, aim_sg.DeviceClusterInterfaceContext)))
-        self.assertEqual(
-            len(flowc_tenants),
-            len(self.aim_mgr.find(ctx, aim_sg.ServiceGraph)))
+        if not multiple:
+            self.assertEqual(
+                len(flowcs), len(self.aim_mgr.find(ctx, aim_res.Contract)))
+            self.assertEqual(
+                len(flowcs), len(self.aim_mgr.find(ctx,
+                                                   aim_res.ContractSubject)))
+            self.assertEqual(
+                len(flowc_tenants) * len(ppgs),
+                len(self.aim_mgr.find(ctx, aim_sg.DeviceClusterContext)))
+            self.assertEqual(
+                len(flowc_tenants) * len(ppgs) * 2,
+                len(self.aim_mgr.find(ctx,
+                                      aim_sg.DeviceClusterInterfaceContext)))
+            self.assertEqual(
+                len(flowc_tenants),
+                len(self.aim_mgr.find(ctx, aim_sg.ServiceGraph)))
         for flowc in flowcs:
             src_net = self._show_network(
                 flowc['l7_parameters']['logical_source_network'])
@@ -375,7 +378,9 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                     self.assertTrue(
                         contract.name in (ext_net.consumed_contract_names if
                                           pref == 'src_' else
-                                          ext_net.provided_contract_names))
+                                          ext_net.provided_contract_names),
+                        "%s not in ext net %s" % (contract.name,
+                                                  ext_net.__dict__))
                 else:
                     epg = self.aim_mgr.get(
                         ctx, aim_res.EndpointGroup.from_dn(
@@ -1000,6 +1005,50 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                                     expected_res_status=201)['port_chain']
         self._verify_pc_mapping(pc)
         self._verify_pc_delete(pc)
+
+    def test_pc_move_fc(self):
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        fcs = [fc]
+        for i in range(3):
+            fcs.append(self.create_flow_classifier(
+                l7_parameters={
+                    'logical_source_network': fc[
+                        'l7_parameters']['logical_source_network'],
+                    'logical_destination_network': fc[
+                        'l7_parameters']['logical_destination_network']},
+                source_ip_prefix='192.168.%s.0/24' % (i + 3),
+                destination_ip_prefix=fc['destination_ip_prefix'],
+                expected_res_status=201)['flow_classifier'])
+        # We have four FCs
+        ppg1 = self._create_simple_ppg(pairs=1)
+        ppg2 = self._create_simple_ppg(pairs=1)
+        pc1 = self.create_port_chain(port_pair_groups=[ppg1['id']],
+                                     flow_classifiers=[fcs[0]['id'],
+                                                       fcs[1]['id']],
+                                     expected_res_status=201)['port_chain']
+        pc2 = self.create_port_chain(port_pair_groups=[ppg2['id']],
+                                     flow_classifiers=[fcs[2]['id'],
+                                                       fcs[3]['id']],
+                                     expected_res_status=201)['port_chain']
+        self._verify_pc_mapping(pc1, multiple=True)
+        self._verify_pc_mapping(pc2, multiple=True)
+        # Remove FC 2
+        pc1 = self.update_port_chain(pc1['id'],
+                                     flow_classifiers=[fcs[0]['id']],
+                                     expected_res_status=200)['port_chain']
+        self._verify_pc_mapping(pc1, multiple=True)
+        self._verify_pc_mapping(pc2, multiple=True)
+        if self.dst_svi:
+            self.delete_port_chain(pc1['id'])
+            dst_net_id = fc['l7_parameters']['logical_destination_network']
+            ext_net = self.aim_mgr.find(
+                self._aim_context, aim_res.ExternalNetwork,
+                name=fc['destination_ip_prefix'].replace(
+                    '/', '_') + '_' + 'net_' + dst_net_id)[0]
+            self.assertEqual(2, len(ext_net.provided_contract_names))
+            self.delete_port_chain(pc2['id'])
+            self.assertIsNone(self.aim_mgr.get(self._aim_context, ext_net))
 
 
 class TestPortChainSVI(TestPortChain):
