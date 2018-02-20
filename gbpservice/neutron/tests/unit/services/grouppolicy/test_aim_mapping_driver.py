@@ -4195,7 +4195,7 @@ class TestImplicitExternalSegment(AIMBaseTestCase):
 
     def _create_default_es(self, **kwargs):
         es_sub = self._make_ext_subnet(
-            'net1', '90.90.0.0/16',
+            'net1', kwargs.pop('subnet_cidr', '90.90.0.0/16'),
             tenant_id=(kwargs.get('tenant_id') or self._tenant_id),
             dn=self._dn_t1_l1_n1)
         return self.create_external_segment(name=self._default_es_name,
@@ -4244,11 +4244,12 @@ class TestImplicitExternalSegment(AIMBaseTestCase):
         self.assertEqual(1, len(l3p['external_segments']))
 
         # Verify only one visible ES can exist
-        res = self._create_default_es(expected_res_status=400)
+        res = self._create_default_es(expected_res_status=400,
+                                      subnet_cidr='10.10.0.0/28')
         self.assertEqual('DefaultExternalSegmentAlreadyExists',
                          res['NeutronError']['type'])
 
-    def test_impicit_lifecycle(self):
+    def test_implicit_lifecycle(self):
         self._test_implicit_lifecycle()
 
     def test_implicit_lifecycle_shared(self):
@@ -4268,7 +4269,8 @@ class TestImplicitExternalSegment(AIMBaseTestCase):
         self.assertEqual(1, len(ep['external_segments']))
 
         res = self._create_default_es(expected_res_status=400,
-                                      tenant_id='anothertenant')
+                                      tenant_id='anothertenant',
+                                      subnet_cidr='10.10.0.0/28')
         self.assertEqual('DefaultExternalSegmentAlreadyExists',
                          res['NeutronError']['type'])
 
@@ -4566,7 +4568,7 @@ class TestNatPool(AIMBaseTestCase):
         sub_id = nat_pool['subnet_id']
 
         sub2 = self._make_ext_subnet('net1', '192.167.0.0/24',
-                                     dn='uni/tn-t1/out-l1/instP-n2')
+                                     dn='uni/tn-t1/out-l2/instP-n2')
         es2 = self.create_external_segment(
             name="nondefault", subnet_id=sub2['id'],
             external_routes=routes,
