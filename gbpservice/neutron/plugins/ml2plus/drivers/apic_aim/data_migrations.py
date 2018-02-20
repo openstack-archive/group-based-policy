@@ -13,6 +13,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+# Note: This module should be treated as legacy and should not be extended to
+# add any new data migrations. New data migrations should be added
+# directly to the alembic migration script along with the table definitions
+# that are being referenced.
+# For reference see how its done here:
+# https://github.com/openstack/neutron/blob/
+# 625de54de3936b0da8760c3da76d2d315d05f94e/neutron/db/migration/
+# alembic_migrations/versions/newton/contract/
+# 3b935b28e7a0_migrate_to_pluggable_ipam.py
+
 import netaddr
 
 from aim.aim_lib import nat_strategy
@@ -32,8 +42,47 @@ from sqlalchemy.orm import lazyload
 
 from gbpservice.neutron.extensions import cisco_apic as ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+
+
+# The following definitions have been taken from commit:
+# 9b4b7276ad8a0f181c9be12ba5a0192432aa5027
+# and is frozen for the data migration script that was included
+# in this module. It should not be changed in this module.
+NetworkExtensionDb = sa.Table(
+        'apic_aim_network_extensions', sa.MetaData(),
+        sa.Column('network_id', sa.String(36), nullable=False),
+        sa.Column('external_network_dn', sa.String(1024)),
+        sa.Column('nat_type', sa.Enum('distributed', 'edge', '')))
+
+
+NetworkExtensionCidrDb = sa.Table(
+        'apic_aim_network_external_cidrs', sa.MetaData(),
+        sa.Column('network_id', sa.String(36), nullable=False),
+        sa.Column('cidr', sa.String(64), nullable=False))
+
+
+AddressScopeMapping = sa.Table(
+        'apic_aim_address_scope_mappings', sa.MetaData(),
+        sa.Column('scope_id', sa.String(36)),
+        sa.Column('vrf_name', sa.String(64)),
+        sa.Column('vrf_tenant_name', sa.String(64)),
+        sa.Column('vrf_owned', sa.Boolean, nullable=False))
+
+
+# The following definition has been taken from commit:
+# f8b41855acbbb7e59a0bab439445c198fc6aa146
+# and is frozen for the data migration script that was included
+# in this module. It should not be changed in this module.
+NetworkMapping = sa.Table(
+        'apic_aim_network_mappings', sa.MetaData(),
+        sa.Column('network_id', sa.String(36), nullable=False),
+        sa.Column('bd_name', sa.String(64), nullable=True),
+        sa.Column('bd_tenant_name', sa.String(64), nullable=True),
+        sa.Column('epg_name', sa.String(64), nullable=True),
+        sa.Column('epg_tenant_name', sa.String(64), nullable=True),
+        sa.Column('epg_app_profile_name', sa.String(64), nullable=True),
+        sa.Column('vrf_name', sa.String(64), nullable=True),
+        sa.Column('vrf_tenant_name', sa.String(64), nullable=True))
 
 
 class DefunctAddressScopeExtensionDb(model_base.BASEV2):
@@ -49,11 +98,26 @@ class DefunctAddressScopeExtensionDb(model_base.BASEV2):
     vrf_dn = sa.Column(sa.String(1024))
 
 
+def _add_address_scope_mapping(session, scope_id, vrf, vrf_owned=True):
+    session.execute(AddressScopeMapping.insert().values(
+        scope_id=scope_id, vrf_name=vrf.name, vrf_tenant_name=vrf.tenant_name,
+        vrf_owned=vrf_owned))
+
+
+def _add_network_mapping(session, network_id, bd, epg, vrf, ext_net=None):
+    if not ext_net:
+        session.execute(NetworkMapping.insert().values(
+            network_id=network_id, bd_name=bd.name,
+            bd_tenant_name=bd.tenant_name, epg_name=epg.name,
+            epg_app_profile_name=epg.app_profile_name,
+            epg_tenant_name=epg.tenant_name, vrf_name=vrf.name,
+            vrf_tenant_name=vrf.tenant_name))
+
+
 def do_apic_aim_persist_migration(session):
     alembic_util.msg(
         "Starting data migration for apic_aim mechanism driver persistence.")
 
-    db_mixin = db.DbMixin()
     aim = aim_manager.AimManager()
     aim_ctx = aim_context.AimContext(session)
     mapper = apic_mapper.APICNameMapper()
@@ -83,7 +147,7 @@ def do_apic_aim_persist_migration(session):
                     vrf = vrfs[0]
                     vrf_owned = True
             if vrf:
-                db_mixin._add_address_scope_mapping(
+                _add_address_scope_mapping(
                     session, scope_db.id, vrf, vrf_owned)
             else:
                 alembic_util.warn(
@@ -97,7 +161,7 @@ def do_apic_aim_persist_migration(session):
             bd = None
             epg = None
             vrf = None
-            ext_db = (session.query(extension_db.NetworkExtensionDb).
+            ext_db = (session.query(NetworkExtensionDb).
                       filter_by(network_id=net_db.id).
                       one_or_none())
             if ext_db and ext_db.external_network_dn:
@@ -149,14 +213,31 @@ def do_apic_aim_persist_migration(session):
                     if vrfs:
                         vrf = vrfs[0]
             if bd and epg and vrf:
-                db_mixin._add_network_mapping(
-                    session, net_db.id, bd, epg, vrf)
+                _add_network_mapping(session, net_db.id, bd, epg, vrf)
             elif not net_db.external:
                 alembic_util.warn(
                     "AIM BD, EPG or VRF not found for network: %s" % net_db)
 
     alembic_util.msg(
         "Finished data migration for apic_aim mechanism driver persistence.")
+
+
+def _get_network_extn_db(session, network_id):
+    result = (session.query(NetworkExtensionDb).filter_by(
+              network_id=network_id).first())
+
+    if result:
+        _, ext_net_dn, nat_type = result
+        db_cidrs = (session.query(NetworkExtensionCidrDb).filter_by(
+                    network_id=network_id).all())
+        result = {}
+        if ext_net_dn is not None:
+            result[ext.EXTERNAL_NETWORK] = ext_net_dn
+        if nat_type is not None:
+            result[ext.NAT_TYPE] = nat_type
+        if result.get(ext.EXTERNAL_NETWORK):
+            result[ext.EXTERNAL_CIDRS] = [c for _, c in db_cidrs]
+        return result
 
 
 def do_ap_name_change(session, conf=None):
@@ -166,12 +247,10 @@ def do_ap_name_change(session, conf=None):
     aim_ctx = aim_context.AimContext(session)
     system_id = cfg.apic_system_id
     alembic_util.msg("APIC System ID: %s" % system_id)
-    ext_mixin = extension_db.ExtensionDbMixin()
-    db_mixin = db.DbMixin()
     with session.begin(subtransactions=True):
         net_dbs = session.query(models_v2.Network).options(lazyload('*')).all()
         for net_db in net_dbs:
-            ext_db = ext_mixin.get_network_extn_db(session, net_db.id)
+            ext_db = _get_network_extn_db(session, net_db.id)
             if ext_db and ext_db.get(ext.EXTERNAL_NETWORK):
                 alembic_util.msg("Migrating external network: %s" % net_db)
                 # Its a managed external network.
@@ -203,8 +282,8 @@ def do_ap_name_change(session, conf=None):
                                             l3out.name,
                                             extc.name)] = extc
                 vrfs = ns.read_vrfs(aim_ctx, ext_net)
-                session.query(db.NetworkMapping).filter(
-                    db.NetworkMapping.network_id == net_db.id).delete()
+                session.execute(NetworkMapping.delete().where(
+                    NetworkMapping.c.network_id == net_db.id))
                 for vrf in vrfs:
                     ns.disconnect_vrf(aim_ctx, ext_net, vrf)
                 ns.delete_external_network(aim_ctx, ext_net)
@@ -226,7 +305,7 @@ def do_ap_name_change(session, conf=None):
                         epg = resource
                     elif isinstance(resource, aim_resource.VRF):
                         vrf = resource
-                db_mixin._add_network_mapping(session, net_db.id, bd, epg, vrf)
+                _add_network_mapping(session, net_db.id, bd, epg, vrf)
                 eid = (ext_net.tenant_name, ext_net.l3out_name, ext_net.name)
                 for vrf in vrfs:
                     if eid in clone_ext_nets:
