@@ -36,6 +36,43 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
 
+# The following definition has been taken from commit:
+# 9b4b7276ad8a0f181c9be12ba5a0192432aa5027
+# and is frozen for the data migration script that was included
+# in this module. It should not be changed in this module.
+class NetworkExtensionDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_network_extensions'
+
+    network_id = sa.Column(
+        sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"),
+        primary_key=True)
+    external_network_dn = sa.Column(sa.String(1024))
+    nat_type = sa.Column(sa.Enum('distributed', 'edge', ''))
+
+
+# The following definition has been taken from commit:
+# f8b41855acbbb7e59a0bab439445c198fc6aa146
+# and is frozen for the data migration script that was included
+# in this module. It should not be changed in this module.
+class NetworkMapping(model_base.BASEV2):
+    __tablename__ = 'apic_aim_network_mappings'
+
+    network_id = sa.Column(
+        sa.String(36), sa.ForeignKey('networks.id', ondelete='CASCADE'),
+        primary_key=True)
+
+    bd_name = sa.Column(sa.String(64))
+    bd_tenant_name = sa.Column(sa.String(64))
+
+    epg_name = sa.Column(sa.String(64))
+    epg_app_profile_name = sa.Column(sa.String(64))
+    epg_tenant_name = sa.Column(sa.String(64))
+
+    vrf_name = sa.Column(sa.String(64))
+    vrf_tenant_name = sa.Column(sa.String(64))
+
+
 class DefunctAddressScopeExtensionDb(model_base.BASEV2):
     # REVISIT: This DB model class is used only for the
     # apic_aim_persist data migration, after which this table is
@@ -97,7 +134,7 @@ def do_apic_aim_persist_migration(session):
             bd = None
             epg = None
             vrf = None
-            ext_db = (session.query(extension_db.NetworkExtensionDb).
+            ext_db = (session.query(NetworkExtensionDb).
                       filter_by(network_id=net_db.id).
                       one_or_none())
             if ext_db and ext_db.external_network_dn:
@@ -203,8 +240,8 @@ def do_ap_name_change(session, conf=None):
                                             l3out.name,
                                             extc.name)] = extc
                 vrfs = ns.read_vrfs(aim_ctx, ext_net)
-                session.query(db.NetworkMapping).filter(
-                    db.NetworkMapping.network_id == net_db.id).delete()
+                session.query(NetworkMapping).filter(
+                    NetworkMapping.network_id == net_db.id).delete()
                 for vrf in vrfs:
                     ns.disconnect_vrf(aim_ctx, ext_net, vrf)
                 ns.delete_external_network(aim_ctx, ext_net)
