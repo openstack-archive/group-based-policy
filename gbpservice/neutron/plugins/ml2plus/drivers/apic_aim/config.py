@@ -50,6 +50,9 @@ apic_opts = [
     cfg.StrOpt('l3_domain_dn', default='',
                help=("The DN of the APIC external routed domain used by the "
                      "auto l3out created for the SVI networks.")),
+    cfg.StrOpt('apic_router_id_pool', default='199.199.199.1/24',
+               help=("The pool of IPs where we allocate the APIC "
+                     "router ID from while creating the SVI interface.")),
 ]
 
 
