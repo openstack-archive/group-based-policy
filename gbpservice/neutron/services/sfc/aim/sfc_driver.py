@@ -619,30 +619,31 @@ class SfcAIMDriver(SfcAIMDriverBase):
         aim_ctx = aim_context.AimContext(plugin_context.session)
         l3out = self.aim_mech._get_svi_net_l3out(net)
         cidr = netaddr.IPNetwork(cidr)
-        epg = None
+        ext_net = None
         if l3out:
             if cidr.prefixlen != 0:
                 ext_net = aim_resource.ExternalNetwork(
                     tenant_name=l3out.tenant_name, l3out_name=l3out.name,
                     name=flc_aid, display_name=flc_aname)
-                self.aim.delete(aim_ctx, ext_net, cascade=True)
-            else:
-                ext_net = self.aim_mech._get_svi_default_external_epg(net)
                 epg = self.aim.get(aim_ctx, ext_net)
+            else:
+                epg = self.aim.get(
+                    aim_ctx, self.aim_mech._get_svi_default_external_epg(net))
         else:
             epg = self.aim.get(aim_ctx, self.aim_mech._get_epg_by_network_id(
                 plugin_context.session, net['id']))
         if epg:
             contract = self._get_flc_contract(plugin_context.session, flowc,
                                               tenant)
-            try:
-                if prefix == FLOWC_SRC:
-                    epg.consumed_contract_names.remove(contract.name)
-                else:
-                    epg.provided_contract_names.remove(contract.name)
-                self.aim.create(aim_ctx, epg, overwrite=True)
-            except ValueError:
-                pass
+            if prefix == FLOWC_SRC:
+                epg.consumed_contract_names.remove(contract.name)
+            else:
+                epg.provided_contract_names.remove(contract.name)
+            self.aim.create(aim_ctx, epg, overwrite=True)
+            if (ext_net and not epg.consumed_contract_names and not
+                    epg.provided_contract_names):
+                # Only remove external network if completely empty
+                self.aim.delete(aim_ctx, ext_net, cascade=True)
 
     def _get_chains_by_classifier_id(self, plugin_context, flowc_id):
         context = plugin_context
