@@ -4781,7 +4781,7 @@ class TestExternalConnectivityBase(object):
         self._make_subnet(
             self.fmt, {'network': ext_net1}, '100.100.100.1',
             '100.100.100.0/24')
-        ext_net2 = self._make_ext_network('ext-net1',
+        ext_net2 = self._make_ext_network('ext-net2',
                                           dn=self.dn_t1_l2_n2)
         self._make_subnet(
             self.fmt, {'network': ext_net2}, '200.200.200.1',
@@ -4860,7 +4860,7 @@ class TestExternalConnectivityBase(object):
     def test_router_gateway(self):
         self._do_test_router_gateway(use_addr_scope=False)
 
-    def test_router_gateway_addr_scope(self,):
+    def test_router_gateway_addr_scope(self):
         self._do_test_router_gateway(use_addr_scope=True)
 
     def test_router_with_unmanaged_external_network(self):
@@ -4887,7 +4887,8 @@ class TestExternalConnectivityBase(object):
         self._router_interface_action('remove', router['id'], sub1['id'], None)
         self.mock_ns.disconnect_vrf.assert_not_called()
 
-    def _do_test_multiple_router(self, use_addr_scope=False):
+    def _do_test_multiple_router(self, use_addr_scope=False,
+                                 shared_l3out=False):
         cv = self.mock_ns.connect_vrf
         dv = self.mock_ns.disconnect_vrf
 
@@ -4917,17 +4918,18 @@ class TestExternalConnectivityBase(object):
         ext_nets = []
         a_ext_nets = []
         for x in range(0, 2):
-            ext_net = self._make_ext_network('ext-net%d' % x,
-                dn='uni/tn-%s/out-l%d/instP-n%d' % (self.t1_aname, x, x))
+            dn = (self.dn_t1_l1_n1 if shared_l3out else
+                  'uni/tn-%s/out-l%d/instP-n%d' % (self.t1_aname, x, x))
+            ext_net = self._make_ext_network('ext-net%d' % x, dn=dn)
             self._make_subnet(
                 self.fmt, {'network': ext_net}, '100.%d.100.1' % x,
                 '100.%d.100.0/24' % x)
             ext_nets.append(ext_net['id'])
-            a_ext_net = aim_resource.ExternalNetwork(
-                tenant_name=self.t1_aname,
-                l3out_name='l%d' % x, name='n%d' % x)
+            a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
             a_ext_nets.append(a_ext_net)
             self.fix_l3out_vrf(self.t1_aname, 'l%d' % x, a_vrf.name)
+        # Note: With shared_l3out=True, a_ext_net[0] and a_ext_net[1] are one
+        # and the same APIC external network
 
         routers = []
         contracts = []
@@ -4954,16 +4956,26 @@ class TestExternalConnectivityBase(object):
 
         self.mock_ns.reset_mock()
         self._add_external_gateway_to_router(routers[1], ext_nets[1])
-        a_ext_nets[1].provided_contract_names = [contracts[1]]
-        a_ext_nets[1].consumed_contract_names = [contracts[1]]
+        if shared_l3out:
+            a_ext_nets[1].provided_contract_names = sorted(contracts)
+            a_ext_nets[1].consumed_contract_names = sorted(contracts)
+        else:
+            a_ext_nets[1].provided_contract_names = [contracts[1]]
+            a_ext_nets[1].consumed_contract_names = [contracts[1]]
         cv.assert_called_once_with(mock.ANY, a_ext_nets[1], a_vrf)
 
         self.mock_ns.reset_mock()
         self._router_interface_action('remove', routers[0], sub1['id'], None)
-        a_ext_nets[0].provided_contract_names = []
-        a_ext_nets[0].consumed_contract_names = []
-        dv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
-        cv.assert_not_called()
+        if shared_l3out:
+            a_ext_nets[0].provided_contract_names = [contracts[1]]
+            a_ext_nets[0].consumed_contract_names = [contracts[1]]
+            cv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
+            dv.assert_not_called()
+        else:
+            a_ext_nets[0].provided_contract_names = []
+            a_ext_nets[0].consumed_contract_names = []
+            dv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
+            cv.assert_not_called()
 
         self.mock_ns.reset_mock()
         self._router_interface_action('remove', routers[1], sub1['id'], None)
@@ -4976,6 +4988,14 @@ class TestExternalConnectivityBase(object):
 
     def test_multiple_router_addr_scope(self):
         self._do_test_multiple_router(use_addr_scope=True)
+
+    def test_multiple_router_shared_l3out(self):
+        self._do_test_multiple_router(use_addr_scope=False,
+                                      shared_l3out=True)
+
+    def test_multiple_router_addr_scope_shared_l3out(self):
+        self._do_test_multiple_router(use_addr_scope=True,
+                                      shared_l3out=True)
 
     def test_floatingip(self):
         net1 = self._make_network(self.fmt, 'pvt-net1', True)['network']
@@ -5342,6 +5362,111 @@ class TestExternalConnectivityBase(object):
 
     def test_external_network_host_domains(self):
         self._test_external_network_lifecycle_with_domains(create_hds=True)
+
+    def test_shared_l3out_external_cidr(self):
+        net1 = self._make_ext_network('net1',
+                                      dn=self.dn_t1_l1_n1,
+                                      cidrs=['1.2.3.0/20', '20.10.0.0/16',
+                                             '4.4.4.0/24'])
+        a_ext_net = aim_resource.ExternalNetwork.from_dn(self.dn_t1_l1_n1)
+        self.mock_ns.update_external_cidrs.assert_called_once_with(
+            mock.ANY, a_ext_net, ['1.2.3.0/20', '20.10.0.0/16', '4.4.4.0/24'])
+
+        self.mock_ns.reset_mock()
+        self._make_ext_network('net2',
+                               dn=self.dn_t1_l1_n1,
+                               cidrs=['50.60.0.0/28', '1.2.3.0/20'])
+        self.mock_ns.update_external_cidrs.assert_called_once_with(
+            mock.ANY, a_ext_net,
+            ['1.2.3.0/20', '20.10.0.0/16', '4.4.4.0/24', '50.60.0.0/28'])
+
+        self.mock_ns.reset_mock()
+        net1 = self._update('networks', net1['id'],
+            {'network': {CIDR: ['4.3.3.0/30', '20.10.0.0/16']}})['network']
+        self.mock_ns.update_external_cidrs.assert_called_once_with(
+            mock.ANY, a_ext_net,
+            ['1.2.3.0/20', '20.10.0.0/16', '4.3.3.0/30', '50.60.0.0/28'])
+
+    def test_shared_l3out_network_delete(self):
+        # Test reference counting of shared L3outs
+
+        net1 = self._make_ext_network('net1', dn=self.dn_t1_l1_n1)
+        a_l3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
+        a_ext_net = aim_resource.ExternalNetwork(
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1')
+        self.mock_ns.create_l3outside.assert_called_once_with(
+            mock.ANY, a_l3out, vmm_domains=[])
+        self.mock_ns.create_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net)
+
+        # create second network that shares APIC l3out and external-network
+        self.mock_ns.reset_mock()
+        net2 = self._make_ext_network('net2', dn=self.dn_t1_l1_n1)
+        self.mock_ns.create_l3outside.assert_called_once_with(
+            mock.ANY, a_l3out, vmm_domains=[])
+        self.mock_ns.create_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net)
+
+        # create third network that shares APIC l3out only
+        self.mock_ns.reset_mock()
+        net3 = self._make_ext_network(
+            'net3', dn=('uni/tn-%s/out-l1/instP-n2' % self.t1_aname))
+        a_ext_net3 = aim_resource.ExternalNetwork(
+            tenant_name=self.t1_aname, l3out_name='l1', name='n2')
+        self.mock_ns.create_l3outside.assert_called_once_with(
+            mock.ANY, a_l3out, vmm_domains=[])
+        self.mock_ns.create_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net3)
+
+        # delete net2
+        self.mock_ns.reset_mock()
+        self._delete('networks', net2['id'])
+        self.mock_ns.delete_l3outside.assert_not_called()
+        self.mock_ns.delete_external_network.assert_not_called()
+
+        # delete net1
+        self.mock_ns.reset_mock()
+        self._delete('networks', net1['id'])
+        self.mock_ns.delete_l3outside.assert_not_called()
+        self.mock_ns.delete_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net)
+
+        # delete net3
+        self.mock_ns.reset_mock()
+        self._delete('networks', net3['id'])
+        self.mock_ns.delete_l3outside.assert_called_once_with(
+            mock.ANY, a_l3out)
+        self.mock_ns.delete_external_network.assert_called_once_with(
+            mock.ANY, a_ext_net3)
+
+    def test_shared_l3out_external_subnet_overlap(self):
+        net1 = self._make_ext_network('net1', dn=self.dn_t1_l1_n1)
+        self._make_subnet(
+            self.fmt, {'network': net1}, '100.100.100.1',
+            '100.100.100.0/24')
+
+        net2 = self._make_ext_network('net2', dn=self.dn_t1_l1_n1)
+        self._make_subnet(
+            self.fmt, {'network': net2}, '200.200.200.1',
+            '200.200.200.0/24')
+
+        res = self._create_subnet(self.fmt,
+                                  net_id=net2['id'],
+                                  cidr="100.100.100.128/28",
+                                  gateway_ip="100.100.100.129",
+                                  expected_res_status=400)
+        res = self.deserialize(self.fmt, res)
+        self.assertEqual('ExternalSubnetOverlapInL3Out',
+                         res['NeutronError']['type'])
+
+        res = self._create_subnet(self.fmt,
+                                  net_id=net1['id'],
+                                  cidr="200.200.0.0/16",
+                                  gateway_ip="200.200.0.129",
+                                  expected_res_status=400)
+        res = self.deserialize(self.fmt, res)
+        self.assertEqual('ExternalSubnetOverlapInL3Out',
+                         res['NeutronError']['type'])
 
 
 class TestExternalDistributedNat(TestExternalConnectivityBase,
