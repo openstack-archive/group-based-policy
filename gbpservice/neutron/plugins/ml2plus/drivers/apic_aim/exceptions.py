@@ -62,3 +62,8 @@ class PreExistingSVICannotBeConnectedToRouter(exceptions.BadRequest):
 
 class OnlyOneSubnetInSVINetwork(exceptions.BadRequest):
     message = _("Only one subnet is allowed in SVI network.")
+
+
+class ExternalSubnetOverlapInL3Out(exceptions.BadRequest):
+    message = _("External subnet CIDR %(cidr)s overlaps with existing "
+                "subnets in APIC L3Outside %(l3out)s.")
