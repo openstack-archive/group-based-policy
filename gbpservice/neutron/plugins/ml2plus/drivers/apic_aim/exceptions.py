@@ -62,3 +62,8 @@ class PreExistingSVICannotBeConnectedToRouter(exceptions.BadRequest):
 
 class OnlyOneSubnetInSVINetwork(exceptions.BadRequest):
     message = _("Only one subnet is allowed in SVI network.")
+
+
+class ExhaustedApicRouterIdPool(exceptions.BadRequest):
+    message = _("All the IPs in the APIC router ID pool %(pool)s "
+                "has been taken.")
