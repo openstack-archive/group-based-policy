@@ -112,6 +112,24 @@ class ExtensionDbMixin(object):
                                        res_dict[cisco_apic.EXTERNAL_CIDRS],
                                        network_id=network_id)
 
+    def get_network_ids_by_ext_net_dn(self, session, dn):
+        ids = session.query(NetworkExtensionDb.network_id).filter_by(
+            external_network_dn=dn)
+        return [i[0] for i in ids]
+
+    def get_network_ids_by_l3out_dn(self, session, dn):
+        ids = session.query(NetworkExtensionDb.network_id).filter(
+            NetworkExtensionDb.external_network_dn.like(dn + "/%"))
+        return [i[0] for i in ids]
+
+    def get_external_cidrs_by_ext_net_dn(self, session, dn):
+        ctab = NetworkExtensionCidrDb
+        ntab = NetworkExtensionDb
+        cidrs = session.query(ctab.cidr).join(
+            ntab, ntab.network_id == ctab.network_id).filter(
+                    ntab.external_network_dn == dn).distinct()
+        return [c[0] for c in cidrs]
+
     def get_subnet_extn_db(self, session, subnet_id):
         db_obj = (session.query(SubnetExtensionDb).filter_by(
                   subnet_id=subnet_id).first())
