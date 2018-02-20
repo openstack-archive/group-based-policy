@@ -35,7 +35,6 @@ from gbpservice.neutron.db import (  # noqa
     servicechain_db
 )
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (  # noqa
-    data_migrations,
     db,
     extension_db
 )
