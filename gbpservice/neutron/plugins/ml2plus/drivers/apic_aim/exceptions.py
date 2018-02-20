@@ -67,3 +67,8 @@ class OnlyOneSubnetInSVINetwork(exceptions.BadRequest):
 class ExternalSubnetOverlapInL3Out(exceptions.BadRequest):
     message = _("External subnet CIDR %(cidr)s overlaps with existing "
                 "subnets in APIC L3Outside %(l3out)s.")
+
+
+class ExhaustedApicRouterIdPool(exceptions.IpAddressGenerationFailure):
+    message = _("All the IPs in the APIC router ID pool %(pool)s "
+                "have been taken.")
