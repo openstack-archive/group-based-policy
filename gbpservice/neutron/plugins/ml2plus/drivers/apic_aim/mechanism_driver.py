@@ -102,8 +102,6 @@ ACI_PORT_DESCR_FORMATS = ('topology/pod-(\d+)/paths-(\d+)/pathep-'
                           '\[eth(\d+)/(\d+(\/\d+)*)\]')
 ACI_VPCPORT_DESCR_FORMAT = ('topology/pod-(\d+)/protpaths-(\d+)-(\d+)/pathep-'
                             '\[(.*)\]')
-# TODO(kentwu): A pool of router IDs has to be put in the config file instead
-APIC_ROUTER_IDS = ['199.199.199.198', '199.199.199.199']
 
 
 class KeystoneNotificationEndpoint(object):
@@ -221,6 +219,38 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         trunk_driver.register()
         self.port_desc_re = re.compile(ACI_PORT_DESCR_FORMATS)
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
+        self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
+        self.apic_router_id_subnet = netaddr.IPNetwork(
+                                         self.apic_router_id_pool)
+
+    def _query_used_apic_router_ids(self, aim_ctx):
+        used_ids = []
+        # Find the l3out_nodes created by us
+        aim_l3out_nodes = self.aim.find(
+            aim_ctx, aim_resource.L3OutNode,
+            node_profile_name=L3OUT_NODE_PROFILE_NAME,
+            monitored=False)
+        for aim_l3out_node in aim_l3out_nodes:
+            if aim_l3out_node.router_id not in used_ids:
+                used_ids.append(aim_l3out_node.router_id)
+        return used_ids
+
+    def _allocate_apic_router_ids(self, aim_ctx, node_path):
+        aim_l3out_nodes = self.aim.find(
+            aim_ctx, aim_resource.L3OutNode,
+            node_profile_name=L3OUT_NODE_PROFILE_NAME,
+            node_path=node_path)
+        for aim_l3out_node in aim_l3out_nodes:
+            if aim_l3out_node.router_id:
+                return aim_l3out_node.router_id
+        used_ids = self._query_used_apic_router_ids(aim_ctx)
+        for ip_address in self.apic_router_id_subnet:
+            ip = str(ip_address)
+            if ip not in used_ids:
+                return ip
+        # TBD: UT this
+        raise exceptions.ExhaustedApicRouterIdPool(
+            pool=self.apic_router_id_pool)
 
     def _ensure_static_resources(self):
         session = db_api.get_writer_session()
@@ -3016,12 +3046,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_l3out_np_db = self.aim.get(aim_ctx, aim_l3out_np)
             if not aim_l3out_np_db:
                 self.aim.create(aim_ctx, aim_l3out_np)
-
-            for idx, node_path in enumerate(node_paths):
+            for node_path in node_paths:
+                apic_router_id = self._allocate_apic_router_ids(aim_ctx,
+                                                                node_path)
                 aim_l3out_node = aim_resource.L3OutNode(
                     tenant_name=l3out.tenant_name, l3out_name=l3out.name,
                     node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                    node_path=node_path, router_id=APIC_ROUTER_IDS[idx],
+                    node_path=node_path, router_id=apic_router_id,
                     router_id_loopback=False)
                 aim_l3out_node_db = self.aim.get(aim_ctx, aim_l3out_node)
                 if not aim_l3out_node_db:

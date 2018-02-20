@@ -5695,6 +5695,14 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 else:
                     ext_net = aim_resource.ExternalNetwork.from_dn(
                         net1[DN]['ExternalNetwork'])
+                    l3out_node = aim_resource.L3OutNode(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        node_path='topology/pod-1/node-102')
+                    l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
+                    apic_router_id = l3out_node.router_id
+
                     l3out_if = aim_resource.L3OutInterface(
                         tenant_name=ext_net.tenant_name,
                         l3out_name=ext_net.l3out_name,
@@ -5718,6 +5726,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
                               'encap': 'vlan-%s' % vlan_p2}],
                             epg.static_paths)
                     else:
+                        l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
+                        self.assertEqual(l3out_node.router_id, apic_router_id)
                         l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
                         self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan_p1)
                         self.assertEqual(l3out_if.secondary_addr_a_list,
@@ -5779,6 +5789,13 @@ class TestPortVlanNetwork(ApicAimTestCase):
         else:
             ext_net = aim_resource.ExternalNetwork.from_dn(
                 net1[DN]['ExternalNetwork'])
+            l3out_node1 = aim_resource.L3OutNode(
+                tenant_name=ext_net.tenant_name,
+                l3out_name=ext_net.l3out_name,
+                node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                node_path='topology/pod-1/node-102')
+            l3out_node1 = self.aim_mgr.get(aim_ctx, l3out_node1)
+
             l3out_if1 = aim_resource.L3OutInterface(
                 tenant_name=ext_net.tenant_name,
                 l3out_name=ext_net.l3out_name,
@@ -5809,6 +5826,13 @@ class TestPortVlanNetwork(ApicAimTestCase):
         else:
             ext_net = aim_resource.ExternalNetwork.from_dn(
                 net2[DN]['ExternalNetwork'])
+            l3out_node2 = aim_resource.L3OutNode(
+                tenant_name=ext_net.tenant_name,
+                l3out_name=ext_net.l3out_name,
+                node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                node_path='topology/pod-1/node-102')
+            l3out_node2 = self.aim_mgr.get(aim_ctx, l3out_node2)
+            self.assertEqual(l3out_node1.router_id, l3out_node2.router_id)
             l3out_if2 = aim_resource.L3OutInterface(
                 tenant_name=ext_net.tenant_name,
                 l3out_name=ext_net.l3out_name,
@@ -5902,6 +5926,12 @@ class TestPortVlanNetwork(ApicAimTestCase):
         else:
             ext_net = aim_resource.ExternalNetwork.from_dn(
                 net1[DN]['ExternalNetwork'])
+            l3out_node1a = aim_resource.L3OutNode(
+                tenant_name=ext_net.tenant_name,
+                l3out_name=ext_net.l3out_name,
+                node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                node_path='topology/pod-1/node-102')
+            l3out_node1a = self.aim_mgr.get(aim_ctx, l3out_node1a)
             l3out_if1a = aim_resource.L3OutInterface(
                 tenant_name=ext_net.tenant_name,
                 l3out_name=ext_net.l3out_name,
@@ -5912,6 +5942,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self.assertEqual(l3out_if1a.encap, 'vlan-%s' % vlan_p1)
             self.assertEqual(l3out_if1a.secondary_addr_a_list,
                              [{'addr': '10.0.0.1/24'}])
+
+            l3out_node1b = aim_resource.L3OutNode(
+                tenant_name=ext_net.tenant_name,
+                l3out_name=ext_net.l3out_name,
+                node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                node_path='topology/pod-1/node-102')
+            l3out_node1b = self.aim_mgr.get(aim_ctx, l3out_node1b)
+            self.assertEqual(l3out_node1a.router_id,
+                             l3out_node1b.router_id)
             l3out_if1b = aim_resource.L3OutInterface(
                 tenant_name=ext_net.tenant_name,
                 l3out_name=ext_net.l3out_name,
@@ -6052,6 +6091,12 @@ class TestPortVlanNetwork(ApicAimTestCase):
             else:
                 ext_net = aim_resource.ExternalNetwork.from_dn(
                     net1[DN]['ExternalNetwork'])
+                l3out_node1a = aim_resource.L3OutNode(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    node_path='topology/pod-1/node-102')
+                l3out_node1a = self.aim_mgr.get(aim_ctx, l3out_node1a)
                 l3out_if1a = aim_resource.L3OutInterface(
                     tenant_name=ext_net.tenant_name,
                     l3out_name=ext_net.l3out_name,
@@ -6062,6 +6107,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self.assertEqual(l3out_if1a.encap, 'vlan-%s' % vlan_p1)
                 self.assertEqual(l3out_if1a.secondary_addr_a_list,
                                  [{'addr': '10.0.0.1/24'}])
+
+                l3out_node1b = aim_resource.L3OutNode(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    node_path='topology/pod-1/node-201')
+                l3out_node1b = self.aim_mgr.get(aim_ctx, l3out_node1b)
+                self.assertNotEqual(l3out_node1a.router_id,
+                                    l3out_node1b.router_id)
                 l3out_if1b = aim_resource.L3OutInterface(
                     tenant_name=ext_net.tenant_name,
                     l3out_name=ext_net.l3out_name,
@@ -6072,6 +6126,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self.assertEqual(l3out_if1b.encap, 'vlan-%s' % vlan_p1)
                 self.assertEqual(l3out_if1b.secondary_addr_a_list,
                                  [{'addr': '10.0.0.1/24'}])
+                self.assertNotEqual(l3out_if1a.primary_addr_a,
+                                    l3out_if1b.primary_addr_a)
 
             self._delete('ports', p2['port']['id'])
             if not is_svi:
