@@ -112,8 +112,6 @@ ACI_PORT_DESCR_FORMATS = ('topology/pod-(\d+)/paths-(\d+)/pathep-'
                           '\[eth(\d+)/(\d+(\/\d+)*)\]')
 ACI_VPCPORT_DESCR_FORMAT = ('topology/pod-(\d+)/protpaths-(\d+)-(\d+)/pathep-'
                             '\[(.*)\]')
-# TODO(kentwu): A pool of router IDs has to be put in the config file instead
-APIC_ROUTER_IDS = ['199.199.199.198', '199.199.199.199']
 
 
 class KeystoneNotificationEndpoint(object):
@@ -231,6 +229,37 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         trunk_driver.register()
         self.port_desc_re = re.compile(ACI_PORT_DESCR_FORMATS)
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
+        self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
+        self.apic_router_id_subnet = netaddr.IPNetwork(
+                                         self.apic_router_id_pool)
+
+    def _query_used_apic_router_ids(self, aim_ctx):
+        used_ids = []
+        # Find the l3out_nodes created by us
+        aim_l3out_nodes = self.aim.find(
+            aim_ctx, aim_resource.L3OutNode,
+            node_profile_name=L3OUT_NODE_PROFILE_NAME,
+            monitored=False)
+        for aim_l3out_node in aim_l3out_nodes:
+            if aim_l3out_node.router_id not in used_ids:
+                used_ids.append(aim_l3out_node.router_id)
+        return used_ids
+
+    def _allocate_apic_router_ids(self, aim_ctx, node_path):
+        aim_l3out_nodes = self.aim.find(
+            aim_ctx, aim_resource.L3OutNode,
+            node_profile_name=L3OUT_NODE_PROFILE_NAME,
+            node_path=node_path)
+        for aim_l3out_node in aim_l3out_nodes:
+            if aim_l3out_node.router_id:
+                return aim_l3out_node.router_id
+        used_ids = self._query_used_apic_router_ids(aim_ctx)
+        for ip_address in self.apic_router_id_subnet:
+            ip = str(ip_address)
+            if ip not in used_ids:
+                return ip
+        raise exceptions.ExhaustedApicRouterIdPool(
+            pool=self.apic_router_id_pool)
 
     def _ensure_static_resources(self):
         session = db_api.get_writer_session()
@@ -473,7 +502,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 elif isinstance(resource, aim_resource.VRF):
                     vrf = resource
         elif self._is_svi(current):
-            _, ext_net, _ = self._get_aim_external_stuff(current)
+            _, ext_net, _ = self._get_aim_external_objects(current)
             # This means no DN is being provided. Then we should try to create
             # the l3out automatically
             if not ext_net:
@@ -722,7 +751,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if not other_nets:
                 ns.delete_l3outside(aim_ctx, l3out)
         elif self._is_svi(current):
-            l3out, ext_net, _ = self._get_aim_external_stuff(current)
+            l3out, ext_net, _ = self._get_aim_external_objects(current)
             aim_l3out = self.aim.get(aim_ctx, l3out)
             if not aim_l3out:
                 return
@@ -775,8 +804,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # SVI network with pre-existing l3out.
         if self._is_preexisting_svi_db(network_db):
-            _, ext_net, _ = self._get_aim_external_stuff_db(session,
-                                                            network_db)
+            _, ext_net, _ = self._get_aim_external_objects_db(session,
+                                                              network_db)
             if ext_net:
                 sync_state = self._merge_status(aim_ctx, sync_state, ext_net)
 
@@ -2833,7 +2862,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         ns.common_scope = self.apic_system_id
         return ns
 
-    def _get_aim_external_stuff(self, network):
+    def _get_aim_external_objects(self, network):
         ext_net_dn = (network.get(cisco_apic.DIST_NAMES, {})
                       .get(cisco_apic.EXTERNAL_NETWORK))
         if not ext_net_dn:
@@ -2847,9 +2876,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _get_aim_nat_strategy(self, network):
         if not self._is_external(network):
             return None, None, None
-        return self._get_aim_external_stuff(network)
+        return self._get_aim_external_objects(network)
 
-    def _get_aim_external_stuff_db(self, session, network_db):
+    def _get_aim_external_objects_db(self, session, network_db):
         extn_db = extension_db.ExtensionDbMixin()
         extn_info = extn_db.get_network_extn_db(session, network_db.id)
         if extn_info and cisco_apic.EXTERNAL_NETWORK in extn_info:
@@ -2865,7 +2894,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _get_aim_nat_strategy_db(self, session, network_db):
         if network_db.external is not None:
-            return self._get_aim_external_stuff_db(session, network_db)
+            return self._get_aim_external_objects_db(session, network_db)
         return None, None, None
 
     def _subnet_to_gw_ip_mask(self, subnet):
@@ -3224,7 +3253,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return
 
         aim_ctx = aim_context.AimContext(db_session=session)
-        l3out, ext_net, _ = self._get_aim_external_stuff(network)
+        l3out, ext_net, _ = self._get_aim_external_objects(network)
         if new_path:
             aim_l3out_np = aim_resource.L3OutNodeProfile(
                 tenant_name=l3out.tenant_name, l3out_name=l3out.name,
@@ -3232,12 +3261,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_l3out_np_db = self.aim.get(aim_ctx, aim_l3out_np)
             if not aim_l3out_np_db:
                 self.aim.create(aim_ctx, aim_l3out_np)
-
-            for idx, node_path in enumerate(node_paths):
+            for node_path in node_paths:
+                apic_router_id = self._allocate_apic_router_ids(aim_ctx,
+                                                                node_path)
                 aim_l3out_node = aim_resource.L3OutNode(
                     tenant_name=l3out.tenant_name, l3out_name=l3out.name,
                     node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                    node_path=node_path, router_id=APIC_ROUTER_IDS[idx],
+                    node_path=node_path, router_id=apic_router_id,
                     router_id_loopback=False)
                 aim_l3out_node_db = self.aim.get(aim_ctx, aim_l3out_node)
                 if not aim_l3out_node_db:
