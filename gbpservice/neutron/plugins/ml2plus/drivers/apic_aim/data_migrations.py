@@ -13,6 +13,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+# Note: This module should be treated as legacy and should not be extended to
+# add any new data migrations. New data migrations should be added
+# directly to the alembic migration script along with the table definitions
+# that are being referenced.
+# For reference see how its done here:
+# https://github.com/openstack/neutron/blob/
+# 625de54de3936b0da8760c3da76d2d315d05f94e/neutron/db/migration/
+# alembic_migrations/versions/newton/contract/
+# 3b935b28e7a0_migrate_to_pluggable_ipam.py
+
 import netaddr
 
 from aim.aim_lib import nat_strategy
@@ -34,6 +44,33 @@ from gbpservice.neutron.extensions import cisco_apic as ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+
+
+# The following definition has been taken from commit:
+# 9b4b7276ad8a0f181c9be12ba5a0192432aa5027
+# and is frozen for the data migration script that was included
+# in this module. It should not be changed in this module.
+NetworkExtensionDb = sa.Table(
+        'apic_aim_network_extensions', sa.MetaData(),
+        sa.Column('network_id', sa.String(36), nullable=False),
+        sa.Column('external_network_dn', sa.String(1024)),
+        sa.Column('nat_type', sa.Enum('distributed', 'edge', '')))
+
+
+# The following definition has been taken from commit:
+# f8b41855acbbb7e59a0bab439445c198fc6aa146
+# and is frozen for the data migration script that was included
+# in this module. It should not be changed in this module.
+NetworkMapping = sa.Table(
+        'apic_aim_network_mappings', sa.MetaData(),
+        sa.Column('network_id', sa.String(36), nullable=False),
+        sa.Column('bd_name', sa.String(64), nullable=True),
+        sa.Column('bd_tenant_name', sa.String(64), nullable=True),
+        sa.Column('epg_name', sa.String(64), nullable=True),
+        sa.Column('epg_tenant_name', sa.String(64), nullable=True),
+        sa.Column('epg_app_profile_name', sa.String(64), nullable=True),
+        sa.Column('vrf_name', sa.String(64), nullable=True),
+        sa.Column('vrf_tenant_name', sa.String(64), nullable=True))
 
 
 class DefunctAddressScopeExtensionDb(model_base.BASEV2):
@@ -97,7 +134,7 @@ def do_apic_aim_persist_migration(session):
             bd = None
             epg = None
             vrf = None
-            ext_db = (session.query(extension_db.NetworkExtensionDb).
+            ext_db = (session.query(NetworkExtensionDb).
                       filter_by(network_id=net_db.id).
                       one_or_none())
             if ext_db and ext_db.external_network_dn:
@@ -203,8 +240,8 @@ def do_ap_name_change(session, conf=None):
                                             l3out.name,
                                             extc.name)] = extc
                 vrfs = ns.read_vrfs(aim_ctx, ext_net)
-                session.query(db.NetworkMapping).filter(
-                    db.NetworkMapping.network_id == net_db.id).delete()
+                session.query(NetworkMapping).filter(
+                    NetworkMapping.network_id == net_db.id).delete()
                 for vrf in vrfs:
                     ns.disconnect_vrf(aim_ctx, ext_net, vrf)
                 ns.delete_external_network(aim_ctx, ext_net)
