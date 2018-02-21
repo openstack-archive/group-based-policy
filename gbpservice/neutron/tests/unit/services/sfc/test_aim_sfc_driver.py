@@ -1016,6 +1016,27 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
             self.delete_port_chain(pc2['id'])
             self.assertIsNone(self.aim_mgr.get(self._aim_context, ext_net))
 
+    def test_pc_max_ppg_validation(self):
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        ppg1 = self._create_simple_ppg(pairs=1)
+        ppg2 = self._create_simple_ppg(pairs=1)
+        ppg3 = self._create_simple_ppg(pairs=1)
+        ppg4 = self._create_simple_ppg(pairs=1)
+        self.create_port_chain(port_pair_groups=[ppg1['id'], ppg2['id'],
+                                                 ppg3['id'], ppg4['id']],
+                               flow_classifiers=[fc['id']],
+                               expected_res_status=400)
+        pc = self.create_port_chain(port_pair_groups=[ppg1['id'],
+                                                      ppg2['id'],
+                                                      ppg3['id']],
+                                    flow_classifiers=[fc['id']],
+                                    expected_res_status=201)['port_chain']
+        self.update_port_chain(pc['id'],
+                               port_pair_groups=[ppg1['id'], ppg2['id'],
+                                                 ppg3['id'], ppg4['id']],
+                               expected_res_status=500)
+
 
 class TestPortChainSVI(TestPortChain):
 
