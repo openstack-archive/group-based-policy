@@ -42,6 +42,7 @@ FLOWC_DST = 'dst'
 LOG = logging.getLogger(__name__)
 PHYSDOM_TYPE = 'PhysDom'
 SUPPORTED_DOM_TYPES = [PHYSDOM_TYPE]
+MAX_PPGS_PER_CHAIN = 3
 
 
 class SfcAIMDriverBase(base.SfcDriverBase):
@@ -292,6 +293,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
         #   can be removed once contract export is implemented.
         # TODO(ivar): two different chains cannot share left/right networks
         # TODO(ivar): right/left BDs same tenant as provider
+        if len(ppgs) > MAX_PPGS_PER_CHAIN:
+            raise exceptions.TooManyPPGsPerChainError(maxn=MAX_PPGS_PER_CHAIN)
         vrfs = set()
         for flowc in flowcs:
             provg = self._get_flowc_provider_group(p_ctx, flowc)
