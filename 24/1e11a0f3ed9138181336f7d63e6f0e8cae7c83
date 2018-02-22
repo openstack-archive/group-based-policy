@@ -1,0 +1,9 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 22 Feb 2018 22:52:45 +0000
+Reviewed-on: https://review.openstack.org/546825
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
