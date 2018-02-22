@@ -452,8 +452,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
             ns.create_l3outside(aim_ctx, l3out, vmm_domains=domains)
             ns.create_external_network(aim_ctx, ext_net)
-            ns.update_external_cidrs(aim_ctx, ext_net,
-                                     current[cisco_apic.EXTERNAL_CIDRS])
+            # Get external CIDRs for all external networks that share
+            # this APIC external network.
+            ext_db = extension_db.ExtensionDbMixin()
+            cidrs = sorted(
+                ext_db.get_external_cidrs_by_ext_net_dn(session, ext_net.dn,
+                                                        lock_update=True))
+            ns.update_external_cidrs(aim_ctx, ext_net, cidrs)
 
             for resource in ns.get_l3outside_resources(aim_ctx, l3out):
                 if isinstance(resource, aim_resource.BridgeDomain):
@@ -554,7 +559,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 old = sorted(original[cisco_apic.EXTERNAL_CIDRS])
                 new = sorted(current[cisco_apic.EXTERNAL_CIDRS])
                 if old != new:
-                    ns.update_external_cidrs(aim_ctx, ext_net, new)
+                    # Get external CIDRs for all external networks that share
+                    # this APIC external network.
+                    ext_db = extension_db.ExtensionDbMixin()
+                    cidrs = sorted(
+                        ext_db.get_external_cidrs_by_ext_net_dn(
+                            session, ext_net.dn, lock_update=True))
+                    ns.update_external_cidrs(aim_ctx, ext_net, cidrs)
                 # TODO(amitbose) Propagate name updates to AIM
 
     def delete_network_precommit(self, context):
@@ -568,10 +579,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
                 return  # Unmanaged external network
-            ns.delete_external_network(aim_ctx, ext_net)
-            # TODO(amitbose) delete L3out only if no other Neutron
-            # network is using the L3out
-            ns.delete_l3outside(aim_ctx, l3out)
+            extn_db = extension_db.ExtensionDbMixin()
+            # REVISIT: lock_update=True is needed to handle races. Find
+            # alternative solutions since Neutron discourages using such
+            # queries.
+            other_nets = set(
+                extn_db.get_network_ids_by_ext_net_dn(session, ext_net.dn,
+                                                      lock_update=True))
+            other_nets.discard(current['id'])
+            if not other_nets:
+                ns.delete_external_network(aim_ctx, ext_net)
+            other_nets = set(
+                extn_db.get_network_ids_by_l3out_dn(session, l3out.dn,
+                                                    lock_update=True))
+            other_nets.discard(current['id'])
+            if not other_nets:
+                ns.delete_l3outside(aim_ctx, l3out)
         elif self._is_svi(current):
             l3out, ext_net, _ = self._get_aim_external_stuff(current)
             aim_l3out = self.aim.get(aim_ctx, l3out)
@@ -657,6 +680,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                                network_db)
             if not ext_net:
                 return  # Unmanaged external network
+            # Check subnet overlap with subnets from other Neutron
+            # external networks that map to the same APIC L3Out
+            ext_db = extension_db.ExtensionDbMixin()
+            other_nets = set(
+                ext_db.get_network_ids_by_l3out_dn(session, l3out.dn,
+                                                   lock_update=True))
+            other_nets.discard(network_id)
+            cidrs = (session.query(models_v2.Subnet.cidr).filter(
+                models_v2.Subnet.network_id.in_(other_nets)).all())
+            cidrs = netaddr.IPSet([c[0] for c in cidrs])
+            if cidrs & netaddr.IPSet([current['cidr']]):
+                raise exceptions.ExternalSubnetOverlapInL3Out(
+                    cidr=current['cidr'], l3out=l3out.dn)
             ns.create_subnet(aim_ctx, l3out,
                              self._subnet_to_gw_ip_mask(current))
 
@@ -2782,9 +2818,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if old_network:
             _, ext_net, ns = self._get_aim_nat_strategy(old_network)
             if ext_net:
+                # Find Neutron networks that share the APIC external network.
+                eqv_nets = ext_db.get_network_ids_by_ext_net_dn(
+                    session, ext_net.dn, lock_update=True)
                 rtr_old = [r for r in rtr_dbs
                            if (r.gw_port_id and
-                               r.gw_port.network_id == old_network['id'])]
+                               r.gw_port.network_id in eqv_nets)]
                 prov = set()
                 cons = set()
                 for r in rtr_old:
@@ -2799,9 +2838,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if new_network:
             _, ext_net, ns = self._get_aim_nat_strategy(new_network)
             if ext_net:
+                # Find Neutron networks that share the APIC external network.
+                eqv_nets = ext_db.get_network_ids_by_ext_net_dn(
+                    session, ext_net.dn, lock_update=True)
                 rtr_new = [r for r in rtr_dbs
                            if (r.gw_port_id and
-                               r.gw_port.network_id == new_network['id'])]
+                               r.gw_port.network_id in eqv_nets)]
                 prov = set()
                 cons = set()
                 for r in rtr_new:
