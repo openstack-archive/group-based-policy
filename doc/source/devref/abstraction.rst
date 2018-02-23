@@ -424,17 +424,17 @@ creating L3Policy a default ip_pool and default_subnet_prefix_length are
 created. If a user creates a PTG, a subnet will be pulled from ip_pool using
 default_subnet_prefix_length.
 
-The protocol in PolicyClassifier supports names “tcp”, “icmp”, “udp” and
+The protocol in PolicyClassifier supports names "tcp", "icmp", "udp" and
 protocol numbers 0 to 255 are supported.
 
 The port range in PolicyClassifier port range can be a single port number
 or a range (separated by a colon).
 
-The direction in PolicyClassifier direction can be “in”, “out”, or “bi”.
+The direction in PolicyClassifier direction can be "in", "out", or "bi".
 
-The type in PolicyAction type can be “allow” or “redirect”.
+The type in PolicyAction type can be "allow" or "redirect".
 
-The value in PolicyAction is used only in the case of “redirect” and
+The value in PolicyAction is used only in the case of "redirect" and
 corresponds to a service_chain_spec.
 
 The default route injection in VMs can be controlled by using the
@@ -445,7 +445,7 @@ when a VM is associated with more than one PTG, and we want it to get a
 specific default route and suppress others.
 
 NetworkServiceParams
-  * type - Is one of “ip_single”, “ip_pool”, “string”
+  * type - Is one of "ip_single", "ip_pool", "string"
   * name - A user-defined string, e.g. vip
   * value - String, e.g. self_subnet or external_subnet when the type is
     ip_single or ip_pool; a string value when the type is string
