@@ -1017,6 +1017,36 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('networks', net_id)
         self._check_network_deleted(net)
 
+    def test_svi_network_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # test create.
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        self.assertEqual(False, net[SVI])
+
+        net = self._make_network(self.fmt, 'net2', True,
+                                 arg_list=self.extension_attributes,
+                                 **{'apic:svi': 'True'}
+                                 )['network']
+        self.assertEqual(True, net[SVI])
+        self._check_network(net)
+
+        # updating SVI flag is not allowed
+        self._update('networks', net['id'], {SVI: 'False'}, 400)
+        self.assertEqual(True, net[SVI])
+        self._check_network(net)
+
+        # Test update the name.
+        data = {'network': {'name': 'newnamefornet'}}
+        net = self._update('networks', net['id'], data)['network']
+        self._check_network(net)
+
+        # test delete
+        self._delete('networks', net['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net['id']))
+        self._check_network_deleted(net)
+
     def test_security_group_lifecycle(self):
         # Test create
         sg = self._make_security_group(self.fmt,
@@ -4157,37 +4187,7 @@ class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
     pass
 
 
-class TestExtensionAttributes(TestAimMapping):
-
-    def test_svi_network_lifecycle(self):
-        session = db_api.get_session()
-        extn = extn_db.ExtensionDbMixin()
-
-        # test create.
-        net = self._make_network(self.fmt, 'net1', True)['network']
-        self.assertEqual(False, net[SVI])
-
-        net = self._make_network(self.fmt, 'net2', True,
-                                 arg_list=self.extension_attributes,
-                                 **{'apic:svi': 'True'}
-                                 )['network']
-        self.assertEqual(True, net[SVI])
-        self._check_network(net)
-
-        # updating SVI flag is not allowed
-        self._update('networks', net['id'], {SVI: 'False'}, 400)
-        self.assertEqual(True, net[SVI])
-        self._check_network(net)
-
-        # Test update the name.
-        data = {'network': {'name': 'newnamefornet'}}
-        net = self._update('networks', net['id'], data)['network']
-        self._check_network(net)
-
-        # test delete
-        self._delete('networks', net['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net['id']))
-        self._check_network_deleted(net)
+class TestExtensionAttributes(ApicAimTestCase):
 
     def test_external_network_lifecycle(self):
         session = db_api.get_session()
