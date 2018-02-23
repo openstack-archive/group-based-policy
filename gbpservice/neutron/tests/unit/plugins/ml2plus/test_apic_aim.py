@@ -3794,6 +3794,32 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
             self.assertIsNone(aim.get(aim_ctx, r),
                               'Resource: %s still in AIM' % r)
 
+    def test_security_group_migration_sanity(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self._make_network(self.fmt, 'net1', True)
+        sgs = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroup)
+        for sg in sgs:
+            self.aim_mgr.delete(aim_ctx, sg)
+        sgs = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroup)
+        self.assertEqual([], sgs)
+        sgsubs = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupSubject)
+        for sgsub in sgsubs:
+            self.aim_mgr.delete(aim_ctx, sgsub)
+        sgsubs = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupSubject)
+        self.assertEqual([], sgsubs)
+        sgrules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
+        for sgrule in sgrules:
+            self.aim_mgr.delete(aim_ctx, sgrule)
+        sgrules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
+        self.assertEqual([], sgrules)
+        data_migrations.do_apic_aim_security_group_migration(self.db_session)
+        sgs = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroup)
+        self.assertIsNotNone(sgs)
+        sgsubs = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupSubject)
+        self.assertIsNotNone(sgsubs)
+        sgrules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
+        self.assertIsNotNone(sgrules)
+
 
 class TestPortBinding(ApicAimTestCase):
     def test_bind_opflex_agent(self):
