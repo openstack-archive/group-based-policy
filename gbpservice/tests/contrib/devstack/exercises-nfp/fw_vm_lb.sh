@@ -56,14 +56,14 @@ delete_gbp_resources() {
 validate_gbp_resources() {
     ServiceChainInstanceCount=`gbp sci-list -f value | grep fw_lb-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "1" ]; then
-        echo "Chain creation Succeded"
+        echo "Chain creation Succeeded"
     else
         echo "Chain creation failed"
     fi
 
     ServiceChainNodeCount=`gbp scn-list -f value | grep FW_LB | wc -l`
     if [ "$ServiceChainNodeCount" -eq "2" ]; then
-        echo "Network function creation Succeded"
+        echo "Network function creation Succeeded"
     else
         echo "Network function creation failed"
     fi

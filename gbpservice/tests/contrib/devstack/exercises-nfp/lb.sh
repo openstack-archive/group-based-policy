@@ -55,7 +55,7 @@ delete_gbp_resources() {
 validate_gbp_resources() {
     ServiceChainInstanceCount=`gbp sci-list -f value | grep lb-provider | wc -l`
     if [ "$ServiceChainInstanceCount" -eq "1" ]; then
-        echo "Chain creation Succeded"
+        echo "Chain creation Succeeded"
     else
         echo "Chain creation failed"
     fi
