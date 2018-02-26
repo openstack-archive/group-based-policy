@@ -78,7 +78,13 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
 
     def process_create_network(self, plugin_context, data, result):
         is_svi = data.get(cisco_apic.SVI, False)
-        res_dict = {cisco_apic.SVI: is_svi}
+        is_bgp_enabled = data.get(cisco_apic.BGP, False)
+        bgp_type = data.get(cisco_apic.BGP_TYPE, "default_export")
+        asn = data.get(cisco_apic.BGP_ASN, "0")
+        res_dict = {cisco_apic.SVI: is_svi,
+                    cisco_apic.BGP: is_bgp_enabled,
+                    cisco_apic.BGP_TYPE: bgp_type,
+                    cisco_apic.BGP_ASN: asn}
         self.set_network_extn_db(plugin_context.session, result['id'],
                                  res_dict)
         result.update(res_dict)
@@ -108,13 +114,25 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             result.update(res_dict)
 
     def process_update_network(self, plugin_context, data, result):
-        # only CIDRs can be updated
-        if not cisco_apic.EXTERNAL_CIDRS in data:
+        # External_cidr, bgp_enable, bgp_type and bgp_asn can be updated.
+        if (cisco_apic.EXTERNAL_CIDRS not in data and
+                cisco_apic.BGP not in data and
+                cisco_apic.BGP_TYPE not in data and
+                cisco_apic.BGP_ASN not in data):
             return
+        res_dict = {}
         if result.get(cisco_apic.DIST_NAMES, {}).get(
             cisco_apic.EXTERNAL_NETWORK):
-            res_dict = {cisco_apic.EXTERNAL_CIDRS:
-                        data[cisco_apic.EXTERNAL_CIDRS]}
+            if cisco_apic.EXTERNAL_CIDRS in data:
+                res_dict = {cisco_apic.EXTERNAL_CIDRS:
+                            data[cisco_apic.EXTERNAL_CIDRS]}
+        if cisco_apic.BGP in data:
+            res_dict.update({cisco_apic.BGP: data[cisco_apic.BGP]})
+        if cisco_apic.BGP_TYPE in data:
+            res_dict.update({cisco_apic.BGP_TYPE: data[cisco_apic.BGP_TYPE]})
+        if cisco_apic.BGP_ASN in data:
+            res_dict.update({cisco_apic.BGP_ASN: data[cisco_apic.BGP_ASN]})
+        if res_dict:
             self.set_network_extn_db(plugin_context.session, result['id'],
                                      res_dict)
             result.update(res_dict)
