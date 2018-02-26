@@ -1,0 +1,9 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Mon, 26 Feb 2018 22:30:38 +0000
+Reviewed-on: https://review.openstack.org/543069
+Project: openstack/group-based-policy
+Branch: refs/heads/master
