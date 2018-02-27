@@ -3279,6 +3279,20 @@ class TestPolicyTarget(AIMBaseTestCase,
         ext_net2, _, sn2 = self._setup_external_network(
             'l2', dn='uni/tn-t1/out-l2/instP-n2')
         sn2 = {'subnet': sn2}
+        # create unmanaged BDs in the VRF connected to L3outs
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.BridgeDomain(tenant_name='common',
+                                               name='extra_bd_in_common-l1',
+                                               vrf_name='EXT-l1'))
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.BridgeDomain(tenant_name='t1',
+                                               name='extra_bd_in_t1-l1',
+                                               vrf_name='EXT-l1'))
+        self.aim_mgr.create(
+            aim_ctx, aim_resource.BridgeDomain(tenant_name='t1',
+                                               name='extra_bd_in_t1-l2',
+                                               vrf_name='EXT-l2'))
 
         with self.port(subnet=sn1) as port:
             port_id = port['port']['id']
