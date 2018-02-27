@@ -2068,14 +2068,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     try:
                         net_ids.append(self.name_mapper.reverse_network(
                             session, bd.name))
-                    except md_exc.InternalError as aie:
+                    except md_exc.InternalError:
                         # Check if BD maps to an external network
                         ext_ids = self.aim_mech_driver.get_network_ids_for_bd(
                             session, bd)
-                        if not ext_ids:
-                            LOG.error("%s", aie)
-                            raise
                         net_ids.extend(ext_ids)
+                        # If no external network is found, we ignore reverse
+                        # mapping failures because there may be APIC BDs in the
+                        # concerned VRF that Neutron is unaware of. This is
+                        # especially true for VRFs in the common tenant.
                 if net_ids:
                     subnets = self._get_subnets(plugin_context,
                                                 {'network_id': net_ids})
