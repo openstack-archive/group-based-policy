@@ -768,8 +768,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
 
         # SVI network with pre-existing l3out.
-        if (network_db.aim_extension_mapping.svi and
-                network_db.aim_extension_mapping.external_network_dn):
+        if self._is_preexisting_svi_db(network_db):
             _, ext_net, _ = self._get_aim_external_stuff_db(session,
                                                             network_db)
             if ext_net:
@@ -818,7 +817,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # Limit 1 subnet per SVI network as each SVI interface
         # in ACI can only have 1 primary addr
-        if network_db.aim_extension_mapping.svi:
+        if self._is_svi_db(network_db):
             subnets_size = (session.query(models_v2.Subnet)
                             .filter(models_v2.Subnet.network_id == network_id)
                             .count())
@@ -1270,8 +1269,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # SVI network with pre-existing l3out is not allowed to be
         # connected to a router at this moment
-        if (network_db.aim_extension_mapping.svi and
-                network_db.aim_extension_mapping.external_network_dn):
+        if self._is_preexisting_svi_db(network_db):
             raise exceptions.PreExistingSVICannotBeConnectedToRouter()
 
         # Find the address_scope(s) for the new interface.
@@ -1471,7 +1469,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # If external-gateway is set, handle external-connectivity changes.
         # External network is not supported for SVI network for now.
-        if router.gw_port_id and not network_db.aim_extension_mapping.svi:
+        if router.gw_port_id and not self._is_svi_db(network_db):
             net = self.plugin.get_network(context,
                                           router.gw_port.network_id)
             # If this is first interface-port, then that will determine
@@ -1614,7 +1612,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # If external-gateway is set, handle external-connectivity changes.
         # External network is not supproted for SVI network for now.
-        if router_db.gw_port_id and not network_db.aim_extension_mapping.svi:
+        if router_db.gw_port_id and not self._is_svi_db(network_db):
             net = self.plugin.get_network(context,
                                           router_db.gw_port.network_id)
             # If this was the last interface for this VRF for this
@@ -2322,7 +2320,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # NOTE: Must only be called for networks that are not yet
         # attached to any router.
 
-        if not network_db.aim_extension_mapping.svi:
+        if not self._is_svi_db(network_db):
             bd = self._get_network_bd(network_db.aim_mapping)
             epg = self._get_network_epg(network_db.aim_mapping)
             tenant_name = bd.tenant_name
@@ -2336,7 +2334,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # sure routing is enabled.
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
                       {'old': tenant_name, 'new': new_vrf.tenant_name})
-            if not network_db.aim_extension_mapping.svi:
+            if not self._is_svi_db(network_db):
                 bd = self.aim.get(aim_ctx, bd)
                 self.aim.delete(aim_ctx, bd)
                 bd.tenant_name = new_vrf.tenant_name
@@ -2371,7 +2369,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.aim.delete(aim_ctx, old_l3out)
         else:
             # Just set VRF and enable routing.
-            if not network_db.aim_extension_mapping.svi:
+            if not self._is_svi_db(network_db):
                 bd = self.aim.update(aim_ctx, bd, enable_routing=True,
                                      vrf_name=new_vrf.name)
             else:
@@ -2385,7 +2383,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Tenants have changed.
         nets_to_notify.add(network_db.id)
 
-        if not network_db.aim_extension_mapping.svi:
+        if not self._is_svi_db(network_db):
             return bd, epg
         else:
             ext_net = self._get_network_l3out_ext_net(network_db.aim_mapping)
@@ -2412,7 +2410,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.debug("Moving network from tenant %(old)s to tenant %(new)s",
                       {'old': old_vrf.tenant_name, 'new': new_tenant_name})
 
-            if not network_db.aim_extension_mapping.svi:
+            if not self._is_svi_db(network_db):
                 bd = self._get_network_bd(network_db.aim_mapping)
                 bd = self.aim.get(aim_ctx, bd)
                 self.aim.delete(aim_ctx, bd)
@@ -2445,7 +2443,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.aim.delete(aim_ctx, old_l3out)
         else:
             # Just set unrouted VRF and disable routing.
-            if not network_db.aim_extension_mapping.svi:
+            if not self._is_svi_db(network_db):
                 bd = self._get_network_bd(network_db.aim_mapping)
                 bd = self.aim.update(aim_ctx, bd, enable_routing=False,
                                      vrf_name=new_vrf.name)
@@ -2796,6 +2794,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _is_svi(self, network):
         return network.get(cisco_apic.SVI)
+
+    def _is_svi_db(self, network_db):
+        if (network_db.aim_extension_mapping and
+                network_db.aim_extension_mapping.svi):
+            return True
+        return False
+
+    def _is_preexisting_svi_db(self, network_db):
+        if (network_db.aim_extension_mapping and
+                network_db.aim_extension_mapping.svi and
+                network_db.aim_extension_mapping.external_network_dn):
+            return True
+        return False
 
     def _is_bgp_enabled(self, network):
         return network.get(cisco_apic.BGP)
