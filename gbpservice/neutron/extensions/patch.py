@@ -536,6 +536,10 @@ try:
 
     # NOTE(ivar): Trunk subports don't have a device ID, we need this
     # validation to pass
+    # NOTE(ivar): It would be ideal to re-use the original function and call
+    # it instead of copying it here. However, it looks like this module gets
+    # reloaded a number of times and this would cause the original definition
+    # to be overridden with the new one, thus causing an endless recursion.
     def _validate_port_pair_ingress_egress(self, ingress, egress):
         if any(port.get('device_owner') == tcst.TRUNK_SUBPORT_OWNER
                for port in [ingress, egress]):
