@@ -62,7 +62,7 @@ class BadFlowClassifier(exceptions.BadRequest):
 
 class FlowClassifierSameSrcDstNetworks(exceptions.BadRequest):
     message = _("Source and Destination networks must be different in Flow "
-                "Classifier.")
+                "Classifier if not SVI.")
 
 
 class RouterIDInUseByFlowClassifier(exceptions.BadRequest):
@@ -112,3 +112,8 @@ class ConflictingNetworksDetectedInPortChain(exceptions.BadRequest):
 class DefaultExternalNetworkNotFound(exceptions.NotFound):
     message = _("Default External Network not found for SVI network "
                 "%(id)s.")
+
+
+class FlowClassifierSameSrcDstSVISameSubnet(exceptions.BadRequest):
+    message = _("Source and Destination networks must have different subnets "
+                "in Flow Classifier if SVI.")
