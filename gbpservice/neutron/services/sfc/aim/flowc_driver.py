@@ -81,18 +81,26 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
                if not validators.is_attr_set(l7_p.get(x))):
             raise sfc_exc.BadFlowClassifier(
                 params=sfc_cts.AIM_FLC_L7_PARAMS.keys())
-        if l7_p[sfc_cts.LOGICAL_SRC_NET] == l7_p[sfc_cts.LOGICAL_DST_NET]:
-            raise sfc_exc.FlowClassifierSameSrcDstNetworks()
-        # Verify networks exist
-        self.plugin.get_network(context._plugin_context,
-                                l7_p[sfc_cts.LOGICAL_SRC_NET])
-        self.plugin.get_network(context._plugin_context,
-                                l7_p[sfc_cts.LOGICAL_DST_NET])
         # Verify standard params are set
         # TODO(ivar): src and dst prefix are needed only for SVI networks
         if any(x for x in sfc_cts.AIM_FLC_PARAMS
                if not validators.is_attr_set(fc.get(x))):
             raise sfc_exc.BadFlowClassifier(params=sfc_cts.AIM_FLC_PARAMS)
+        # Verify networks exist
+        src_net = self.plugin.get_network(
+            context._plugin_context, l7_p[sfc_cts.LOGICAL_SRC_NET])
+        if l7_p[sfc_cts.LOGICAL_SRC_NET] != l7_p[sfc_cts.LOGICAL_DST_NET]:
+            # Verify dst existence
+            self.plugin.get_network(context._plugin_context,
+                                    l7_p[sfc_cts.LOGICAL_DST_NET])
+        elif src_net.get('apic:svi') is False:
+            # Same network, not SVI
+            raise sfc_exc.FlowClassifierSameSrcDstNetworks()
+        elif len(set(fc.get(x) for x in ['source_ip_prefix',
+                                         'destination_ip_prefix'])) == 1:
+            # Same network, SVI, same subnets. For overlapping (but not same)
+            # subnets LPM will be applied.
+            raise sfc_exc.FlowClassifierSameSrcDstSVISameSubnet()
 
         # TODO(ivar): Any other parameter is unsupported, for now just
         # unenforced.
