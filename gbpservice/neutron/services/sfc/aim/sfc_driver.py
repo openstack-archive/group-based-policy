@@ -247,7 +247,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
         egress_dom = self.aim_mech._get_port_unique_domain(p_ctx, egress_port)
         if igress_dom != egress_dom:
             raise exceptions.PortPairsDifferentDomain(id=context.current['id'])
-        if any(x for x in [igress_dom, egress_dom] if x == (None, None)):
+        if igress_dom == (None, None):
             raise exceptions.PortPairsNoUniqueDomain(id=context.current['id'])
         # Ensure  domain types supported
         if igress_dom[0] not in SUPPORTED_DOM_TYPES:

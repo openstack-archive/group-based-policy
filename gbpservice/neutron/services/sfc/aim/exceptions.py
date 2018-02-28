@@ -62,7 +62,7 @@ class BadFlowClassifier(exceptions.BadRequest):
 
 class FlowClassifierSameSrcDstNetworks(exceptions.BadRequest):
     message = _("Source and Destination networks must be different in Flow "
-                "Classifier.")
+                "Classifier if not SVI.")
 
 
 class RouterIDInUseByFlowClassifier(exceptions.BadRequest):
@@ -116,3 +116,8 @@ class DefaultExternalNetworkNotFound(exceptions.NotFound):
 
 class TooManyPPGsPerChainError(exceptions.BadRequest):
     message = _("The max number of PPGs per chain supported is %(maxn)s.")
+
+
+class FlowClassifierSameSrcDstSVISameSubnet(exceptions.BadRequest):
+    message = _("Source and Destination networks must have different subnets "
+                "in Flow Classifier if SVI.")

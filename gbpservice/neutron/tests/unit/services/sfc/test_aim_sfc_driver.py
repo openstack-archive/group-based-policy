@@ -681,7 +681,20 @@ class TestFlowClassifier(TestAIMServiceFunctionChainingBase):
             l7_parameters={
                 'logical_source_network': net1['network']['id'],
                 'logical_destination_network': net2['network']['id']},
-            source_ip_prefix='192.168.0.0/24', expected_res_status=404)
+            source_ip_prefix='192.168.0.0/24',
+            destination_ip_prefix='192.168.1.0/24', expected_res_status=404)
+        net_svi = self._make_network(self.fmt, 'net_svi', True,
+                                     arg_list=self.extension_attributes,
+                                     **{'apic:svi': True})
+        self._make_subnet(self.fmt, net_svi, '192.168.0.1', '192.168.0.0/24')
+        fc = self.create_flow_classifier(
+            l7_parameters={
+                'logical_source_network': net_svi['network']['id'],
+                'logical_destination_network': net_svi['network']['id']},
+            source_ip_prefix='192.168.0.0/24',
+            destination_ip_prefix='192.168.1.0/24',
+            expected_res_status=201)['flow_classifier']
+        self.delete_flow_classifier(fc['id'], expected_res_status=204)
 
 
 class TestPortChain(TestAIMServiceFunctionChainingBase):
@@ -823,14 +836,18 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                                                 app_profile_name='new',
                                                 name='new'))
         # But it doesn't if tenant stays the same
-        self.aim_mgr.create(
-            self._aim_context, aim_res.EndpointGroup(
-                tenant_name=net_db.aim_mapping.epg_tenant_name,
-                app_profile_name='new', name='new'))
-        self.aim_mech._set_network_epg_and_notify(
-            self._ctx, net_db.aim_mapping, aim_res.EndpointGroup(
-                tenant_name=net_db.aim_mapping.epg_tenant_name,
-                app_profile_name='new', name='new'))
+        if not self.dst_svi:
+            net_db = self._plugin._get_network(
+                self._ctx,
+                fc['l7_parameters']['logical_destination_network'])
+            self.aim_mgr.create(
+                self._aim_context, aim_res.EndpointGroup(
+                    tenant_name=net_db.aim_mapping.epg_tenant_name,
+                    app_profile_name='new', name='new'))
+            self.aim_mech._set_network_epg_and_notify(
+                self._ctx, net_db.aim_mapping, aim_res.EndpointGroup(
+                    tenant_name=net_db.aim_mapping.epg_tenant_name,
+                    app_profile_name='new', name='new'))
 
         pp = self.show_port_pair(ppg['port_pairs'][0])['port_pair']
         net = self._get_port_network(pp['ingress'])
@@ -1045,6 +1062,21 @@ class TestPortChainSVI(TestPortChain):
         self.src_svi = True
         self.dst_svi = True
 
-    def test_vrf_update(self):
-        # TODO(ivar): VRF is not in mapping, can't be updated
-        pass
+    def test_pc_flowc_same_network(self):
+        net_svi = self._make_network(self.fmt, 'net_svi', True,
+                                     arg_list=self.extension_attributes,
+                                     **{'apic:svi': True})
+        self._make_subnet(self.fmt, net_svi, '192.168.0.1', '192.168.0.0/24')
+        fc = self.create_flow_classifier(
+            l7_parameters={
+                'logical_source_network': net_svi['network']['id'],
+                'logical_destination_network': net_svi['network']['id']},
+            source_ip_prefix='192.168.0.0/24',
+            destination_ip_prefix='192.168.1.0/24',
+            expected_res_status=201)['flow_classifier']
+        ppg = self._create_simple_ppg(pairs=2)
+        pc = self.create_port_chain(port_pair_groups=[ppg['id']],
+                                    flow_classifiers=[fc['id']],
+                                    expected_res_status=201)['port_chain']
+        self._verify_pc_mapping(pc)
+        self._verify_pc_delete(pc)
