@@ -60,6 +60,11 @@ class PreExistingSVICannotBeConnectedToRouter(exceptions.BadRequest):
                 "be connected to a router.")
 
 
+class PreExistingSVICannotUseSameL3out(exceptions.BadRequest):
+    message = _("Can not create a SVI network with pre-existing l3out "
+                "if that l3out has been used by another SVI network.")
+
+
 class OnlyOneSubnetInSVINetwork(exceptions.BadRequest):
     message = _("Only one subnet is allowed in SVI network.")
 

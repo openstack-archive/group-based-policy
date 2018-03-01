@@ -17,6 +17,7 @@ from neutron.db import models_v2
 from neutron_lib.db import model_base
 import sqlalchemy as sa
 from sqlalchemy import orm
+from sqlalchemy.sql.expression import true
 
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3
@@ -136,6 +137,14 @@ class ExtensionDbMixin(object):
     def get_network_ids_by_l3out_dn(self, session, dn, lock_update=False):
         ids = session.query(NetworkExtensionDb.network_id).filter(
             NetworkExtensionDb.external_network_dn.like(dn + "/%"))
+        if lock_update:
+            ids = ids.with_lockmode('update')
+        return [i[0] for i in ids]
+
+    def get_svi_network_ids_by_l3out_dn(self, session, dn, lock_update=False):
+        ids = session.query(NetworkExtensionDb.network_id).filter(
+            NetworkExtensionDb.external_network_dn.like(dn + "/%"),
+            NetworkExtensionDb.svi == true())
         if lock_update:
             ids = ids.with_lockmode('update')
         return [i[0] for i in ids]
