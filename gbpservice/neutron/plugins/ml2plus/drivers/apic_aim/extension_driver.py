@@ -76,11 +76,26 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 else:
                     LOG.exception("APIC AIM extend_network_dict failed")
 
+    def validate_bgp_params(self, data, result=None):
+        if result:
+            is_svi = result.get(cisco_apic.SVI)
+        else:
+            is_svi = data.get(cisco_apic.SVI, False)
+        is_bgp_enabled = data.get(cisco_apic.BGP, False)
+        bgp_type = data.get(cisco_apic.BGP_TYPE, "default_export")
+        asn = data.get(cisco_apic.BGP_ASN, "0")
+        if not is_svi and (is_bgp_enabled or (bgp_type != "default_export")
+                           or (asn != "0")):
+            raise n_exc.InvalidInput(error_message="Network has to be created"
+                                     " as svi type(--apic:svi True) to enable"
+                                     " BGP or to set BGP parameters")
+
     def process_create_network(self, plugin_context, data, result):
         is_svi = data.get(cisco_apic.SVI, False)
         is_bgp_enabled = data.get(cisco_apic.BGP, False)
         bgp_type = data.get(cisco_apic.BGP_TYPE, "default_export")
         asn = data.get(cisco_apic.BGP_ASN, "0")
+        self.validate_bgp_params(data)
         res_dict = {cisco_apic.SVI: is_svi,
                     cisco_apic.BGP: is_bgp_enabled,
                     cisco_apic.BGP_TYPE: bgp_type,
@@ -126,6 +141,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             if cisco_apic.EXTERNAL_CIDRS in data:
                 res_dict = {cisco_apic.EXTERNAL_CIDRS:
                             data[cisco_apic.EXTERNAL_CIDRS]}
+        self.validate_bgp_params(data, result)
         if cisco_apic.BGP in data:
             res_dict.update({cisco_apic.BGP: data[cisco_apic.BGP]})
         if cisco_apic.BGP_TYPE in data:
