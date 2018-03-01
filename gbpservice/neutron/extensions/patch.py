@@ -26,6 +26,7 @@ from neutron_lib.api import validators
 from neutron_lib import constants
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
+from oslo_utils import uuidutils
 from sqlalchemy import event
 from sqlalchemy.orm import exc
 
