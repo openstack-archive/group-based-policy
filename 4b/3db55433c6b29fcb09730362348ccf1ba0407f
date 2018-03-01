@@ -1,0 +1,8 @@
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 01 Mar 2018 00:57:53 +0000
+Reviewed-on: https://review.openstack.org/547241
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
