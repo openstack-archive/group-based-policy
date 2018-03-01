@@ -499,10 +499,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 elif isinstance(resource, aim_resource.VRF):
                     vrf = resource
         elif self._is_svi(current):
-            _, ext_net, _ = self._get_aim_external_objects(current)
+            l3out, ext_net, _ = self._get_aim_external_objects(current)
+            if ext_net:
+                extn_db = extension_db.ExtensionDbMixin()
+                other_nets = set(
+                    extn_db.get_svi_network_ids_by_l3out_dn(session, l3out.dn,
+                                                            lock_update=True))
+                other_nets.discard(current['id'])
+                if other_nets:
+                    raise exceptions.PreExistingSVICannotUseSameL3out()
             # This means no DN is being provided. Then we should try to create
             # the l3out automatically
-            if not ext_net:
+            else:
                 tenant_aname = self.name_mapper.project(session,
                                                         current['tenant_id'])
                 vrf = self._map_unrouted_vrf()
