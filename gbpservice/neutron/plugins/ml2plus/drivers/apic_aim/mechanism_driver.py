@@ -2020,35 +2020,43 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   ', '.join([str(p) for p in
                              (host, interface, mac, switch, module, port,
                               pod_id, port_description)]))
-        if not switch:
-            self.delete_link(context, host, interface, mac, switch, module,
-                             port)
-            return
+        with db_api.context_manager.writer.using(context):
+            if not switch:
+                self.delete_link(context, host, interface, mac, switch, module,
+                                 port)
+                return
 
-        session = context.session
-        aim_ctx = aim_context.AimContext(db_session=session)
-        hlink = self.aim.get(aim_ctx,
-                             aim_infra.HostLink(host_name=host,
-                                                interface_name=interface))
-        if not hlink or hlink.path != port_description:
-            attrs = dict(interface_mac=mac,
-                         switch_id=switch, module=module, port=port,
-                         path=port_description, pod_id=pod_id)
-            if hlink:
-                old_path = hlink.path
-                hlink = self.aim.update(aim_ctx, hlink, **attrs)
-            else:
-                old_path = None
-                hlink = aim_infra.HostLink(host_name=host,
-                                           interface_name=interface,
-                                           **attrs)
-                hlink = self.aim.create(aim_ctx, hlink)
-            # Update static paths of all EPGs with ports on the host
-            nets_segs = self._get_non_opflex_segments_on_host(context, host)
-            for net, seg in nets_segs:
-                self._update_static_path_for_network(session, net, seg,
-                                                     old_path=old_path,
-                                                     new_path=hlink.path)
+            session = context.session
+            aim_ctx = aim_context.AimContext(db_session=session)
+            hlink = self.aim.get(aim_ctx,
+                                 aim_infra.HostLink(host_name=host,
+                                                    interface_name=interface))
+            if not hlink or hlink.path != port_description:
+                attrs = dict(interface_mac=mac,
+                             switch_id=switch, module=module, port=port,
+                             path=port_description, pod_id=pod_id)
+                if hlink:
+                    old_path = hlink.path
+                    hlink = self.aim.update(aim_ctx, hlink, **attrs)
+                else:
+                    old_path = None
+                    hlink = aim_infra.HostLink(host_name=host,
+                                               interface_name=interface,
+                                               **attrs)
+                    hlink = self.aim.create(aim_ctx, hlink)
+                # Update static paths of all EPGs with ports on the host
+                nets_segs = self._get_non_opflex_segments_on_host(context,
+                                                                  host)
+                for net, seg in nets_segs:
+                    try:
+                        self._update_static_path_for_network(
+                            session, net, seg, old_path=old_path,
+                            new_path=hlink.path)
+                    except Exception as e:
+                        # If one fails don't affect all the others
+                        LOG.error("Static path update on update_link has "
+                                  "failed for network %s: %s" % (net['id'],
+                                                                 e.message))
 
     # Topology RPC method handler
     def delete_link(self, context, host, interface, mac, switch, module, port):
@@ -2058,22 +2066,30 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context.session
         aim_ctx = aim_context.AimContext(db_session=session)
 
-        hlink = self.aim.get(aim_ctx,
-                             aim_infra.HostLink(host_name=host,
-                                                interface_name=interface))
-        if not hlink:
-            return
+        with db_api.context_manager.writer.using(context):
+            hlink = self.aim.get(aim_ctx,
+                                 aim_infra.HostLink(host_name=host,
+                                                    interface_name=interface))
+            if not hlink:
+                return
 
-        self.aim.delete(aim_ctx, hlink)
-        # if there are no more host-links for this host (multiple links may
-        # exist with VPC), update EPGs with ports on this host to remove
-        # the static path to this host
-        if not self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host,
-                             path=hlink.path):
-            nets_segs = self._get_non_opflex_segments_on_host(context, host)
-            for net, seg in nets_segs:
-                self._update_static_path_for_network(session, net, seg,
-                                                     old_path=hlink.path)
+            self.aim.delete(aim_ctx, hlink)
+            # if there are no more host-links for this host (multiple links may
+            # exist with VPC), update EPGs with ports on this host to remove
+            # the static path to this host
+            if not self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host,
+                                 path=hlink.path):
+                nets_segs = self._get_non_opflex_segments_on_host(context,
+                                                                  host)
+                for net, seg in nets_segs:
+                    try:
+                        self._update_static_path_for_network(
+                            session, net, seg, old_path=hlink.path)
+                    except Exception as e:
+                        # If one fails don't affect all the others
+                        LOG.error("Static path update on update_link has "
+                                  "failed for network %s: %s" % (net['id'],
+                                                                 e.message))
 
     def _agent_bind_port(self, context, agent_type, bind_strategy):
         current = context.current
