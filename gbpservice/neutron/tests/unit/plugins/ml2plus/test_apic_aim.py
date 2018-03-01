@@ -4233,7 +4233,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         session = db_api.get_session()
         extn = extn_db.ExtensionDbMixin()
 
-        # test create.
+        # Test create SVI network without BGP.
         net1 = self._make_network(self.fmt, 'net1', True,
                                   arg_list=self.extension_attributes,
                                   **{'apic:svi': 'True'})['network']
@@ -4242,48 +4242,48 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual("default_export", net1[BGP_TYPE])
         self.assertEqual("0", net1[ASN])
 
-        # test create bgp non-svi
-        net11 = self._make_network(self.fmt, 'net11', True,
+        # Test create non-SVI network with BGP.
+        resp = self._create_network(self.fmt, 'net11', True,
                                   arg_list=self.extension_attributes,
                                   **{'apic:svi': 'False',
                                      BGP: True,
                                      BGP_TYPE: "default_export",
-                                     ASN: "65000"})['network']
-        self.assertEqual(False, net11[SVI])
-        self.assertEqual(True, net11[BGP])
-        self.assertEqual("default_export", net11[BGP_TYPE])
-        self.assertEqual("65000", net11[ASN])
+                                     ASN: "65000"})
+        self.assertEqual(resp.status_code, 400)
+        res = self.deserialize(self.fmt, resp)
+        self.assertIn("Invalid input for operation: Network has to be "
+                      "created as svi type(--apic:svi True)"
+                      " to enable BGP or to set BGP parameters",
+                      res['NeutronError']['message'])
 
-        # test update bgp non-svi
-        net11 = self._update('networks', net11['id'],
-                            {'network': {BGP: True,
-                                         BGP_TYPE: "default_export",
-                                         ASN: "100"}})['network']
-        self.assertEqual(False, net11[SVI])
-        self.assertEqual(True, net11[BGP])
-        self.assertEqual("default_export", net11[BGP_TYPE])
-        self.assertEqual("100", net11[ASN])
-
-        # test update bgp non-svi
-        net11 = self._update('networks', net11['id'],
-                             {'network': {BGP: False,
-                                          BGP_TYPE: "",
-                                          ASN: "10"}})['network']
-        self.assertEqual(False, net11[SVI])
-        self.assertEqual(False, net11[BGP])
-        self.assertEqual("", net11[BGP_TYPE])
-        self.assertEqual("10", net11[ASN])
-
+        # Test create SVI network with BGP.
         net2 = self._make_network(self.fmt, 'net2', True,
-                                 arg_list=self.extension_attributes,
-                                 **{'apic:svi': True,
-                                    BGP: True,
-                                    ASN: "65000"})['network']
+                                  arg_list = self.extension_attributes,
+                                  ** {'apic:svi': True,
+                                      BGP: True,
+                                      ASN: "65000"})['network']
         self.assertEqual(True, net2[BGP])
         self.assertEqual("default_export", net2[BGP_TYPE])
         self.assertEqual("65000", net2[ASN])
 
-        #test update
+        # Test update non-SVI network with BGP.
+        net11 = self._make_network(self.fmt, 'net11', True,
+                                  arg_list=self.extension_attributes
+                                   )['network']
+        data = {'network': {BGP: True,
+                            BGP_TYPE: "default_export",
+                            ASN: "100"}}
+        req = self.new_update_request('networks', data, net11['id'],
+                                      self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_code, 400)
+        res = self.deserialize(self.fmt, resp)
+        self.assertIn("Invalid input for operation: Network should have been "
+                      "created as SVI(--apic:svi True), in order to enable "
+                      "BGP or to set BGP parameters",
+                      res['NeutronError']['message'])
+
+        # Test update SVI network with BGP.
         net1 = self._update('networks', net1['id'],
                             {'network': {BGP: True,
                                          BGP_TYPE: "",
@@ -4292,7 +4292,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual("", net1[BGP_TYPE])
         self.assertEqual("100", net1[ASN])
 
-        # test delete
+        # Test delete.
         self._delete('networks', net1['id'])
         self.assertFalse(extn.get_network_extn_db(session, net1['id']))
         self._delete('networks', net2['id'])
