@@ -81,6 +81,14 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         is_bgp_enabled = data.get(cisco_apic.BGP, False)
         bgp_type = data.get(cisco_apic.BGP_TYPE, "default_export")
         asn = data.get(cisco_apic.BGP_ASN, "0")
+
+        if not is_svi and (is_bgp_enabled or bgp_type != "default_export"
+        or asn != "0"):
+            raise n_exc.InvalidInput(
+                error_message="Network has to be created as svi type"
+                              "(--apic:svi True) to enable BGP or to set "
+                              "BGP parameters")
+
         res_dict = {cisco_apic.SVI: is_svi,
                     cisco_apic.BGP: is_bgp_enabled,
                     cisco_apic.BGP_TYPE: bgp_type,
@@ -126,6 +134,15 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             if cisco_apic.EXTERNAL_CIDRS in data:
                 res_dict = {cisco_apic.EXTERNAL_CIDRS:
                             data[cisco_apic.EXTERNAL_CIDRS]}
+
+        if ((data.get(cisco_apic.BGP) or (data.get(cisco_apic.BGP_TYPE)
+            != "default_export") or (data.get(cisco_apic.BGP_ASN) != "0"))
+            and not result.get(cisco_apic.SVI)):
+            raise n_exc.InvalidInput(
+                error_message="Network should have been created as SVI"
+                              "(--apic:svi True), in order to enable BGP "
+                              "or to set BGP parameters")
+
         if cisco_apic.BGP in data:
             res_dict.update({cisco_apic.BGP: data[cisco_apic.BGP]})
         if cisco_apic.BGP_TYPE in data:
