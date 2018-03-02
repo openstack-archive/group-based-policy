@@ -803,17 +803,35 @@ class SfcAIMDriver(SfcAIMDriverBase):
         if event == events.PRECOMMIT_UPDATE:
             context = driver_context
             p_ctx = driver_context._plugin_context
+            port_id = context.current['id']
             c_host = context.host
             o_host = context.original_host
-            if c_host and (c_host != o_host):
+            c_bound = self.aim_mech._is_port_bound(context.current)
+            o_bound = self.aim_mech._is_port_bound(context.original)
+            c_active = context.current.get(
+                'status') == n_constants.PORT_STATUS_ACTIVE
+            o_active = context.original.get(
+                'status') == n_constants.PORT_STATUS_ACTIVE
+            if c_bound and c_active and ((c_host != o_host) or
+                                         (c_bound != o_bound) or
+                                         (c_active != o_active)):
+                LOG.debug("Update port pair for port %s", context.current)
                 pps = self.sfc_plugin.get_port_pairs(
                     p_ctx, filters={'ingress': [driver_context.current['id']]})
                 pps.extend(self.sfc_plugin.get_port_pairs(
                     p_ctx, filters={'egress': [driver_context.current['id']]}))
                 for pp in pps:
-                    d_ctx = sfc_ctx.PortPairContext(context._plugin, p_ctx, pp,
-                                                    pp)
-                    self.update_port_pair_precommit(d_ctx, remap=True)
+                    # Only update if both ports are bound
+                    other = pp['ingress'] if pp['ingress'] != port_id else (
+                        pp['egress'])
+                    other = self.plugin.get_port(p_ctx, other)
+                    other_bound = self.aim_mech._is_port_bound(other)
+                    other_active = other.get(
+                        'status') == n_constants.PORT_STATUS_ACTIVE
+                    if other_bound and other_active:
+                        d_ctx = sfc_ctx.PortPairContext(self.sfc_plugin, p_ctx,
+                                                        pp, pp)
+                        self.update_port_pair_precommit(d_ctx, remap=True)
 
     def _handle_net_gbp_change(self, rtype, event, trigger, context,
                                network_id, **kwargs):

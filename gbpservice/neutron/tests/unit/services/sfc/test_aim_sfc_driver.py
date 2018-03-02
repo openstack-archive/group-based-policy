@@ -158,8 +158,10 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         for i in range(pairs):
             p1 = self._make_port(self.fmt, nets[0])['port']
             self._bind_port_to_host(p1['id'], 'h%s' % ((i % 2) + 1))
+            self._plugin.update_port_status(self._ctx, p1['id'], 'ACTIVE')
             p2 = self._make_port(self.fmt, nets[1])['port']
             self._bind_port_to_host(p2['id'], 'h%s' % ((i % 2) + 1))
+            self._plugin.update_port_status(self._ctx, p2['id'], 'ACTIVE')
             pp = self.create_port_pair(ingress=p1['id'], egress=p2['id'],
                                        expected_res_status=201)['port_pair']
             port_pairs.append(pp)
@@ -986,6 +988,69 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                                     expected_res_status=201)['port_chain']
         self._verify_pc_mapping(pc)
         self._verify_pc_delete(pc)
+
+    def test_pc_mapping_default_sub_both(self):
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        # New classifier with only one change in subnet
+        fc2 = self.create_flow_classifier(
+            l7_parameters={
+                'logical_source_network': fc[
+                    'l7_parameters']['logical_source_network'],
+                'logical_destination_network': fc[
+                    'l7_parameters']['logical_destination_network']},
+            source_ip_prefix='0.0.0.0/0',
+            destination_ip_prefix='0.0.0.0/0',
+            expected_res_status=201)['flow_classifier']
+
+        ppg = self._create_simple_ppg(pairs=2)
+        pc = self.create_port_chain(port_pair_groups=[ppg['id']],
+                                    flow_classifiers=[fc2['id']],
+                                    expected_res_status=201)['port_chain']
+        self._verify_pc_mapping(pc)
+        self._verify_pc_delete(pc)
+
+    def test_port_pair_device_migration(self):
+
+        def verify_port_in_host(port, host):
+            dci = self.aim_mgr.find(
+                self._aim_context, aim_sg.ConcreteDeviceInterface,
+                name='prt_' + port['id'])[0]
+            self.assertEqual(self.path_by_host[host], dci.path)
+
+        ppg = self._create_simple_ppg(pairs=1)
+        pp = self.show_port_pair(ppg['port_pairs'][0])['port_pair']
+        iprt = self._show_port(pp['ingress'])
+        eprt = self._show_port(pp['egress'])
+        # Ports are initially bound to H1
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        pc = self.create_port_chain(port_pair_groups=[ppg['id']],
+                                    flow_classifiers=[fc['id']],
+                                    expected_res_status=201)['port_chain']
+        # Rebind completely first port, then second
+        iprt = self._unbind_port(iprt['id'])['port']
+        verify_port_in_host(iprt, 'h1')
+        self._plugin.update_port_status(self._ctx, iprt['id'], 'BUILD')
+        verify_port_in_host(iprt, 'h1')
+        self._bind_port_to_host(iprt['id'], 'h2')
+        verify_port_in_host(iprt, 'h1')
+        self._plugin.update_port_status(self._ctx, iprt['id'], 'ACTIVE')
+        verify_port_in_host(iprt, 'h2')
+
+        eprt = self._unbind_port(eprt['id'])['port']
+        verify_port_in_host(eprt, 'h1')
+        self._plugin.update_port_status(self._ctx, eprt['id'], 'BUILD')
+        verify_port_in_host(eprt, 'h1')
+        self._bind_port_to_host(eprt['id'], 'h2')
+        verify_port_in_host(eprt, 'h1')
+        self._plugin.update_port_status(self._ctx, iprt['id'], 'BUILD')
+        self._plugin.update_port_status(self._ctx, eprt['id'], 'ACTIVE')
+        # Other is not active
+        verify_port_in_host(eprt, 'h1')
+        self._plugin.update_port_status(self._ctx, iprt['id'], 'ACTIVE')
+        verify_port_in_host(eprt, 'h2')
+        self._verify_pc_mapping(pc)
 
     # Enable once fixed on the SVI side.
     def _test_pc_mapping_default_sub_ipv6(self):
