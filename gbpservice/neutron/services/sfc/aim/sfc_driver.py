@@ -698,6 +698,17 @@ class SfcAIMDriver(SfcAIMDriverBase):
         attrs = ['flow_classifiers', 'port_pair_groups', 'name']
         return any(context.current[a] != context.original[a] for a in attrs)
 
+    def _should_regenerate_flowc(self, context):
+        current = context.current
+        original = context.original
+        l7_curr = current['l7_parameters']
+        l7_orig = original['l7_parameters']
+        return (
+            any(current[x] != original[x] for x in
+                sfc_cts.AIM_FLC_PARAMS + ['name'])
+            or any(l7_curr[x] != l7_orig[x] for x in
+                   sfc_cts.AIM_FLC_L7_PARAMS.keys()))
+
     def _get_ppg_device_cluster(self, session, ppg, tenant):
         tenant_aid = tenant
         ppg_aid = self.name_mapper.port_pair_group(session, ppg['id'])
@@ -781,20 +792,15 @@ class SfcAIMDriver(SfcAIMDriverBase):
     def _handle_flow_classifier(self, rtype, event, trigger, driver_context,
                                 **kwargs):
         if event == events.PRECOMMIT_UPDATE:
-            current = driver_context.current
-            original = driver_context.original
-            pctx = driver_context._plugin_context
-            l7_curr = current['l7_parameters']
-            l7_orig = original['l7_parameters']
-            if (any(current[x] != original[x] for x in sfc_cts.AIM_FLC_PARAMS)
-                or any(l7_curr[x] != l7_orig[x] for x in
-                       sfc_cts.AIM_FLC_L7_PARAMS.keys())):
+            if self._should_regenerate_flowc(driver_context):
                 # reject if in use
-                for chain in self._get_chains_by_classifier_id(pctx,
-                                                               current['id']):
-                    raise exceptions.FlowClassifierInUseByAChain(
-                        fields=(sfc_cts.AIM_FLC_L7_PARAMS.keys() +
-                                sfc_cts.AIM_FLC_PARAMS), pc_id=chain['id'])
+                for chain in self._get_chains_by_classifier_id(
+                        driver_context._plugin_context,
+                        driver_context.current['id']):
+                    c_ctx = sfc_ctx.PortChainContext(
+                        driver_context._plugin, driver_context._plugin_context,
+                        chain, chain)
+                    self.update_port_chain_precommit(c_ctx, remap=True)
 
     def _handle_port_bound(self, rtype, event, trigger, driver_context,
                            **kwargs):
