@@ -1001,6 +1001,24 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
         self._verify_pc_mapping(pc)
         self._verify_pc_delete(pc)
 
+    def test_pc_update_flowc(self):
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        ppg = self._create_simple_ppg(pairs=2)
+        pc = self.create_port_chain(port_pair_groups=[ppg['id']],
+                                    flow_classifiers=[fc['id']],
+                                    expected_res_status=201)['port_chain']
+        self.update_flow_classifier(
+            fc['id'], l7_parameters={
+                'logical_source_network': fc[
+                    'l7_parameters']['logical_source_network'],
+                'logical_destination_network': fc[
+                    'l7_parameters']['logical_source_network']},
+            expected_res_status=200)
+        self._verify_pc_mapping(pc)
+        self.update_flow_classifier(fc['id'], name='newname')
+        self._verify_pc_mapping(pc)
+
 
 class TestPortChainSVI(TestPortChain):
 
