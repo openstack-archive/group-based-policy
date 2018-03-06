@@ -1081,6 +1081,20 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
             port_description='topology/pod-1/paths-103/pathep-[eth3/1]')
         self._verify_pc_mapping(pc)
 
+    def test_pc_update_flowc(self):
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        ppg = self._create_simple_ppg(pairs=2)
+        pc = self.create_port_chain(port_pair_groups=[ppg['id']],
+                                    flow_classifiers=[fc['id']],
+                                    expected_res_status=201)['port_chain']
+        self.update_flow_classifier(
+            fc['id'], name='new_name',
+            expected_res_status=200)
+        self._verify_pc_mapping(pc)
+        self.update_flow_classifier(fc['id'], name='newname')
+        self._verify_pc_mapping(pc)
+
 
 class TestPortChainSVI(TestPortChain):
 
