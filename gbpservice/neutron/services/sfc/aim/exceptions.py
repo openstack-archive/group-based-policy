@@ -70,11 +70,6 @@ class RouterIDInUseByFlowClassifier(exceptions.BadRequest):
                 "%(flowc_id)s.")
 
 
-class FlowClassifierInUseByAChain(exceptions.BadRequest):
-    message = _("Cannot update fields in flow classifier while in use by a "
-                "port chain. fields: %(fields)s port chain: %(pc_id)s")
-
-
 class NoL3OutAssociatedToFlowcExternalNetwork(exceptions.BadRequest):
     message = _("Cannot map flow classifier %(id)s, either its source or "
                 "destination network is external but has no L3Outside "
