@@ -6805,12 +6805,17 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual([], epg1.static_paths)
 
-    def test_topology_rpc_no_ports(self):
+    def _test_topology_rpc_no_ports(self, is_svi=False):
         nctx = n_context.get_admin_context()
         aim_ctx = aim_context.AimContext(self.db_session)
 
-        net1 = self._make_network(self.fmt, 'net1', True)['network']
-        epg1 = self._net_2_epg(net1)
+        if is_svi:
+            net1 = self._make_network(self.fmt, 'net1', True,
+                                      arg_list=self.extension_attributes,
+                                      **{'apic:svi': 'True'})['network']
+        else:
+            net1 = self._make_network(self.fmt, 'net1', True)['network']
+            epg1 = self._net_2_epg(net1)
 
         # add hostlink for h10
         self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19, '2',
@@ -6821,33 +6826,74 @@ class TestPortVlanNetwork(ApicAimTestCase):
             path='topology/pod-2/paths-101/pathep-[eth1/19]')
         self.assertEqual(expected_hlink10,
                          self.aim_mgr.get(aim_ctx, expected_hlink10))
-        epg1 = self.aim_mgr.get(aim_ctx, epg1)
-        self.assertEqual([], epg1.static_paths)
-
+        if is_svi:
+            ext_net = aim_resource.ExternalNetwork.from_dn(
+                net1[DN]['ExternalNetwork'])
+            l3out_node1 = aim_resource.L3OutNode(
+                tenant_name=ext_net.tenant_name,
+                l3out_name=ext_net.l3out_name,
+                node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                node_path='topology/pod-2/node-101')
+            self.assertIsNone(self.aim_mgr.get(aim_ctx, l3out_node1))
+        else:
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual([], epg1.static_paths)
         # remove hostlink for h10
         self.driver.delete_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0)
         self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10))
-        epg1 = self.aim_mgr.get(aim_ctx, epg1)
-        self.assertEqual([], epg1.static_paths)
+        if is_svi:
+            self.assertIsNone(self.aim_mgr.get(aim_ctx, l3out_node1))
+        else:
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual([], epg1.static_paths)
 
-    def test_topology_rpc(self):
+    def test_topology_rpc_no_ports(self):
+        self._test_topology_rpc_no_ports()
+
+    def test_topology_rpc_no_ports_svi(self):
+        self._test_topology_rpc_no_ports(is_svi=True)
+
+    def _test_topology_rpc(self, is_svi=False):
         nctx = n_context.get_admin_context()
         aim_ctx = aim_context.AimContext(self.db_session)
+        nets = []
         epgs = []
         vlans = []
         self._register_agent('h10', AGENT_CONF_OVS)
 
         for x in range(0, 2):
-            net = self._make_network(self.fmt, 'net%d' % x, True)['network']
-            epgs.append(self._net_2_epg(net))
+            if is_svi:
+                net = self._make_network(self.fmt, 'net%d' % x, True,
+                                         arg_list=self.extension_attributes,
+                                         **{'apic:svi': 'True'})['network']
+                nets.append(net)
+            else:
+                net = self._make_network(self.fmt, 'net%d' % x,
+                                         True)['network']
+                epgs.append(self._net_2_epg(net))
 
             with self.subnet(network={'network': net}) as sub:
                 with self.port(subnet=sub) as p:
                     p = self._bind_port_to_host(p['port']['id'], 'h10')
                     vlans.append(self._check_binding(p['port']['id']))
 
-            epgs[x] = self.aim_mgr.get(aim_ctx, epgs[x])
-            self.assertEqual([], epgs[x].static_paths)
+            if is_svi:
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    net[DN]['ExternalNetwork'])
+                l3out_node = aim_resource.L3OutNode(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    node_path='topology/pod-2/node-101')
+                self.assertIsNone(self.aim_mgr.get(aim_ctx, l3out_node))
+            else:
+                epgs[x] = self.aim_mgr.get(aim_ctx, epgs[x])
+                self.assertEqual([], epgs[x].static_paths)
+
+        expected_hlink10 = aim_infra.HostLink(host_name='h10',
+            interface_name='eth0', interface_mac='A:A',
+            switch_id='101', module='1', port='19', pod_id='2',
+            path='topology/pod-2/paths-101/pathep-[eth1/19]')
 
         def check_epg_static_paths(link_path):
             for x in range(0, len(epgs)):
@@ -6857,16 +6903,46 @@ class TestPortVlanNetwork(ApicAimTestCase):
                                 if link_path else [])
                 self.assertEqual(expected_path, epgs[x].static_paths)
 
+        def check_svi_paths(link_path):
+            for x in range(0, len(nets)):
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    nets[x][DN]['ExternalNetwork'])
+                l3out_node = aim_resource.L3OutNode(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    node_path='topology/pod-2/node-101')
+                l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
+                self.assertIsNotNone(l3out_node)
+                if link_path:
+                    l3out_if = aim_resource.L3OutInterface(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                        interface_path=link_path)
+                    l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                    self.assertEqual(l3out_if.encap, 'vlan-%s' % vlans[x])
+                    self.assertEqual(l3out_if.secondary_addr_a_list,
+                                     [{'addr': '10.0.0.1/24'}])
+                else:
+                    l3out_if = aim_resource.L3OutInterface(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                        interface_path=expected_hlink10.path)
+                    self.assertIsNone(self.aim_mgr.get(aim_ctx, l3out_if))
+
         # add hostlink for h10
         self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 19, '2',
                                 'topology/pod-2/paths-101/pathep-[eth1/19]')
-        expected_hlink10 = aim_infra.HostLink(host_name='h10',
-            interface_name='eth0', interface_mac='A:A',
-            switch_id='101', module='1', port='19', pod_id='2',
-            path='topology/pod-2/paths-101/pathep-[eth1/19]')
         self.assertEqual(expected_hlink10,
                          self.aim_mgr.get(aim_ctx, expected_hlink10))
-        check_epg_static_paths(expected_hlink10.path)
+        if is_svi:
+            check_svi_paths(expected_hlink10.path)
+        else:
+            check_epg_static_paths(expected_hlink10.path)
 
         # update link
         self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 101, 1, 42, '2',
@@ -6875,7 +6951,10 @@ class TestPortVlanNetwork(ApicAimTestCase):
         expected_hlink10.path = 'topology/pod-2/paths-101/pathep-[eth1/42]'
         self.assertEqual(expected_hlink10,
                          self.aim_mgr.get(aim_ctx, expected_hlink10))
-        check_epg_static_paths(expected_hlink10.path)
+        if is_svi:
+            check_svi_paths(expected_hlink10.path)
+        else:
+            check_epg_static_paths(expected_hlink10.path)
 
         # add another link (VPC like)
         self.driver.update_link(nctx, 'h10', 'eth1', 'B:B', 201, 1, 24, '2',
@@ -6886,17 +6965,32 @@ class TestPortVlanNetwork(ApicAimTestCase):
             path='topology/pod-2/paths-101/pathep-[eth1/42]')
         self.assertEqual(expected_hlink10_sec,
                          self.aim_mgr.get(aim_ctx, expected_hlink10_sec))
-        check_epg_static_paths(expected_hlink10.path)
+        if is_svi:
+            check_svi_paths(expected_hlink10.path)
+        else:
+            check_epg_static_paths(expected_hlink10.path)
 
         # remove second link
         self.driver.delete_link(nctx, 'h10', 'eth1', 'B:B', 0, 0, 0)
         self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10_sec))
-        check_epg_static_paths(expected_hlink10.path)
+        if is_svi:
+            check_svi_paths(expected_hlink10.path)
+        else:
+            check_epg_static_paths(expected_hlink10.path)
 
         # remove first link
         self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0, 0, '')
         self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10))
-        check_epg_static_paths(None)
+        if is_svi:
+            check_svi_paths(None)
+        else:
+            check_epg_static_paths(None)
+
+    def test_topology_rpc(self):
+        self._test_topology_rpc()
+
+    def test_topology_rpc_svi(self):
+        self._test_topology_rpc(is_svi=True)
 
 
 class TestPortOnPhysicalNode(TestPortVlanNetwork):
