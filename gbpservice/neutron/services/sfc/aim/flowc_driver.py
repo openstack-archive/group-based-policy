@@ -96,11 +96,12 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
         elif src_net.get('apic:svi') is False:
             # Same network, not SVI
             raise sfc_exc.FlowClassifierSameSrcDstNetworks()
-        elif len(set(fc.get(x) for x in ['source_ip_prefix',
-                                         'destination_ip_prefix'])) == 1:
-            # Same network, SVI, same subnets. For overlapping (but not same)
-            # subnets LPM will be applied.
-            raise sfc_exc.FlowClassifierSameSrcDstSVISameSubnet()
+
+        if validators.is_attr_set(fc.get('source_ip_prefix')) and (
+                fc.get('source_ip_prefix') == fc.get('destination_ip_prefix')):
+            # Same subnet for source and dst is not allowed. For overlapping
+            # (but not same) subnets LPM will be applied.
+            raise sfc_exc.FlowClassifierSameSubnet()
 
         # TODO(ivar): Any other parameter is unsupported, for now just
         # unenforced.
