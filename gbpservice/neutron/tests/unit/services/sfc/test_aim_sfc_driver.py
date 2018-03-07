@@ -691,6 +691,12 @@ class TestFlowClassifier(TestAIMServiceFunctionChainingBase):
             destination_ip_prefix='192.168.1.0/24',
             expected_res_status=201)['flow_classifier']
         self.delete_flow_classifier(fc['id'], expected_res_status=204)
+        self.create_flow_classifier(
+            l7_parameters={
+                'logical_source_network': net1['network']['id'],
+                'logical_destination_network': net2['network']['id'],
+            }, source_ip_prefix='192.168.0.0/24',
+            destination_ip_prefix='192.168.0.0/24', expected_res_status=400)
 
 
 class TestPortChain(TestAIMServiceFunctionChainingBase):
