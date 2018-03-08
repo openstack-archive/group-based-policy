@@ -1805,22 +1805,27 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         #    l2p = self._get_l2_policy(context._plugin_context,
         #                              ptg['l2_policy_id'])
 
+        dhcp_ports = {}
         subnets = self._get_subnets(
             plugin_context,
             filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
         for subnet in subnets:
-            dhcp_ips = set()
+            subnet_dhcp_ips = set()
             for port in self._get_ports(
                     plugin_context,
                     filters={
                         'network_id': [subnet['network_id']],
                         'device_owner': [n_constants.DEVICE_OWNER_DHCP]}):
-                dhcp_ips |= set([x['ip_address'] for x in port['fixed_ips']
-                                 if x['subnet_id'] == subnet['id']])
-            dhcp_ips = list(dhcp_ips)
+                if port['status'] != n_constants.PORT_STATUS_ACTIVE:
+                    continue
+                dhcp_ips = set([x['ip_address'] for x in port['fixed_ips']
+                                if x['subnet_id'] == subnet['id']])
+                dhcp_ports.setdefault(port['mac_address'], list(dhcp_ips))
+                subnet_dhcp_ips |= dhcp_ips
+            subnet_dhcp_ips = list(subnet_dhcp_ips)
             if not subnet['dns_nameservers']:
                 # Use DHCP namespace port IP
-                subnet['dns_nameservers'] = dhcp_ips
+                subnet['dns_nameservers'] = subnet_dhcp_ips
             # Set Default & Metadata routes if needed
             default_route = metadata_route = {}
             if subnet['ip_version'] == 4:
@@ -1846,12 +1851,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                              'nexthop': subnet['gateway_ip']})
                     optimized = self._is_metadata_optimized(plugin_context,
                                                             port)
-                    if not metadata_route and dhcp_ips and (not optimized or
-                            (optimized and not default_route)):
+                    # Use the first IP from the first DHCP agent in our
+                    # list as the next-hop (meatadata server host route)
+                    if not metadata_route and dhcp_ports and (
+                        not optimized or (optimized and not default_route)):
+                        next_hop = dhcp_ports[dhcp_ports.keys()[0]][0]
                         subnet['host_routes'].append(
                             {'destination': dhcp.METADATA_DEFAULT_CIDR,
-                             'nexthop': dhcp_ips[0]})
-            subnet['dhcp_server_ips'] = dhcp_ips
+                             'nexthop': next_hop})
+            subnet['dhcp_server_ips'] = subnet_dhcp_ips
+            if dhcp_ports:
+                subnet['dhcp_server_ports'] = dhcp_ports
         return subnets
 
     def _send_port_update_notification(self, plugin_context, port):
