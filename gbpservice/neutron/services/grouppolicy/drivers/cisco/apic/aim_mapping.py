@@ -1805,6 +1805,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         #    l2p = self._get_l2_policy(context._plugin_context,
         #                              ptg['l2_policy_id'])
 
+        dhcp_ports = self._get_ports(
+                plugin_context,
+                filters={
+                    'network_id': [port['network_id']],
+                    'device_owner': [n_constants.DEVICE_OWNER_DHCP]})
+        dhcp_mac = dhcp_ports[0]['mac_address'] if dhcp_ports else None
         subnets = self._get_subnets(
             plugin_context,
             filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
@@ -1852,6 +1858,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                             {'destination': dhcp.METADATA_DEFAULT_CIDR,
                              'nexthop': dhcp_ips[0]})
             subnet['dhcp_server_ips'] = dhcp_ips
+            if dhcp_mac:
+                subnet['dhcp_server_mac'] = dhcp_mac
         return subnets
 
     def _send_port_update_notification(self, plugin_context, port):
