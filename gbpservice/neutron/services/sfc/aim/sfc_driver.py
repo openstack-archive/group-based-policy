@@ -25,8 +25,10 @@ from networking_sfc.services.sfc.drivers import base
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron import manager
+from neutron.db import models_v2
 from neutron_lib import constants as n_constants
 from oslo_log import log as logging
+from sqlalchemy import or_
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -98,6 +100,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
                            sfc_cts.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE)
         registry.subscribe(self._handle_net_gbp_change,
                            sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE)
+        registry.subscribe(self._handle_net_link_change,
+                           sfc_cts.GBP_NETWORK_LINK, events.PRECOMMIT_UPDATE)
 
     @property
     def plugin(self):
@@ -201,8 +205,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
         self._validate_port_pair_group(context)
         # Remap Port Chain if needed
         if remap or self._should_regenerate_ppg(context):
-            for chain in self._get_chains_by_ppg_id(context._plugin_context,
-                                                    context.current['id']):
+            for chain in self._get_chains_by_ppg_ids(context._plugin_context,
+                                                     [context.current['id']]):
                 c_ctx = sfc_ctx.PortChainContext(
                     context._plugin, context._plugin_context, chain, chain)
                 self.update_port_chain_precommit(c_ctx, remap=True)
@@ -523,13 +527,14 @@ class SfcAIMDriver(SfcAIMDriverBase):
                     continue
                 processed_networks.add(net_id)
                 # See if there are more chains on these networks
-                for group_id in self._get_group_ids_by_network_id(p_ctx,
-                                                                  net_id):
+                for group_id in self._get_group_ids_by_network_ids(p_ctx,
+                                                                   [net_id]):
                     if group_id in processed_ppgs:
                         # Nothing to do
                         continue
                     processed_ppgs.add(group_id)
-                    for chain in self._get_chains_by_ppg_id(p_ctx, group_id):
+                    for chain in self._get_chains_by_ppg_ids(p_ctx,
+                                                             [group_id]):
                         if chain['id'] != pc['id']:
                             # This network is in use by some chain, cannot
                             # re-activate EPG
@@ -656,12 +661,12 @@ class SfcAIMDriver(SfcAIMDriverBase):
             return self.sfc_plugin.get_port_chains(plugin_context,
                                                    filters={'id': chain_ids})
 
-    def _get_chains_by_ppg_id(self, plugin_context, ppg_id):
+    def _get_chains_by_ppg_ids(self, plugin_context, ppg_ids):
         context = plugin_context
         with context.session.begin(subtransactions=True):
             chain_ids = [x.portchain_id for x in context.session.query(
-                sfc_db.ChainGroupAssoc).filter_by(
-                portpairgroup_id=ppg_id).all()]
+                sfc_db.ChainGroupAssoc).filter(
+                sfc_db.ChainGroupAssoc.portpairgroup_id.in_(ppg_ids)).all()]
             return self.sfc_plugin.get_port_chains(plugin_context,
                                                    filters={'id': chain_ids})
 
@@ -675,19 +680,15 @@ class SfcAIMDriver(SfcAIMDriverBase):
                     plugin_context, filters={'id': [pp_db.portpairgroup_id]})
         return []
 
-    def _get_group_ids_by_network_id(self, plugin_context, network_id):
-        ports = self.plugin.get_ports(plugin_context,
-                                      filters={'network_id': [network_id]})
-        port_ids = [x['id'] for x in ports]
-        pps = self.sfc_plugin.get_port_pairs(plugin_context,
-                                             filters={'ingress': port_ids})
-        pps.extend(self.sfc_plugin.get_port_pairs(
-            plugin_context, filters={'egress': port_ids}))
-        group_ids = set()
-        for pp in pps:
-            pp_db = self.sfc_plugin._get_port_pair(plugin_context, pp['id'])
-            group_ids.add(pp_db.portpairgroup_id)
-        return list(group_ids)
+    def _get_group_ids_by_network_ids(self, plugin_context, network_ids):
+        session = plugin_context.session
+        return [
+            x.portpairgroup_id for x in
+            session.query(sfc_db.PortPair).join(
+                models_v2.Port,
+                or_(models_v2.Port.id == sfc_db.PortPair.ingress,
+                    models_v2.Port.id == sfc_db.PortPair.egress)).filter(
+                models_v2.Port.network_id.in_(network_ids)).all()]
 
     def _should_regenerate_pp(self, context):
         attrs = [INGRESS, EGRESS, 'name']
@@ -819,7 +820,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
     def _handle_net_gbp_change(self, rtype, event, trigger, context,
                                network_id, **kwargs):
         chains = {}
-        ppg_ids = self._get_group_ids_by_network_id(context, network_id)
+        ppg_ids = self._get_group_ids_by_network_ids(context, [network_id])
         flowc_ids = self.aim_flowc._get_classifiers_by_network_id(
             context, network_id)
         for flowc_id in flowc_ids:
@@ -829,11 +830,25 @@ class SfcAIMDriver(SfcAIMDriverBase):
         if rtype == sfc_cts.GBP_NETWORK_VRF:
             # Don't need to check PPGs if the EPG is changing
             for ppg_id in ppg_ids:
-                for chain in self._get_chains_by_ppg_id(context, ppg_id):
+                for chain in self._get_chains_by_ppg_ids(context, [ppg_id]):
                     chains[chain['id']] = chain
         for chain in chains.values():
             flowcs, ppgs = self._get_pc_flowcs_and_ppgs(context, chain)
             self._validate_port_chain(context, chain, flowcs, ppgs)
+
+    def _handle_net_link_change(self, rtype, event, trigger, context,
+                               network_ids, **kwargs):
+        ppg_ids = self._get_group_ids_by_network_ids(context, network_ids)
+        for chain in self._get_chains_by_ppg_ids(context, ppg_ids):
+            sc_ctx = sfc_ctx.PortChainContext(self.sfc_plugin, context,
+                                              chain, chain)
+            try:
+                self.update_port_chain_precommit(sc_ctx, remap=True)
+            except Exception as e:
+                # If one fails don't affect all the others
+                LOG.error("Static path update on update_link has "
+                          "failed on port chain %s: %s" % (chain['id'],
+                                                           e.message))
 
     def _get_flowc_src_network(self, plugin_context, flowc):
         return self.plugin.get_network(
