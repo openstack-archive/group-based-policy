@@ -513,7 +513,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             else:
                 tenant_aname = self.name_mapper.project(session,
                                                         current['tenant_id'])
-                vrf = self._map_unrouted_vrf()
+                vrf = self._map_default_vrf(session, current)
+                vrf = self._ensure_default_vrf(aim_ctx, vrf)
                 aname = self.name_mapper.network(session, current['id'])
                 dname = aim_utils.sanitize_display_name(current['name'])
 
@@ -708,11 +709,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                     interface_path=l3out_if.interface_path,
                                     addr=subnet,
                                     asn=asn))
-                            aim_bgp_peer_prefix_db = self.aim.get(
-                                aim_ctx,
-                                aim_bgp_peer_prefix)
-                            if not aim_bgp_peer_prefix_db:
-                                self.aim.create(aim_ctx, aim_bgp_peer_prefix)
+                            self.aim.create(aim_ctx, aim_bgp_peer_prefix,
+                                            overwrite=True)
                 elif current.get(cisco_apic.BGP_TYPE) == '':
                     l3out_bgp_peers = self.aim.find(
                         aim_ctx,
@@ -769,6 +767,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.aim.delete(aim_ctx, aim_l3out_np, cascade=True)
             else:
                 self.aim.delete(aim_ctx, l3out, cascade=True)
+                # Before we can clean up the default vrf, we have to
+                # remove the association in the network_mapping first.
+                mapping = self._get_network_mapping(session, current['id'])
+                self._set_network_vrf(mapping, self._map_unrouted_vrf())
+                vrf = self._map_default_vrf(session, current)
+                self._cleanup_default_vrf(aim_ctx, vrf)
         else:
             mapping = self._get_network_mapping(session, current['id'])
             bd = self._get_network_bd(mapping)
@@ -2472,7 +2476,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         session = aim_ctx.db_session
 
-        new_vrf = self._map_unrouted_vrf()
+        if not self._is_svi_db(network_db):
+            new_vrf = self._map_unrouted_vrf()
+        else:
+            new_vrf = self._map_default_vrf(session, network_db)
         new_tenant_name = self.name_mapper.project(
             session, network_db.tenant_id)
 
@@ -3295,9 +3302,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_l3out_np = aim_resource.L3OutNodeProfile(
                 tenant_name=l3out.tenant_name, l3out_name=l3out.name,
                 name=L3OUT_NODE_PROFILE_NAME)
-            aim_l3out_np_db = self.aim.get(aim_ctx, aim_l3out_np)
-            if not aim_l3out_np_db:
-                self.aim.create(aim_ctx, aim_l3out_np)
+            self.aim.create(aim_ctx, aim_l3out_np, overwrite=True)
             for node_path in node_paths:
                 apic_router_id = self._allocate_apic_router_ids(aim_ctx,
                                                                 node_path)
@@ -3306,17 +3311,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     node_profile_name=L3OUT_NODE_PROFILE_NAME,
                     node_path=node_path, router_id=apic_router_id,
                     router_id_loopback=False)
-                aim_l3out_node_db = self.aim.get(aim_ctx, aim_l3out_node)
-                if not aim_l3out_node_db:
-                    self.aim.create(aim_ctx, aim_l3out_node)
+                self.aim.create(aim_ctx, aim_l3out_node, overwrite=True)
 
             aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
                 tenant_name=l3out.tenant_name, l3out_name=l3out.name,
                 node_profile_name=L3OUT_NODE_PROFILE_NAME,
                 name=L3OUT_IF_PROFILE_NAME)
-            aim_l3out_ip_db = self.aim.get(aim_ctx, aim_l3out_ip)
-            if not aim_l3out_ip_db:
-                self.aim.create(aim_ctx, aim_l3out_ip)
+            self.aim.create(aim_ctx, aim_l3out_ip, overwrite=True)
             subnet = (session.query(models_v2.Subnet)
                       .filter(models_v2.Subnet.id ==
                               network['subnets'][0]).one())
@@ -3361,9 +3362,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 primary_addr_b=primary_ips[1] if is_vpc else '',
                 secondary_addr_b_list=[{'addr':
                                         secondary_ip}] if is_vpc else [])
-            aim_l3out_if_db = self.aim.get(aim_ctx, aim_l3out_if)
-            if not aim_l3out_if_db:
-                self.aim.create(aim_ctx, aim_l3out_if)
+            self.aim.create(aim_ctx, aim_l3out_if, overwrite=True)
             network_db = self.plugin._get_network(plugin_context,
                                                   network['id'])
             if (network_db.aim_extension_mapping.bgp_enable and
@@ -3377,10 +3376,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     interface_path=path,
                     addr=subnet['cidr'],
                     asn=network_db.aim_extension_mapping.bgp_asn)
-                aim_bgp_peer_prefix_db = self.aim.get(aim_ctx,
-                                                      aim_bgp_peer_prefix)
-                if not aim_bgp_peer_prefix_db:
-                    self.aim.create(aim_ctx, aim_bgp_peer_prefix)
+                self.aim.create(aim_ctx, aim_bgp_peer_prefix, overwrite=True)
         else:
             aim_l3out_if = aim_resource.L3OutInterface(
                 tenant_name=l3out.tenant_name,
