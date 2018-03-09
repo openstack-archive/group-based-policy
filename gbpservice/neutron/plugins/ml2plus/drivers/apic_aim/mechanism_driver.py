@@ -2047,7 +2047,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # Update static paths of all EPGs with ports on the host
                 nets_segs = self._get_non_opflex_segments_on_host(context,
                                                                   host)
+                network_ids = set()
                 for net, seg in nets_segs:
+                    network_ids.add(net['id'])
                     try:
                         if self._is_svi(net):
                             self._update_static_path_for_svi(
@@ -2062,6 +2064,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         LOG.error("Static path update on update_link has "
                                   "failed for network %s: %s" % (net['id'],
                                                                  e.message))
+                registry.notify(sfc_cts.GBP_NETWORK_LINK,
+                                events.PRECOMMIT_UPDATE, self, context=context,
+                                network_ids=list(network_ids))
 
     # Topology RPC method handler
     def delete_link(self, context, host, interface, mac, switch, module, port):
@@ -2095,6 +2100,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         else:
                             self._update_static_path_for_network(
                                 session, net, seg, old_path=hlink.path)
+
                     except Exception as e:
                         # If one fails don't affect all the others
                         LOG.error("Static path update on update_link has "
