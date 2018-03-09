@@ -98,6 +98,21 @@ BGP = 'apic:bgp_enable'
 ASN = 'apic:bgp_asn'
 BGP_TYPE = 'apic:bgp_type'
 
+
+def sort_if_list(attr):
+    return sorted(attr) if isinstance(attr, list) else attr
+
+
+def resource_equal(self, other):
+    if type(self) != type(other):
+        return False
+    for attr in self.user_attributes():
+        if (sort_if_list(getattr(self, attr, None)) !=
+                sort_if_list(getattr(other, attr, None))):
+            return False
+    return True
+
+
 aim_resource.ResourceBase.__repr__ = lambda x: x.__dict__.__repr__()
 
 TEST_TENANT_NAMES = {
@@ -192,6 +207,12 @@ class ApicAimTestMixin(object):
                 len(observed),
                 msg='There are more calls than expected: %s' % str(observed))
 
+    def _mock_aim_obj_eq_operator(self):
+        self.aim_patch = mock.patch("aim.api.resource.ResourceBase.__eq__",
+                                    new=resource_equal)
+        self.aim_patch.start()
+        self.addCleanup(self.aim_patch.stop)
+
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin,
@@ -252,6 +273,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                             self.t1_aname)
         self.dn_t1_l2_n2 = ('uni/tn-%s/out-l2/instP-n2' %
                             self.t1_aname)
+        self._mock_aim_obj_eq_operator()
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
@@ -600,10 +622,16 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = TEST_TENANT_NAMES[project]
         else:
-            vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
-            vrf_dname = 'CommonUnroutedVRF'
-            vrf_tenant_aname = 'common'
-            vrf_tenant_dname = 'CommonTenant'
+            if net[SVI]:
+                vrf_aname = 'DefaultVRF'
+                vrf_dname = 'DefaultRoutedVRF'
+                vrf_tenant_aname = tenant_aname
+                vrf_tenant_dname = TEST_TENANT_NAMES[project]
+            else:
+                vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
+                vrf_dname = 'CommonUnroutedVRF'
+                vrf_tenant_aname = 'common'
+                vrf_tenant_dname = 'CommonTenant'
 
         if net[SVI]:
             ext_net = aim_resource.ExternalNetwork.from_dn(

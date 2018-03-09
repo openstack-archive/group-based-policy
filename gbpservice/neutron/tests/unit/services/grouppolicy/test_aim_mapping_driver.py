@@ -105,6 +105,14 @@ PROV = 'apic:external_provided_contracts'
 CONS = 'apic:external_consumed_contracts'
 
 
+def aim_object_to_dict(obj):
+    result = {}
+    for key, value in obj.__dict__.items():
+        if key in obj.user_attributes():
+            result[key] = value
+    return result
+
+
 class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                       test_ext_base.ExtensionDriverTestBase,
                       test_aim_md.ApicAimTestMixin,
@@ -194,6 +202,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.driver.create_auto_ptg = False
         self._t1_aname = self.name_mapper.project(None, 't1')
         self._dn_t1_l1_n1 = ('uni/tn-%s/out-l1/instP-n1' % self._t1_aname)
+        self._mock_aim_obj_eq_operator()
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
@@ -461,7 +470,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             new_entry.update(alib.map_to_aim_filter_entry(entry))
             expected_entries_attrs.append(
                 {k: unicode(new_entry[k]) for k in new_entry})
-        entries_attrs = [x.__dict__ for x in aim_filter_entries]
+        entries_attrs = [aim_object_to_dict(x) for x in aim_filter_entries]
         observed_entries_attrs = []
         for entry in entries_attrs:
             observed_entries_attrs.append(
@@ -3669,9 +3678,10 @@ class TestPolicyRuleBase(AIMBaseTestCase):
                 expected_entries.items()[0][1].items()[0][1]))
 
         self.assertItemsEqual(
-            expected_filter_entry.__dict__,
+            aim_object_to_dict(expected_filter_entry),
             # special processing to convert unicode to str
-            dict((str(k), str(v)) for k, v in filter_entry.__dict__.items()))
+            dict((str(k), str(v)) for k, v in aim_object_to_dict(
+                                                    filter_entry).items()))
 
     def _test_policy_rule_aim_mapping(self, policy_rule):
         aim_filter_name = str(self.name_mapper.policy_rule(
