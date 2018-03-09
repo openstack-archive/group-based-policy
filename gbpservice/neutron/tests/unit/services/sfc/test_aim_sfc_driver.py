@@ -22,6 +22,7 @@ from networking_sfc.services.flowclassifier import driver_manager as fc_driverm
 from networking_sfc.services.sfc.common import config as sfc_cfg
 from networking_sfc.services.sfc import driver_manager as sfc_driverm
 from neutron.callbacks import exceptions as c_exc
+from neutron.db.models import l3 as l3_db
 from neutron_lib import context
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
@@ -175,20 +176,51 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         def get_svi_kwargs():
             return {'apic:svi': True}
 
+        # Need to make sure all the SVI networks are in the same common
+        # unrouted vrf as other service chain resources do.
+        if src_svi or dst_svi:
+            router = self._make_router(
+                self.fmt, self._tenant_id, 'router1')['router']
+            vrf_name = 'openstack_UnroutedVRF'
+            vrf = aim_res.VRF(tenant_name='common', name=vrf_name,
+                              monitored=True)
+            as1 = self._make_address_scope_for_vrf(
+                vrf.dn, name='as1')['address_scope']
+            pool = self._make_subnetpool(
+                self.fmt, ['192.168.0.0/8'], name='sp',
+                address_scope_id=as1['id'], tenant_id=as1['tenant_id'],
+                default_prefixlen=24)['subnetpool']
         if src_svi:
             # We need to create the L3Out and the External network
             kwargs = get_svi_kwargs()
         net1 = self._make_network(self.fmt, 'net1', True,
                                   arg_list=self.extension_attributes,
                                   **kwargs)
-        self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
+        if src_svi:
+            subnet1 = self._make_subnet(
+                self.fmt, net1, '192.168.0.1', '192.168.0.0/24',
+                subnetpool_id=pool['id'])['subnet']
+            self.l3_plugin.add_router_interface(
+                context.get_admin_context(), router['id'],
+                {'subnet_id': subnet1['id']})
+        else:
+            self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
         kwargs = {}
         if dst_svi:
             kwargs = get_svi_kwargs()
         net2 = self._make_network(self.fmt, 'net2', True,
                                   arg_list=self.extension_attributes,
                                   **kwargs)
-        self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
+        if dst_svi:
+            subnet2 = self._make_subnet(
+                self.fmt, net2, '192.168.1.1', '192.168.1.0/24',
+                subnetpool_id=pool['id'])['subnet']
+            self.l3_plugin.add_router_interface(
+                context.get_admin_context(), router['id'],
+                {'subnet_id': subnet2['id']})
+        else:
+            self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
+
         return self.create_flow_classifier(
             l7_parameters={
                 'logical_source_network': net1['network']['id'],
@@ -315,11 +347,17 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         ppgs = [self.show_port_pair_group(x)['port_pair_group'] for x in
                 pc['port_pair_groups']]
         if not multiple:
+            routers_count = ctx.db_session.query(l3_db.Router).count()
             self.assertEqual(
-                len(flowcs), len(self.aim_mgr.find(ctx, aim_res.Contract)))
+                len(flowcs),
+                len(self.aim_mgr.find(ctx, aim_res.Contract)) - routers_count)
             self.assertEqual(
-                len(flowcs), len(self.aim_mgr.find(ctx,
-                                                   aim_res.ContractSubject)))
+                len(flowcs),
+                len(self.aim_mgr.find(
+                        ctx, aim_res.ContractSubject)) - routers_count)
+            self.assertEqual(
+                len(flowcs), len(self.aim_mgr.find(
+                        ctx, aim_res.ContractSubject)) - routers_count)
             self.assertEqual(
                 len(flowc_tenants) * len(ppgs),
                 len(self.aim_mgr.find(ctx, aim_sg.DeviceClusterContext)))
@@ -448,8 +486,11 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         ctx = self._aim_context
         self.delete_port_chain(pc['id'])
         # PC and Flowc unmapped
-        self.assertEqual([], self.aim_mgr.find(ctx, aim_res.Contract))
-        self.assertEqual([], self.aim_mgr.find(ctx, aim_res.ContractSubject))
+        routers_count = ctx.db_session.query(l3_db.Router).count()
+        self.assertEqual(routers_count,
+                         len(self.aim_mgr.find(ctx, aim_res.Contract)))
+        self.assertEqual(routers_count,
+                         len(self.aim_mgr.find(ctx, aim_res.ContractSubject)))
         self.assertEqual(
             [], self.aim_mgr.find(ctx, aim_sg.DeviceClusterContext))
         self.assertEqual(
@@ -806,12 +847,13 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
         self.create_port_chain(port_pair_groups=[ppg['id']],
                                flow_classifiers=[fc['id']],
                                expected_res_status=201)
+
         res = self._delete_network(
             fc['l7_parameters']['logical_source_network'])
-        self.assertEqual(400, res.status_int)
+        self.assertTrue(res.status_int >= 400)
         res = self._delete_network(
             fc['l7_parameters']['logical_destination_network'])
-        self.assertEqual(400, res.status_int)
+        self.assertTrue(res.status_int >= 400)
 
     def test_vrf_update(self):
         fc = self._create_simple_flowc(src_svi=self.src_svi,
