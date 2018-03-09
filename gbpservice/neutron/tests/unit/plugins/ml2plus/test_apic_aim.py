@@ -600,10 +600,16 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_tenant_aname = tenant_aname
                 vrf_tenant_dname = TEST_TENANT_NAMES[project]
         else:
-            vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
-            vrf_dname = 'CommonUnroutedVRF'
-            vrf_tenant_aname = 'common'
-            vrf_tenant_dname = 'CommonTenant'
+            if net[SVI]:
+                vrf_aname = 'DefaultVRF'
+                vrf_dname = 'DefaultRoutedVRF'
+                vrf_tenant_aname = tenant_aname
+                vrf_tenant_dname = TEST_TENANT_NAMES[project]
+            else:
+                vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
+                vrf_dname = 'CommonUnroutedVRF'
+                vrf_tenant_aname = 'common'
+                vrf_tenant_dname = 'CommonTenant'
 
         if net[SVI]:
             ext_net = aim_resource.ExternalNetwork.from_dn(
