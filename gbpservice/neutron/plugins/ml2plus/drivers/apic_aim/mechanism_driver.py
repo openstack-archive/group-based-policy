@@ -513,7 +513,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             else:
                 tenant_aname = self.name_mapper.project(session,
                                                         current['tenant_id'])
-                vrf = self._map_unrouted_vrf()
+                vrf = self._map_default_vrf(session, current)
+                vrf = self._ensure_default_vrf(aim_ctx, vrf)
                 aname = self.name_mapper.network(session, current['id'])
                 dname = aim_utils.sanitize_display_name(current['name'])
 
@@ -769,6 +770,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.aim.delete(aim_ctx, aim_l3out_np, cascade=True)
             else:
                 self.aim.delete(aim_ctx, l3out, cascade=True)
+                # Before we can clean up the default vrf, we have to
+                # remove the association in the network_mapping first.
+                mapping = self._get_network_mapping(session, current['id'])
+                self._set_network_vrf(mapping, self._map_unrouted_vrf())
+                vrf = self._map_default_vrf(session, current)
+                self._cleanup_default_vrf(aim_ctx, vrf)
         else:
             mapping = self._get_network_mapping(session, current['id'])
             bd = self._get_network_bd(mapping)
@@ -2466,7 +2473,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         session = aim_ctx.db_session
 
-        new_vrf = self._map_unrouted_vrf()
+        if not self._is_svi_db(network_db):
+            new_vrf = self._map_unrouted_vrf()
+        else:
+            new_vrf = self._map_default_vrf(session, network_db)
         new_tenant_name = self.name_mapper.project(
             session, network_db.tenant_id)
 
