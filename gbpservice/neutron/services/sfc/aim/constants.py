@@ -32,3 +32,4 @@ AIM_FLC_L7_PARAMS = {
 AIM_FLC_PARAMS = ['source_ip_prefix', 'destination_ip_prefix']
 GBP_NETWORK_VRF = 'gbp_network_vrf'
 GBP_NETWORK_EPG = 'gbp_network_epg'
+GBP_NETWORK_LINK = 'gbp_network_link'
