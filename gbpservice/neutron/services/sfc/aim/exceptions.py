@@ -112,3 +112,7 @@ class ConflictingNetworksDetectedInPortChain(exceptions.BadRequest):
 class DefaultExternalNetworkNotFound(exceptions.NotFound):
     message = _("Default External Network not found for SVI network "
                 "%(id)s.")
+
+
+class TooManyPPGsPerChainError(exceptions.BadRequest):
+    message = _("The max number of PPGs per chain supported is %(maxn)s.")
