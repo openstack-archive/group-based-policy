@@ -1372,6 +1372,19 @@ class TestAimMapping(ApicAimTestCase):
                           n_context.get_admin_context(), router_id,
                           {'subnet_id': subnet1_id})
 
+    def test_preexist_svi_can_not_use_same_l3out(self):
+        self._make_network(
+            self.fmt, 'net1', True, arg_list=self.extension_attributes,
+            **{'apic:svi': 'True',
+               DN: {'ExternalNetwork': self.dn_t1_l1_n1}})
+
+        # Create another SVI network with same l3out should fail.
+        self.assertRaises(webob.exc.HTTPClientError, self._make_network,
+                          self.fmt, 'net2', True,
+                          arg_list=self.extension_attributes,
+                          **{'apic:svi': 'True',
+                             DN: {'ExternalNetwork': self.dn_t1_l1_n1}})
+
     def test_only_one_subnet_allowed_in_svi(self):
         # Create network.
         net_resp = self._make_network(
