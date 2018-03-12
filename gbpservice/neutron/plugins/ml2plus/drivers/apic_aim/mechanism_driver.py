@@ -2057,9 +2057,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                                   host)
                 for net, seg in nets_segs:
                     try:
-                        self._update_static_path_for_network(
-                            session, net, seg, old_path=old_path,
-                            new_path=hlink.path)
+                        if self._is_svi(net):
+                            self._update_static_path_for_svi(
+                                session, context, net, seg, old_path=old_path,
+                                new_path=hlink.path)
+                        else:
+                            self._update_static_path_for_network(
+                                session, net, seg, old_path=old_path,
+                                new_path=hlink.path)
                     except Exception as e:
                         # If one fails don't affect all the others
                         LOG.error("Static path update on update_link has "
@@ -2091,8 +2096,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                                   host)
                 for net, seg in nets_segs:
                     try:
-                        self._update_static_path_for_network(
-                            session, net, seg, old_path=hlink.path)
+                        if self._is_svi(net):
+                            self._update_static_path_for_svi(
+                                session, context, net, seg,
+                                old_path=hlink.path)
+                        else:
+                            self._update_static_path_for_network(
+                                session, net, seg, old_path=hlink.path)
                     except Exception as e:
                         # If one fails don't affect all the others
                         LOG.error("Static path update on update_link has "
@@ -3233,7 +3243,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._is_supported_non_opflex_type(
                     bound_segment[api.NETWORK_TYPE]))
 
-    def _update_static_path_for_svi(self, session, port_context, network,
+    def _update_static_path_for_svi(self, session, plugin_context, network,
                                     segment, old_path=None, new_path=None):
         if new_path and not segment:
             return
@@ -3306,7 +3316,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                               network['subnets'][0]).one())
             mask = subnet['cidr'].split('/')[1]
 
-            plugin_context = port_context._plugin_context
             primary_ips = []
             for node in nodes:
                 filters = {'network_id': [network['id']],
@@ -3446,7 +3455,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 host_link = host_link[0].path
                 if self._is_svi(port_context.network.current):
                     self._update_static_path_for_svi(
-                        session, port_context,
+                        session, port_context._plugin_context,
                         port_context.network.current, segment,
                         **{'old_path' if remove else 'new_path': host_link})
                 else:
@@ -3466,7 +3475,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             host_link = host_link[0].path
             if self._is_svi(port_context.network.current):
                 self._update_static_path_for_svi(
-                    session, port_context,
+                    session, port_context._plugin_context,
                     port_context.network.current, segment,
                     **{'old_path' if remove else 'new_path': host_link})
             else:
