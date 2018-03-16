@@ -1037,6 +1037,17 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
             self.delete_port_chain(pc2['id'])
             self.assertIsNone(self.aim_mgr.get(self._aim_context, ext_net))
 
+    def test_delete_no_contract(self):
+        pc = self._create_simple_port_chain()
+        epgs = self.aim_mgr.find(self._aim_context, aim_res.EndpointGroup)
+        extn = self.aim_mgr.find(self._aim_context, aim_res.ExternalNetwork)
+        for res in epgs + extn:
+            self.aim_mgr.update(self._aim_context, res,
+                                consumed_contract_names=[])
+            self.aim_mgr.update(self._aim_context, res,
+                                provided_contract_names=[])
+        self._verify_pc_delete(pc)
+
 
 class TestPortChainSVI(TestPortChain):
 

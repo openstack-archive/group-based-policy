@@ -634,10 +634,14 @@ class SfcAIMDriver(SfcAIMDriverBase):
         if epg:
             contract = self._get_flc_contract(plugin_context.session, flowc,
                                               tenant)
-            if prefix == FLOWC_SRC:
-                epg.consumed_contract_names.remove(contract.name)
-            else:
-                epg.provided_contract_names.remove(contract.name)
+            try:
+                if prefix == FLOWC_SRC:
+                    epg.consumed_contract_names.remove(contract.name)
+                else:
+                    epg.provided_contract_names.remove(contract.name)
+            except ValueError:
+                LOG.warning("Contract %s not present in EPG %s" %
+                            (contract.name, epg))
             self.aim.create(aim_ctx, epg, overwrite=True)
             if (ext_net and not epg.consumed_contract_names and not
                     epg.provided_contract_names):
