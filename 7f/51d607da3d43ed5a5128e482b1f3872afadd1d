@@ -1,0 +1,10 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+1: wangqi <wang.qi@99cloud.net>
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Workflow+1: Amit Bose <amitbose@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Fri, 16 Mar 2018 16:38:15 +0000
+Reviewed-on: https://review.openstack.org/553611
+Project: openstack/group-based-policy
+Branch: refs/heads/master
