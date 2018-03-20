@@ -363,23 +363,23 @@ class SfcAIMDriver(SfcAIMDriverBase):
                              (egress_port, egress_cdis)]:
                 p_id = self.name_mapper.port(session, p['id'])
                 p_name = aim_utils.sanitize_display_name(p['name'])
-                path, encap = self.aim_mech._get_port_static_path_and_encap(
+                path, encap, host = self.aim_mech._get_port_static_path_info(
                     plugin_context, p)
                 if path is None:
-                    LOG.warning("Path not found for Port Pair %s member %s ",
-                                "Port might be unbound.", pp['id'], p['id'])
-                    continue
-                # TODO(ivar): what if encap is None? is that an Opflex port?
+                    LOG.warning("Path not found for Port Pair %s member %s "
+                                "Port might be unbound." % (pp['id'], p['id']))
+                    path = ''
+                    # TODO(ivar): what if encap is None? is it an Opflex port?
                 # Create Concrete Device Interface
                 cdi = aim_sg.ConcreteDeviceInterface(
                     tenant_name=cd.tenant_name,
                     device_cluster_name=cd.device_cluster_name,
                     device_name=cd.name, name=p_id, display_name=p_name,
-                    path=path)
+                    path=path, host=host)
                 cdi = self.aim.create(aim_ctx, cdi)
                 store.append((cdi, encap, p))
         # Ingress and Egress CDIs have the same length.
-        # All the ingress devices must be load balances, and so the egress
+        # All the ingress devices must be load balanced, and so must the egress
         # (for reverse path). Create the proper PBR policies as well as
         # the Logical Interfaces (which see all the physical interfaces of a
         # specific direction as they were one).
@@ -839,18 +839,30 @@ class SfcAIMDriver(SfcAIMDriverBase):
             self._validate_port_chain(context, chain, flowcs, ppgs)
 
     def _handle_net_link_change(self, rtype, event, trigger, context,
-                               network_ids, **kwargs):
-        ppg_ids = self._get_group_ids_by_network_ids(context, network_ids)
-        for chain in self._get_chains_by_ppg_ids(context, ppg_ids):
-            sc_ctx = sfc_ctx.PortChainContext(self.sfc_plugin, context,
-                                              chain, chain)
-            try:
-                self.update_port_chain_precommit(sc_ctx, remap=True)
-            except Exception as e:
-                # If one fails don't affect all the others
-                LOG.error("Static path update on update_link has "
-                          "failed on port chain %s: %s" % (chain['id'],
-                                                           e.message))
+                                networks_map, host_links, host, **kwargs):
+        aim_ctx = aim_context.AimContext(db_session=context.session)
+        cdis = self.aim.find(aim_ctx, aim_sg.ConcreteDeviceInterface,
+                             host=host)
+        cdi_by_port = {}
+        for cdi in cdis:
+            cdi_by_port.setdefault(
+                self.name_mapper.reverse_port(context.session, cdi.name),
+                []).append(cdi)
+        ports = self.plugin.get_ports(context,
+                                      filters={'id': cdi_by_port.keys()})
+        networks_map = {x[0]['id']: x[1] for x in networks_map}
+
+        for port in ports:
+            if port['network_id'] not in networks_map:
+                LOG.warning("We found a ConcreteDeviceInterface for port %s "
+                            "and host %s, but no segment associated to it." %
+                            (port['id'], host))
+                continue
+            hlinks = self.aim_mech._filter_host_links_by_segment(
+                context.session, networks_map[port['network_id']], host_links)
+            path = '' if not hlinks else hlinks[0].path
+            for cdi in cdi_by_port.get(port['id']):
+                self.aim.update(aim_ctx, cdi, path=path)
 
     def _get_flowc_src_network(self, plugin_context, flowc):
         return self.plugin.get_network(
