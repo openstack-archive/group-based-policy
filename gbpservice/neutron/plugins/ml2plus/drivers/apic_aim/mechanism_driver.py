@@ -176,14 +176,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           db.DbMixin):
 
     class TopologyRpcEndpoint(object):
-        target = oslo_messaging.Target(version='1.2')
+        target = oslo_messaging.Target(version='2')
 
         def __init__(self, mechanism_driver):
             self.md = mechanism_driver
 
+        @db_api.retry_db_errors
         def update_link(self, *args, **kwargs):
             self.md.update_link(*args, **kwargs)
 
+        @db_api.retry_db_errors
         def delete_link(self, *args, **kwargs):
             self.md.delete_link(*args, **kwargs)
 
@@ -2023,7 +2025,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     # Topology RPC method handler
     def update_link(self, context, host, interface, mac,
-                    switch, module, port, pod_id='1', port_description=''):
+                    switch, module, port, pod_id='1', port_description='',
+                    force=False):
         LOG.debug('Topology RPC: update_link: %s',
                   ', '.join([str(p) for p in
                              (host, interface, mac, switch, module, port,
@@ -2039,42 +2042,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             hlink = self.aim.get(aim_ctx,
                                  aim_infra.HostLink(host_name=host,
                                                     interface_name=interface))
-            if not hlink or hlink.path != port_description:
-                attrs = dict(interface_mac=mac,
-                             switch_id=switch, module=module, port=port,
-                             path=port_description, pod_id=pod_id)
-                if hlink:
-                    old_path = hlink.path
-                    hlink = self.aim.update(aim_ctx, hlink, **attrs)
-                else:
-                    old_path = None
-                    hlink = aim_infra.HostLink(host_name=host,
-                                               interface_name=interface,
-                                               **attrs)
-                    hlink = self.aim.create(aim_ctx, hlink)
-                # Update static paths of all EPGs with ports on the host
-                nets_segs = self._get_non_opflex_segments_on_host(context,
-                                                                  host)
-                network_ids = set()
-                for net, seg in nets_segs:
-                    network_ids.add(net['id'])
-                    try:
-                        if self._is_svi(net):
-                            self._update_static_path_for_svi(
-                                session, context, net, seg, old_path=old_path,
-                                new_path=hlink.path)
-                        else:
-                            self._update_static_path_for_network(
-                                session, net, seg, old_path=old_path,
-                                new_path=hlink.path)
-                    except Exception as e:
-                        # If one fails don't affect all the others
-                        LOG.error("Static path update on update_link has "
-                                  "failed for network %s: %s" % (net['id'],
-                                                                 e.message))
-                registry.notify(sfc_cts.GBP_NETWORK_LINK,
-                                events.PRECOMMIT_UPDATE, self, context=context,
-                                network_ids=list(network_ids))
+            if hlink and hlink.path == port_description and not force:
+                # There was neither a change nor a refresh required.
+                return
+            # Create or Update hostlink in AIM
+            attrs = dict(interface_mac=mac,
+                         switch_id=switch, module=module, port=port,
+                         path=port_description, pod_id=pod_id)
+            if hlink:
+                self.aim.update(aim_ctx, hlink, **attrs)
+            else:
+                hlink = aim_infra.HostLink(host_name=host,
+                                           interface_name=interface,
+                                           **attrs)
+                self.aim.create(aim_ctx, hlink)
+            self._update_network_links(context, host)
 
     # Topology RPC method handler
     def delete_link(self, context, host, interface, mac, switch, module, port):
@@ -2089,31 +2071,31 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                  aim_infra.HostLink(host_name=host,
                                                     interface_name=interface))
             if not hlink:
+                # Host link didn't exist to begin with, nothing to do here.
                 return
 
             self.aim.delete(aim_ctx, hlink)
-            # if there are no more host-links for this host (multiple links may
-            # exist with VPC), update EPGs with ports on this host to remove
-            # the static path to this host
-            if not self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host,
-                                 path=hlink.path):
-                nets_segs = self._get_non_opflex_segments_on_host(context,
-                                                                  host)
-                for net, seg in nets_segs:
-                    try:
-                        if self._is_svi(net):
-                            self._update_static_path_for_svi(
-                                session, context, net, seg,
-                                old_path=hlink.path)
-                        else:
-                            self._update_static_path_for_network(
-                                session, net, seg, old_path=hlink.path)
+            self._update_network_links(context, host)
 
-                    except Exception as e:
-                        # If one fails don't affect all the others
-                        LOG.error("Static path update on update_link has "
-                                  "failed for network %s: %s" % (net['id'],
-                                                                 e.message))
+    def _update_network_links(self, context, host):
+        # Update static paths of all EPGs with ports on the host.
+        # For correctness, rebuild tha static paths for the entire host
+        # instead of the specific interface. We could do it in a
+        # per-interface basis once we can correlate existing paths to
+        # the (host, interface) hence avoiding leaking entries. Although
+        # this is all good in theory, it would require some extra design
+        # due to the fact that VPC interfaces have the same path but
+        # two different ifaces assigned to them.
+        aim_ctx = aim_context.AimContext(db_session=context.session)
+        hlinks = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
+        nets_segs = self._get_non_opflex_segments_on_host(context, host)
+        for net, seg in nets_segs:
+            self._rebuild_host_path_for_network(context, net, seg, host,
+                                                hlinks)
+        registry.notify(sfc_cts.GBP_NETWORK_LINK,
+                        events.PRECOMMIT_UPDATE, self, context=context,
+                        networks_map=nets_segs, host_links=hlinks,
+                        host=host)
 
     def _agent_bind_port(self, context, agent_type, bind_strategy):
         current = context.current
@@ -3249,11 +3231,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._is_supported_non_opflex_type(
                     bound_segment[api.NETWORK_TYPE]))
 
-    def _update_static_path_for_svi(self, session, plugin_context, network,
-                                    segment, old_path=None, new_path=None):
-        if new_path and not segment:
-            return
-
+    def _convert_segment(self, segment):
+        seg = None
         if segment:
             if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
                 seg = 'vlan-%s' % segment[api.SEGMENTATION_ID]
@@ -3261,11 +3240,81 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 LOG.debug('Unsupported segmentation type for static path '
                           'binding: %s',
                           segment.get(api.NETWORK_TYPE))
-                return
+        return seg
 
-        path = new_path
-        if not path:
-            path = old_path
+    def _filter_host_links_by_segment(self, session, segment, host_links):
+        # All host links must belong to the same host
+        filtered_host_links = []
+        if host_links:
+            aim_ctx = aim_context.AimContext(db_session=session)
+            host_link_net_labels = self.aim.find(
+                aim_ctx, aim_infra.HostLinkNetworkLabel,
+                host_name=host_links[0].host_name,
+                network_label=segment[api.PHYSICAL_NETWORK])
+            # This segment uses specific host interfaces
+            if host_link_net_labels:
+                ifaces = set([x.interface_name for x in host_link_net_labels])
+                filtered_host_links = [
+                    x for x in host_links if x.interface_name in
+                    ifaces and x.path]
+        # If the filtered host link list is empty, return the original one.
+        # TODO(ivar): we might want to raise an exception if there are not
+        # host link available instead of falling back to the full list.
+        return filtered_host_links or host_links
+
+    def _rebuild_host_path_for_network(self, plugin_context, network, segment,
+                                       host, host_links):
+        seg = self._convert_segment(segment)
+        if not seg:
+            return
+        # Filter host links if needed
+        aim_ctx = aim_context.AimContext(db_session=plugin_context.session)
+        host_links = self._filter_host_links_by_segment(plugin_context.session,
+                                                        segment, host_links)
+
+        if self._is_svi(network):
+            l3out, _, _ = self._get_aim_external_objects(network)
+            # Nuke existing interfaces for host
+            search_args = {
+                'tenant_name': l3out.tenant_name,
+                'l3out_name': l3out.name,
+                'node_profile_name': L3OUT_NODE_PROFILE_NAME,
+                'interface_profile_name': L3OUT_IF_PROFILE_NAME,
+                'host': host
+            }
+            for aim_l3out_if in self.aim.find(
+                    aim_ctx, aim_resource.L3OutInterface, **search_args):
+                self.aim.delete(aim_ctx, aim_l3out_if, cascade=True)
+            for link in host_links:
+                self._update_static_path_for_svi(
+                    plugin_context.session, plugin_context, network, segment,
+                    new_path=link, l3out=l3out)
+        else:
+            epg = self.get_epg_for_network(plugin_context.session, network)
+            if not epg:
+                LOG.info('Network %s does not map to any EPG', network['id'])
+                return
+            epg = self.aim.get(aim_ctx, epg)
+            # Remove old host values
+            paths = [x for x in epg.static_paths if x['host'] != host]
+            # Add new ones
+            paths.extend([{'path': x.path, 'encap': seg, 'host': x.host_name}
+                          for x in host_links])
+            self.aim.update(aim_ctx, epg, static_paths=paths)
+
+    def _update_static_path_for_svi(self, session, plugin_context, network,
+                                    segment, old_path=None, new_path=None,
+                                    l3out=None):
+        if new_path and not segment:
+            return
+
+        seg = self._convert_segment(segment)
+        if not seg:
+            return
+        if new_path:
+            path = new_path.path
+        else:
+            path = old_path.path
         nodes = []
         node_paths = []
         is_vpc = False
@@ -3290,7 +3339,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return
 
         aim_ctx = aim_context.AimContext(db_session=session)
-        l3out, ext_net, _ = self._get_aim_external_objects(network)
+        if not l3out:
+            l3out, _, _ = self._get_aim_external_objects(network)
         if new_path:
             aim_l3out_np = aim_resource.L3OutNodeProfile(
                 tenant_name=l3out.tenant_name, l3out_name=l3out.name,
@@ -3306,17 +3356,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     node_profile_name=L3OUT_NODE_PROFILE_NAME,
                     node_path=node_path, router_id=apic_router_id,
                     router_id_loopback=False)
-                aim_l3out_node_db = self.aim.get(aim_ctx, aim_l3out_node)
-                if not aim_l3out_node_db:
-                    self.aim.create(aim_ctx, aim_l3out_node)
+                self.aim.create(aim_ctx, aim_l3out_node, overwrite=True)
 
             aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
                 tenant_name=l3out.tenant_name, l3out_name=l3out.name,
                 node_profile_name=L3OUT_NODE_PROFILE_NAME,
                 name=L3OUT_IF_PROFILE_NAME)
-            aim_l3out_ip_db = self.aim.get(aim_ctx, aim_l3out_ip)
-            if not aim_l3out_ip_db:
-                self.aim.create(aim_ctx, aim_l3out_ip)
+            self.aim.create(aim_ctx, aim_l3out_ip, overwrite=True)
             subnet = (session.query(models_v2.Subnet)
                       .filter(models_v2.Subnet.id ==
                               network['subnets'][0]).one())
@@ -3355,15 +3401,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out_name=l3out.name,
                 node_profile_name=L3OUT_NODE_PROFILE_NAME,
                 interface_profile_name=L3OUT_IF_PROFILE_NAME,
-                interface_path=path, encap=seg,
+                interface_path=path, encap=seg, host=new_path.host_name,
                 primary_addr_a=primary_ips[0],
                 secondary_addr_a_list=[{'addr': secondary_ip}],
                 primary_addr_b=primary_ips[1] if is_vpc else '',
                 secondary_addr_b_list=[{'addr':
                                         secondary_ip}] if is_vpc else [])
-            aim_l3out_if_db = self.aim.get(aim_ctx, aim_l3out_if)
-            if not aim_l3out_if_db:
-                self.aim.create(aim_ctx, aim_l3out_if)
+            self.aim.create(aim_ctx, aim_l3out_if, overwrite=True)
             network_db = self.plugin._get_network(plugin_context,
                                                   network['id'])
             if (network_db.aim_extension_mapping.bgp_enable and
@@ -3400,24 +3444,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.info(_LI('Network %s does not map to any EPG'), network['id'])
             return
 
-        if segment:
-            if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
-                seg = 'vlan-%s' % segment[api.SEGMENTATION_ID]
-            else:
-                LOG.debug('Unsupported segmentation type for static path '
-                          'binding: %s',
-                          segment.get(api.NETWORK_TYPE))
-                return
+        seg = self._convert_segment(segment)
+        if not seg:
+            return
 
         aim_ctx = aim_context.AimContext(db_session=session)
         epg = self.aim.get(aim_ctx, epg)
-        to_remove = [old_path] if old_path else []
-        to_remove.extend([new_path] if new_path else [])
+        to_remove = [old_path.path] if old_path else []
+        to_remove.extend([new_path.path] if new_path else [])
         if to_remove:
             epg.static_paths = [p for p in epg.static_paths
                                 if p.get('path') not in to_remove]
         if new_path:
-            epg.static_paths.append({'path': new_path, 'encap': seg})
+            epg.static_paths.append({'path': new_path.path, 'encap': seg,
+                                     'host': new_path.host_name})
         LOG.debug('Setting static paths for EPG %s to %s',
                   epg, epg.static_paths)
         self.aim.update(aim_ctx, epg, static_paths=epg.static_paths)
@@ -3442,52 +3482,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if exist:
                 return
 
-        static_path_updated = False
         aim_ctx = aim_context.AimContext(db_session=session)
-        host_link_net_labels = self.aim.find(
-            aim_ctx, aim_infra.HostLinkNetworkLabel, host_name=host,
-            network_label=segment[api.PHYSICAL_NETWORK])
-        if host_link_net_labels:
-            for hl_net_label in host_link_net_labels:
-                interface = hl_net_label.interface_name
-                host_link = self.aim.find(
-                    aim_ctx, aim_infra.HostLink, host_name=host,
-                    interface_name=interface)
-                if not host_link or not host_link[0].path:
-                    LOG.warning(_LW('No host link information found for host: '
-                                    '%(host)s, interface: %(interface)s'),
-                                {'host': host, 'interface': interface})
-                    continue
-                host_link = host_link[0].path
-                if self._is_svi(port_context.network.current):
-                    self._update_static_path_for_svi(
-                        session, port_context._plugin_context,
-                        port_context.network.current, segment,
-                        **{'old_path' if remove else 'new_path': host_link})
-                else:
-                    self._update_static_path_for_network(
-                        session, port_context.network.current, segment,
-                        **{'old_path' if remove else 'new_path': host_link})
-                static_path_updated = True
-
-        # acting as a fallback also
-        if not static_path_updated:
-            host_link = self.aim.find(aim_ctx, aim_infra.HostLink,
-                                      host_name=host)
-            if not host_link or not host_link[0].path:
-                LOG.warning(_LW('No host link information found for host %s'),
-                            host)
-                return
-            host_link = host_link[0].path
+        host_links = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
+        host_links = self._filter_host_links_by_segment(session, segment,
+                                                        host_links)
+        for hlink in host_links:
             if self._is_svi(port_context.network.current):
                 self._update_static_path_for_svi(
                     session, port_context._plugin_context,
                     port_context.network.current, segment,
-                    **{'old_path' if remove else 'new_path': host_link})
+                    **{'old_path' if remove else 'new_path': hlink})
             else:
                 self._update_static_path_for_network(
                     session, port_context.network.current, segment,
-                    **{'old_path' if remove else 'new_path': host_link})
+                    **{'old_path' if remove else 'new_path': hlink})
 
     def _release_dynamic_segment(self, port_context, use_original=False):
         top = (port_context.original_top_bound_segment if use_original
@@ -3807,9 +3815,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         net_mapping = self._get_network_mapping(session, network['id'])
         return self._get_network_vrf(net_mapping)
 
-    def _get_port_static_path_and_encap(self, plugin_context, port):
+    def _get_port_static_path_info(self, plugin_context, port):
         port_id = port['id']
-        path = encap = None
+        path = encap = host = None
         if self._is_port_bound(port):
             session = plugin_context.session
             aim_ctx = aim_context.AimContext(db_session=session)
@@ -3823,39 +3831,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self, plugin_context, port, network, binding, levels)
             host = port_context.host
             segment = port_context.bottom_bound_segment
-            host_link_net_labels = self.aim.find(
-                aim_ctx, aim_infra.HostLinkNetworkLabel, host_name=host,
-                network_label=segment[api.PHYSICAL_NETWORK])
-            if host_link_net_labels:
-                for hl_net_label in host_link_net_labels:
-                    interface = hl_net_label.interface_name
-                    host_link = self.aim.find(
-                        aim_ctx, aim_infra.HostLink, host_name=host,
-                        interface_name=interface)
-                    if not host_link or not host_link[0].path:
-                        LOG.warning(
-                            'No host link information found for host: '
-                            '%(host)s, interface: %(interface)s',
-                            {'host': host, 'interface': interface})
-                        continue
-                    path = host_link[0].path
-            if not path:
-                host_link = self.aim.find(aim_ctx, aim_infra.HostLink,
-                                          host_name=host)
-                if not host_link or not host_link[0].path:
-                    LOG.warning(
-                        'No host link information found for host %s', host)
-                    return None, None
-                path = host_link[0].path
-            if segment:
-                if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
-                    encap = 'vlan-%s' % segment[api.SEGMENTATION_ID]
-                else:
-                    LOG.debug('Unsupported segmentation type for static path '
-                              'binding: %s',
-                              segment.get(api.NETWORK_TYPE))
-                    encap = None
-        return path, encap
+            host_links = self.aim.find(aim_ctx, aim_infra.HostLink,
+                                       host_name=host)
+            host_links = self._filter_host_links_by_segment(session, segment,
+                                                            host_links)
+            encap = self._convert_segment(segment)
+            if not host_links:
+                LOG.warning("No host link information found for host %s ",
+                            host)
+                return None, None, None
+            # REVISIT(ivar): we should return a list for all available host
+            # links
+            path = host_links[0].path
+        return path, encap, host
 
     def _get_port_unique_domain(self, plugin_context, port):
         """Get port domain
