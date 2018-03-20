@@ -835,7 +835,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             self._validate_port_chain(context, chain, flowcs, ppgs)
 
     def _handle_net_link_change(self, rtype, event, trigger, context,
-                               network_ids, **kwargs):
+                                networks_map, host_links, host, **kwargs):
         ppg_ids = self._get_group_ids_by_network_ids(context, network_ids)
         for chain in self._get_chains_by_ppg_ids(context, ppg_ids):
             sc_ctx = sfc_ctx.PortChainContext(self.sfc_plugin, context,
