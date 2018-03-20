@@ -139,6 +139,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                       **kwargs):
         context = kwargs.get('context')
         security_group = kwargs.get('security_group')
+        # There is a neutron bug that sometimes it will create a SG with
+        # tenant_id field empty. We will not process it further when that
+        # happens then.
+        if not security_group['tenant_id']:
+            return
         original_security_group = kwargs.get('original_security_group')
         mech_context = driver_context.SecurityGroupContext(
             self, context, security_group, original_security_group)
