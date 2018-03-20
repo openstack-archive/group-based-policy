@@ -1932,11 +1932,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                             name=sg['id'])
         self.aim.delete(aim_ctx, sg_aim)
 
+    def _get_sg_rule_tenant_id(self, session, sg_rule):
+        # There is a bug in Neutron that sometimes the tenant_id contained
+        # within the sg_rule is pointing to the wrong tenant. So here we have
+        # to query DB to get the tenant_id of the SG then use that instead.
+        tenant_id = (session.query(sg_models.SecurityGroup.tenant_id).
+                     filter(sg_models.SecurityGroup.id ==
+                            sg_rule['security_group_id']).first())[0]
+        return tenant_id
+
     def create_security_group_rule_precommit(self, context):
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         sg_rule = context.current
-        tenant_aname = self.name_mapper.project(session, sg_rule['tenant_id'])
+        tenant_id = self._get_sg_rule_tenant_id(session, sg_rule)
+        tenant_aname = self.name_mapper.project(session, tenant_id)
         if sg_rule.get('remote_group_id'):
             remote_ips = []
             sg_ports = (session.query(models_v2.Port).
@@ -1974,7 +1984,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         sg_rule = context.current
-        tenant_aname = self.name_mapper.project(session, sg_rule['tenant_id'])
+        tenant_id = self._get_sg_rule_tenant_id(session, sg_rule)
+        tenant_aname = self.name_mapper.project(session, tenant_id)
         sg_rule_aim = aim_resource.SecurityGroupRule(
             tenant_name=tenant_aname,
             security_group_name=sg_rule['security_group_id'],
