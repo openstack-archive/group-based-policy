@@ -1055,6 +1055,7 @@ class TestAimMapping(ApicAimTestCase):
         self._check_network_deleted(net)
 
     def test_security_group_lifecycle(self):
+        self.driver.enable_db_query_for_sg_rule_tenant_id = True
         # Test create
         sg = self._make_security_group(self.fmt,
                                        'sg1', 'test')['security_group']
