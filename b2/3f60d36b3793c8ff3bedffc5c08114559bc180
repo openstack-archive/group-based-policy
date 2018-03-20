@@ -1,0 +1,9 @@
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Workflow+1: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Tue, 20 Mar 2018 19:15:53 +0000
+Reviewed-on: https://review.openstack.org/553908
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
