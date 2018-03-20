@@ -53,6 +53,11 @@ apic_opts = [
     cfg.StrOpt('apic_router_id_pool', default='199.199.199.1/24',
                help=("The pool of IPs where we allocate the APIC "
                      "router ID from while creating the SVI interface.")),
+    cfg.BoolOpt('enable_db_query_for_sg_rule_tenant_id',
+                default=False,
+                help=("This will enable the DB query to retrieve the SG "
+                      "tenant_id then use that while processing the SG "
+                      "rules.")),
 ]
 
 
