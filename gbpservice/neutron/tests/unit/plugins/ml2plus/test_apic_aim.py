@@ -1054,7 +1054,10 @@ class TestAimMapping(ApicAimTestCase):
         self.assertFalse(extn.get_network_extn_db(session, net['id']))
         self._check_network_deleted(net)
 
-    def test_security_group_lifecycle(self):
+    def _test_security_group_lifecycle(
+            self, enable_db_query_for_tenant_id=True):
+        self.driver.enable_db_query_for_sg_rule_tenant_id = (
+            enable_db_query_for_tenant_id)
         # Test create
         sg = self._make_security_group(self.fmt,
                                        'sg1', 'test')['security_group']
@@ -1091,6 +1094,14 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('security-groups', sg_id)
         self._sg_should_not_exist(sg_id)
         self._sg_rule_should_not_exist(sg_rule['id'])
+
+    def test_security_group_lifecycle(self):
+        self._test_security_group_lifecycle(
+            enable_db_query_for_tenant_id=True)
+
+    def test_security_group_lifecycle_with_default_tenant_id(self):
+        self._test_security_group_lifecycle(
+            enable_db_query_for_tenant_id=False)
 
     def test_subnet_lifecycle(self):
         # Create network.
