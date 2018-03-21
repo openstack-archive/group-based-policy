@@ -677,6 +677,12 @@ class TestFlowClassifier(TestAIMServiceFunctionChainingBase):
                 'logical_source_network': net1['network']['id'],
                 'logical_destination_network': ''},
             source_ip_prefix='192.168.0.0/24', expected_res_status=400)
+        self.create_flow_classifier(
+            l7_parameters={
+                'logical_source_network': net1['network']['id'],
+                'logical_destination_network': net2['network']['id'],
+            }, source_ip_prefix='192.168.0.0/24',
+            destination_ip_prefix='192.168.0.0/24', expected_res_status=400)
         self._delete_network(net2['network']['id'])
         self.create_flow_classifier(
             l7_parameters={
@@ -939,27 +945,6 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                     'l7_parameters']['logical_destination_network']},
             source_ip_prefix='0.0.0.0/0',
             destination_ip_prefix=fc['destination_ip_prefix'],
-            expected_res_status=201)['flow_classifier']
-
-        ppg = self._create_simple_ppg(pairs=2)
-        pc = self.create_port_chain(port_pair_groups=[ppg['id']],
-                                    flow_classifiers=[fc2['id']],
-                                    expected_res_status=201)['port_chain']
-        self._verify_pc_mapping(pc)
-        self._verify_pc_delete(pc)
-
-    def test_pc_mapping_default_sub_both(self):
-        fc = self._create_simple_flowc(src_svi=self.src_svi,
-                                       dst_svi=self.dst_svi)
-        # New classifier with only one change in subnet
-        fc2 = self.create_flow_classifier(
-            l7_parameters={
-                'logical_source_network': fc[
-                    'l7_parameters']['logical_source_network'],
-                'logical_destination_network': fc[
-                    'l7_parameters']['logical_destination_network']},
-            source_ip_prefix='0.0.0.0/0',
-            destination_ip_prefix='0.0.0.0/0',
             expected_res_status=201)['flow_classifier']
 
         ppg = self._create_simple_ppg(pairs=2)

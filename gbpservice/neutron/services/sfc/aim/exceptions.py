@@ -121,3 +121,7 @@ class TooManyPPGsPerChainError(exceptions.BadRequest):
 class FlowClassifierSameSrcDstSVISameSubnet(exceptions.BadRequest):
     message = _("Source and Destination networks must have different subnets "
                 "in Flow Classifier if SVI.")
+
+
+class FlowClassifierSameSubnet(exceptions.BadRequest):
+    message = _("Source and Destination cidrs must be different.")
