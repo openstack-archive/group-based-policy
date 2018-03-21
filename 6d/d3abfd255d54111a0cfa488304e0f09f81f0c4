@@ -1,0 +1,9 @@
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Workflow+1: Amit Bose <amitbose@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Wed, 21 Mar 2018 02:45:57 +0000
+Reviewed-on: https://review.openstack.org/551381
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/pike
