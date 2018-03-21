@@ -567,10 +567,6 @@ class TestPortPair(TestAIMServiceFunctionChainingBase):
         sp2 = self._make_port(self.fmt, snet2['network']['id'])['port']
         trunk1 = self._create_resource('trunk', port_id=p1['id'])
         trunk2 = self._create_resource('trunk', port_id=p2['id'])
-        self._bind_port_to_host(p1['id'], 'h1')
-        self._bind_port_to_host(p2['id'], 'h2')
-        self._bind_subport(self._ctx, trunk1, sp1)
-        self._bind_subport(self._ctx, trunk2, sp2)
         self.driver._trunk_plugin.add_subports(
             self._ctx, trunk1['trunk']['id'],
             {'sub_ports': [{'port_id': sp1['id'],
@@ -581,6 +577,8 @@ class TestPortPair(TestAIMServiceFunctionChainingBase):
             {'sub_ports': [{'port_id': sp2['id'],
                             'segmentation_type': 'vlan',
                             'segmentation_id': 100}]})
+        self._bind_port_to_host(p1['id'], 'h1')
+        self._bind_port_to_host(p2['id'], 'h2')
         self.create_port_pair(ingress=sp1['id'], egress=sp2['id'],
                               expected_res_status=201)
 

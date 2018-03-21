@@ -197,6 +197,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._l3_plugin = None
         self._gbp_plugin = None
         self._gbp_driver = None
+        self._trunk_plugin = None
         # Get APIC configuration and subscribe for changes
         self.enable_metadata_opt = (
             cfg.CONF.ml2_apic_aim.enable_optimized_metadata)
@@ -1837,6 +1838,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._insert_provisioning_block(context)
         registry.notify(sfc_cts.GBP_PORT, events.PRECOMMIT_UPDATE,
                         self, driver_context=context)
+        if context.original_host != context.host:
+            self._update_subports(context, context.current)
 
     def update_port_postcommit(self, context):
         port = context.current
@@ -2258,6 +2261,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._gbp_driver = (self.gbp_plugin.policy_driver_manager.
                                 policy_drivers['aim_mapping'].obj)
         return self._gbp_driver
+
+    @property
+    def trunk_plugin(self):
+        if not self._trunk_plugin:
+            self._trunk_plugin = directory.get_plugin("trunk")
+        return self._trunk_plugin
 
     def _merge_status(self, aim_ctx, sync_state, resource):
         status = self.aim.get_status(aim_ctx, resource, create_if_absent=False)
@@ -3926,3 +3935,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             registry.notify(sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
                             self, context=context,
                             network_id=mapping.network_id)
+
+    def _update_subports(self, context, port):
+        if not self.trunk_plugin:
+            # Nothing to do here
+            return
+        if not self.trunk_plugin.is_rpc_enabled():
+            LOG.warning("RPC not set up on Trunk Plugin")
+            return
+        details = port.get('trunk_details')
+        if not details:
+            return None
+        trunk_id = details['trunk_id']
+        subports = details['sub_ports']
+        for s in subports:
+            s['trunk_id'] = trunk_id
+        self.trunk_plugin._rpc_backend._skeleton.update_subport_bindings(
+            context._plugin_context, subports)
