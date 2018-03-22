@@ -72,6 +72,11 @@ class UpdateClassifierProtocolNotSupported(gpexc.GroupPolicyBadRequest):
                "with %s" % DRIVER_NAME)
 
 
+class UpdateClassifierDirectionNotSupported(gpexc.GroupPolicyBadRequest):
+    message = ("Update operation on classifier direction is not supported "
+               "with %s" % DRIVER_NAME)
+
+
 class ProtocolNotSupported(gpexc.GroupPolicyBadRequest):
     message = ("Unsupported classifier protocol. Only icmp, tcp and udp are "
                "supported with %s" % DRIVER_NAME)
@@ -203,19 +208,6 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             LOG.warning('Domain %s was not found on backend',
                         project_id)
 
-    def _create_or_update_communication_profile(self, profile_id, name,
-                                                description, rules,
-                                                update_flow=False):
-
-        services = [rule['policy_classifier_id']
-                    for rule in rules]
-
-        self.nsx_policy.comm_profile.create_or_overwrite(
-                name=generate_nsx_name(profile_id, name),
-                profile_id=profile_id,
-                description=description,
-                services=services)
-
     def _split_rules_by_direction(self, context, rules):
         in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
         out_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_OUT]
@@ -236,44 +228,23 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
         return in_rules, out_rules
 
-    def _delete_comm_profile(self, comm_profile_id):
-        try:
-            self.nsx_policy.comm_profile.delete(comm_profile_id)
-        except nsxlib_exc.ManagerError:
-            LOG.error('Communication profile %s not found on backend',
-                      comm_profile_id)
+    def _get_services_from_rule_set(self, context, rule_set_id):
 
-    def _create_or_update_policy_rule_set(self, context, update_flow=False):
-
-        rule_set_id = context.current['id']
-
+        ruleset = self.gbp_plugin.get_policy_rule_set(
+                context._plugin_context, rule_set_id)
         rules = self.gbp_plugin.get_policy_rules(
                 context._plugin_context,
-                {'id': context.current['policy_rules']})
+                {'id': ruleset['policy_rules']})
 
         in_rules, out_rules = self._split_rules_by_direction(context, rules)
+        in_services = set()
+        for rule in in_rules:
+            in_services.add(rule['policy_classifier_id'])
+        out_services = set()
+        for rule in out_rules:
+            out_services.add(rule['policy_classifier_id'])
 
-        if in_rules:
-            self._create_or_update_communication_profile(
-                append_in_dir(rule_set_id),
-                generate_nsx_name(rule_set_id,
-                                  context.current['name'],
-                                  '_IN'),
-                context.current['description'] + '(ingress)',
-                in_rules)
-        elif update_flow:
-            self._delete_comm_profile(append_in_dir(rule_set_id))
-
-        if out_rules:
-            self._create_or_update_communication_profile(
-                append_out_dir(rule_set_id),
-                generate_nsx_name(rule_set_id,
-                                  context.current['name'],
-                                  '_OUT'),
-                context.current['description'] + '(egress)',
-                out_rules)
-        elif update_flow:
-            self._delete_comm_profile(append_out_dir(rule_set_id))
+        return sorted(list(in_services)), sorted(list(out_services))
 
     def _filter_ptgs_by_ruleset(self, ptgs, ruleset_id):
         providing_ptgs = [ptg['id'] for ptg in ptgs
@@ -282,8 +253,15 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
                           if ruleset_id in ptg['consumed_policy_rule_sets']]
         return providing_ptgs, consuming_ptgs
 
-    def _map_rule_set(self, ptgs, profiles, project_id,
-                      group_id, ruleset_id, delete_flow):
+    def _map_rule_set(self, context, ptgs, project_id,
+                      ruleset_id, delete_flow):
+
+        def delete_map_if_exists(ruleset):
+            try:
+                self.nsx_policy.comm_map.delete(project_id, ruleset)
+            except nsxlib_exc.ManagerError:
+                # TODO(annak) - narrow this exception down
+                pass
 
         providing_ptgs, consuming_ptgs = self._filter_ptgs_by_ruleset(
             ptgs, ruleset_id)
@@ -298,53 +276,54 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
             # we need to delete map entry if exists
             for ruleset in (ruleset_in, ruleset_out):
-                if ruleset in profiles:
-                    try:
-                        self.nsx_policy.comm_map.delete(project_id, ruleset)
-                    except nsxlib_exc.ManagerError:
-                        pass
+                delete_map_if_exists(ruleset)
+
             return
 
-        if ruleset_in in profiles:
-            self.nsx_policy.comm_map.create_or_overwrite(
-                    name=ruleset_in,
-                    domain_id=project_id,
-                    map_id=ruleset_in,
-                    description="GBP ruleset ingress",
-                    profile_id=ruleset_in,
-                    source_groups=consuming_ptgs,
-                    dest_groups=providing_ptgs)
+        services_in, services_out = self._get_services_from_rule_set(
+            context, ruleset_id)
 
-        if ruleset_out in profiles:
+        if services_in:
             self.nsx_policy.comm_map.create_or_overwrite(
-                    name=ruleset_out,
-                    domain_id=project_id,
-                    map_id=ruleset_out,
-                    description="GBP ruleset egress",
-                    profile_id=ruleset_out,
-                    source_groups=providing_ptgs,
-                    dest_groups=consuming_ptgs)
+                name=ruleset_in,
+                domain_id=project_id,
+                map_id=ruleset_in,
+                description="GBP ruleset ingress",
+                service_ids=services_in,
+                source_groups=consuming_ptgs,
+                dest_groups=providing_ptgs)
+        else:
+            delete_map_if_exists(ruleset_in)
 
-    def _map_group_rule_sets(self, context, group_id,
+        if services_out:
+            self.nsx_policy.comm_map.create_or_overwrite(
+                name=ruleset_out,
+                domain_id=project_id,
+                map_id=ruleset_out,
+                description="GBP ruleset egress",
+                service_ids=services_out,
+                source_groups=providing_ptgs,
+                dest_groups=consuming_ptgs)
+        else:
+            delete_map_if_exists(ruleset_out)
+
+    def _map_group_rule_sets(self, context,
                              provided_policy_rule_sets,
                              consumed_policy_rule_sets,
                              delete_flow=False):
 
         project_id = context.current['project_id']
 
-        profiles = self.nsx_policy.comm_profile.list()
-        profiles = [p['id'] for p in profiles]
-
         # create communication maps
         ptgs = context._plugin.get_policy_target_groups(
-                                context._plugin_context)
+            context._plugin_context)
         for ruleset in provided_policy_rule_sets:
-            self._map_rule_set(ptgs, profiles, project_id,
-                               group_id, ruleset, delete_flow)
+            self._map_rule_set(context, ptgs, project_id,
+                               ruleset, delete_flow)
 
         for ruleset in consumed_policy_rule_sets:
-            self._map_rule_set(ptgs, profiles, project_id,
-                               group_id, ruleset, delete_flow)
+            self._map_rule_set(context, ptgs, project_id,
+                               ruleset, delete_flow)
 
     # overrides base class, called from base group_create_postcommit
     # REVISIT(annak): Suggest a better design for driver-specific callbacks,
@@ -365,10 +344,8 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
                            provided_policy_rule_sets,
                            consumed_policy_rule_sets, op):
 
-        group_id = context.current['id']
-
         self._map_group_rule_sets(
-             context, group_id,
+             context,
              provided_policy_rule_sets,
              consumed_policy_rule_sets,
              delete_flow=(op == "DISASSOCIATE"))
@@ -402,7 +379,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             ports = [str(p) for p in range(lower, upper)]
 
         # service entry in nsx policy has single direction
-        # directions will be enforced on communication profile level
+        # directions will be enforced on communication map level
         self.nsx_policy.service.create_or_overwrite(
             name=generate_nsx_name(classifier['id'], classifier['name']),
             service_id=classifier['id'],
@@ -421,7 +398,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             raise HierarchicalContractsNotSupported()
 
     def create_policy_rule_set_postcommit(self, context):
-        self._create_or_update_policy_rule_set(context)
+        pass
 
     def create_policy_target_precommit(self, context):
         super(NsxPolicyMappingDriver,
@@ -515,17 +492,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         pass
 
     def delete_policy_rule_set_postcommit(self, context):
-        ruleset_id = context.current['id']
-        rules = self.gbp_plugin.get_policy_rules(
-                context._plugin_context,
-                {'id': context.current['policy_rules']})
-
-        in_rules, out_rules = self._split_rules_by_direction(context, rules)
-        if in_rules:
-            self._delete_comm_profile(append_in_dir(ruleset_id))
-
-        if out_rules:
-            self._delete_comm_profile(append_out_dir(ruleset_id))
+        pass
 
     def delete_policy_target_postcommit(self, context):
         # This is inherited behavior without:
@@ -541,7 +508,9 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         self._reject_shared(context.current, 'policy_rule_set')
 
     def update_policy_rule_set_postcommit(self, context):
-        self._create_or_update_policy_rule_set(context, update_flow=True)
+        if (context.current['policy_rules'] !=
+            context.original['policy_rules']):
+            self._on_policy_rule_set_updated(context, context.current)
 
     def update_policy_target_precommit(self, context):
         # Parent call verifies change of PTG is not supported
@@ -554,10 +523,27 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
               self).update_policy_target_postcommit(context)
 
     def update_policy_rule_precommit(self, context):
-        raise UpdateOperationNotSupported()
+        super(NsxPolicyMappingDriver,
+              self).update_policy_rule_precommit(context)
+
+    def _on_policy_rule_set_updated(self, context, prs):
+        ptgs = context._plugin.get_policy_target_groups(
+            context._plugin_context)
+
+        self._map_rule_set(context, ptgs, prs['project_id'],
+                           prs['id'], False)
 
     def update_policy_rule_postcommit(self, context):
-        pass
+        if (context.current['policy_classifier_id'] !=
+            context.original['policy_classifier_id']):
+            # All groups using this rule need to be updated
+            prs_ids = (
+                context._plugin._get_policy_rule_policy_rule_sets(
+                    context._plugin_context, context.current['id']))
+            policy_rule_sets = context._plugin.get_policy_rule_sets(
+                context._plugin_context, filters={'id': prs_ids})
+            for prs in policy_rule_sets:
+                self._on_policy_rule_set_updated(context, prs)
 
     def update_policy_action_precommit(self, context):
         raise UpdateOperationNotSupported()
@@ -565,6 +551,10 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
     def update_policy_classifier_precommit(self, context):
         if context.current['protocol'] != context.original['protocol']:
             raise UpdateClassifierProtocolNotSupported()
+
+        # TODO(annak): support this
+        if context.current['direction'] != context.original['direction']:
+            raise UpdateClassifierDirectionNotSupported()
 
     def update_policy_classifier_postcommit(self, context):
         self.create_policy_classifier_postcommit(context)
