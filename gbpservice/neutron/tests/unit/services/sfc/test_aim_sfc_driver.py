@@ -239,16 +239,14 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
             # Each of these CD have 2 CDIs
             iprt = self._show_port(pp['ingress'])
             eprt = self._show_port(pp['egress'])
-            pp_dciin = self.aim_mgr.find(
-                ctx, aim_sg.ConcreteDeviceInterface,
-                name='prt_' + pp['ingress'])[0]
-            pp_dcieg = self.aim_mgr.find(
-                ctx, aim_sg.ConcreteDeviceInterface,
-                name='prt_' + pp['egress'])[0]
-            self.assertEqual(self.path_by_host[iprt['binding:host_id']],
-                             pp_dciin.path)
-            self.assertEqual(self.path_by_host[eprt['binding:host_id']],
-                             pp_dcieg.path)
+            for p in [iprt, eprt]:
+                pp_dciin = self.aim_mgr.find(
+                    ctx, aim_sg.ConcreteDeviceInterface,
+                    name='prt_' + p['id'])
+                pp_dciin = pp_dciin[0]
+                self.assertEqual(
+                    self.path_by_host.get(p['binding:host_id'], ''),
+                    pp_dciin.path)
             iepg = self.aim_mech._get_epg_by_network_id(self._ctx.session,
                                                         iprt['network_id'])
             eepg = self.aim_mech._get_epg_by_network_id(self._ctx.session,
@@ -269,10 +267,9 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
 
         # Ingress CDIs
         ingr_cdis = [
-            self.aim_mgr.get(
-                ctx, aim_sg.ConcreteDeviceInterface(
-                    tenant_name=apic_tn, device_cluster_name=dc.name,
-                    device_name='pp_' + pp['id'], name='prt_' + pp['ingress']))
+            aim_sg.ConcreteDeviceInterface(
+                tenant_name=apic_tn, device_cluster_name=dc.name,
+                device_name='pp_' + pp['id'], name='prt_' + pp['ingress'])
             for pp in pps]
 
         self.assertEqual({ingr.dn for ingr in ingr_cdis},
@@ -280,10 +277,9 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
 
         # Egress CDIs
         egr_cdis = [
-            self.aim_mgr.get(
-                ctx, aim_sg.ConcreteDeviceInterface(
-                    tenant_name=apic_tn, device_cluster_name=dc.name,
-                    device_name='pp_' + pp['id'], name='prt_' + pp['egress']))
+            aim_sg.ConcreteDeviceInterface(
+                tenant_name=apic_tn, device_cluster_name=dc.name,
+                device_name='pp_' + pp['id'], name='prt_' + pp['egress'])
             for pp in pps]
 
         self.assertEqual({egr.dn for egr in egr_cdis},
@@ -1122,6 +1118,33 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
             self._context, 'h2', 'eth0', 'aa:bb', '103',
             '3', '1',
             port_description='topology/pod-1/paths-103/pathep-[eth3/1]')
+        self._verify_pc_mapping(pc)
+        # Test Removal
+        self.path_by_host.pop('h2')
+        self.aim_mech.delete_link(self._context, 'h2', 'eth0', 'aa:bb', '103',
+                                  '3', '1')
+        self._verify_pc_mapping(pc)
+
+    def test_port_no_host_link(self):
+        net1 = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
+        net2 = self._make_network(self.fmt, 'net2', True)
+        self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
+        p1 = self._make_port(self.fmt, net1['network']['id'])['port']
+        self._bind_port_to_host(p1['id'], 'h-nolink')
+
+        p2 = self._make_port(self.fmt, net2['network']['id'])['port']
+        self._bind_port_to_host(p2['id'], 'h-nolink')
+
+        pp = self.create_port_pair(ingress=p1['id'], egress=p2['id'],
+                                   expected_res_status=201)['port_pair']
+        ppg = self.create_port_pair_group(
+            port_pairs=[pp['id']], expected_res_status=201)['port_pair_group']
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        pc = self.create_port_chain(port_pair_groups=[ppg['id']],
+                                    flow_classifiers=[fc['id']],
+                                    expected_res_status=201)['port_chain']
         self._verify_pc_mapping(pc)
 
     def test_pc_update_flowc(self):
