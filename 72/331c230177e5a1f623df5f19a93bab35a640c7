@@ -1,0 +1,10 @@
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Code-Review+1: zhenyang.liang <liangzy@awcloud.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 22 Mar 2018 17:24:49 +0000
+Reviewed-on: https://review.openstack.org/554741
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
