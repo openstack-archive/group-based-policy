@@ -206,15 +206,16 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
     def _create_or_update_communication_profile(self, profile_id, name,
                                                 description, rules,
                                                 update_flow=False):
+        # DEBUG ADIT doesn't exist any more
+        pass
+        # services = [rule['policy_classifier_id']
+        #             for rule in rules]
 
-        services = [rule['policy_classifier_id']
-                    for rule in rules]
-
-        self.nsx_policy.comm_profile.create_or_overwrite(
-                name=generate_nsx_name(profile_id, name),
-                profile_id=profile_id,
-                description=description,
-                services=services)
+        # self.nsx_policy.comm_profile.create_or_overwrite(
+        #     name=generate_nsx_name(profile_id, name),
+        #     profile_id=profile_id,
+        #     description=description,
+        #     services=services)
 
     def _split_rules_by_direction(self, context, rules):
         in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
@@ -237,43 +238,46 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         return in_rules, out_rules
 
     def _delete_comm_profile(self, comm_profile_id):
-        try:
-            self.nsx_policy.comm_profile.delete(comm_profile_id)
-        except nsxlib_exc.ManagerError:
-            LOG.error('Communication profile %s not found on backend',
-                      comm_profile_id)
+        # DEBUG ADIT no comm profile any more
+        pass
+        # try:
+        #     self.nsx_policy.comm_profile.delete(comm_profile_id)
+        # except nsxlib_exc.ManagerError:
+        #     LOG.error('Communication profile %s not found on backend',
+        #               comm_profile_id)
 
     def _create_or_update_policy_rule_set(self, context, update_flow=False):
+        # DEBUG ADIT we do not need it any more
+        pass
+        # rule_set_id = context.current['id']
 
-        rule_set_id = context.current['id']
+        # rules = self.gbp_plugin.get_policy_rules(
+        #         context._plugin_context,
+        #         {'id': context.current['policy_rules']})
 
-        rules = self.gbp_plugin.get_policy_rules(
-                context._plugin_context,
-                {'id': context.current['policy_rules']})
+        # in_rules, out_rules = self._split_rules_by_direction(context, rules)
 
-        in_rules, out_rules = self._split_rules_by_direction(context, rules)
+        # if in_rules:
+        #     self._create_or_update_communication_profile(
+        #         append_in_dir(rule_set_id),
+        #         generate_nsx_name(rule_set_id,
+        #                           context.current['name'],
+        #                           '_IN'),
+        #         context.current['description'] + '(ingress)',
+        #         in_rules)
+        # elif update_flow:
+        #     self._delete_comm_profile(append_in_dir(rule_set_id))
 
-        if in_rules:
-            self._create_or_update_communication_profile(
-                append_in_dir(rule_set_id),
-                generate_nsx_name(rule_set_id,
-                                  context.current['name'],
-                                  '_IN'),
-                context.current['description'] + '(ingress)',
-                in_rules)
-        elif update_flow:
-            self._delete_comm_profile(append_in_dir(rule_set_id))
-
-        if out_rules:
-            self._create_or_update_communication_profile(
-                append_out_dir(rule_set_id),
-                generate_nsx_name(rule_set_id,
-                                  context.current['name'],
-                                  '_OUT'),
-                context.current['description'] + '(egress)',
-                out_rules)
-        elif update_flow:
-            self._delete_comm_profile(append_out_dir(rule_set_id))
+        # if out_rules:
+        #     self._create_or_update_communication_profile(
+        #         append_out_dir(rule_set_id),
+        #         generate_nsx_name(rule_set_id,
+        #                           context.current['name'],
+        #                           '_OUT'),
+        #         context.current['description'] + '(egress)',
+        #         out_rules)
+        # elif update_flow:
+        #     self._delete_comm_profile(append_out_dir(rule_set_id))
 
     def _filter_ptgs_by_ruleset(self, ptgs, ruleset_id):
         providing_ptgs = [ptg['id'] for ptg in ptgs
@@ -307,23 +311,23 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
         if ruleset_in in profiles:
             self.nsx_policy.comm_map.create_or_overwrite(
-                    name=ruleset_in,
-                    domain_id=project_id,
-                    map_id=ruleset_in,
-                    description="GBP ruleset ingress",
-                    profile_id=ruleset_in,
-                    source_groups=consuming_ptgs,
-                    dest_groups=providing_ptgs)
+                name=ruleset_in,
+                domain_id=project_id,
+                map_id=ruleset_in,
+                description="GBP ruleset ingress",
+                service_id=ruleset_in,
+                source_groups=consuming_ptgs,
+                dest_groups=providing_ptgs)
 
         if ruleset_out in profiles:
             self.nsx_policy.comm_map.create_or_overwrite(
-                    name=ruleset_out,
-                    domain_id=project_id,
-                    map_id=ruleset_out,
-                    description="GBP ruleset egress",
-                    profile_id=ruleset_out,
-                    source_groups=providing_ptgs,
-                    dest_groups=consuming_ptgs)
+                name=ruleset_out,
+                domain_id=project_id,
+                map_id=ruleset_out,
+                description="GBP ruleset egress",
+                service_id=ruleset_out,
+                source_groups=providing_ptgs,
+                dest_groups=consuming_ptgs)
 
     def _map_group_rule_sets(self, context, group_id,
                              provided_policy_rule_sets,
@@ -332,12 +336,12 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
 
         project_id = context.current['project_id']
 
-        profiles = self.nsx_policy.comm_profile.list()
+        profiles = self.nsx_policy.comm_map.list()
         profiles = [p['id'] for p in profiles]
 
         # create communication maps
         ptgs = context._plugin.get_policy_target_groups(
-                                context._plugin_context)
+            context._plugin_context)
         for ruleset in provided_policy_rule_sets:
             self._map_rule_set(ptgs, profiles, project_id,
                                group_id, ruleset, delete_flow)
@@ -402,7 +406,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             ports = [str(p) for p in range(lower, upper)]
 
         # service entry in nsx policy has single direction
-        # directions will be enforced on communication profile level
+        # directions will be enforced on communication map level
         self.nsx_policy.service.create_or_overwrite(
             name=generate_nsx_name(classifier['id'], classifier['name']),
             service_id=classifier['id'],
@@ -421,7 +425,8 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             raise HierarchicalContractsNotSupported()
 
     def create_policy_rule_set_postcommit(self, context):
-        self._create_or_update_policy_rule_set(context)
+        # DEBUG ADIT self._create_or_update_policy_rule_set(context)
+        pass
 
     def create_policy_target_precommit(self, context):
         super(NsxPolicyMappingDriver,
@@ -515,17 +520,19 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         pass
 
     def delete_policy_rule_set_postcommit(self, context):
-        ruleset_id = context.current['id']
-        rules = self.gbp_plugin.get_policy_rules(
-                context._plugin_context,
-                {'id': context.current['policy_rules']})
+        # DEBUG ADIT no comm profiles...
+        pass
+        # ruleset_id = context.current['id']
+        # rules = self.gbp_plugin.get_policy_rules(
+        #         context._plugin_context,
+        #         {'id': context.current['policy_rules']})
 
-        in_rules, out_rules = self._split_rules_by_direction(context, rules)
-        if in_rules:
-            self._delete_comm_profile(append_in_dir(ruleset_id))
+        # in_rules, out_rules = self._split_rules_by_direction(context, rules)
+        # if in_rules:
+        #     self._delete_comm_profile(append_in_dir(ruleset_id))
 
-        if out_rules:
-            self._delete_comm_profile(append_out_dir(ruleset_id))
+        # if out_rules:
+        #     self._delete_comm_profile(append_out_dir(ruleset_id))
 
     def delete_policy_target_postcommit(self, context):
         # This is inherited behavior without:
@@ -541,7 +548,9 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         self._reject_shared(context.current, 'policy_rule_set')
 
     def update_policy_rule_set_postcommit(self, context):
-        self._create_or_update_policy_rule_set(context, update_flow=True)
+        # DEBUG ADIT self._create_or_update_policy_rule_set(
+        #    context, update_flow=True)
+        pass
 
     def update_policy_target_precommit(self, context):
         # Parent call verifies change of PTG is not supported
