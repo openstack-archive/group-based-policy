@@ -23,11 +23,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.vmware.nsx_policy import (
     nsx_policy_mapping as driver)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_resource_mapping as test_rmd)
-import unittest2
 
 
 TEST_PROJECT = 'test-project'
-TEMPORARY_SKIP = 'skipping temporarily while adjusting to next backend version'
 
 
 class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
@@ -85,30 +83,6 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
     def _mock_icmp_service_delete(self):
         return mock.patch.object(self.nsx_policy.icmp_service, 'delete')
 
-    def _mock_profile_create(self):
-        return mock.patch.object(self.nsx_policy.comm_profile,
-                                 'create_or_overwrite')
-
-    def _mock_nth_profile_create_fails(self, n=2):
-        self.call_count = 1
-
-        def raise_on_nth_call(**kwargs):
-            if self.call_count == n:
-                raise nsxlib_exc.ManagerError
-            else:
-                self.call_count += 1
-        return mock.patch.object(self.nsx_policy.comm_profile,
-                                 'create_or_overwrite',
-                                 side_effect=raise_on_nth_call)
-
-    def _mock_profile_delete(self):
-        return mock.patch.object(self.nsx_policy.comm_profile, 'delete')
-
-    def _mock_profile_list(self, profile_ids):
-        return mock.patch.object(self.nsx_policy.comm_profile, 'list',
-                                 return_value=[{'id': p}
-                                               for p in profile_ids])
-
     def _mock_group_create(self):
         return mock.patch.object(self.nsx_policy.group, 'create_or_overwrite')
 
@@ -162,7 +136,6 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
 
 class TestPolicyClassifier(NsxPolicyMappingTestCase):
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_l4_lifecycle(self):
         with self._mock_service_create() as service_create_call, \
             self._mock_service_delete() as service_delete_call:
@@ -202,7 +175,6 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
 
             service_delete_call.assert_called_with(cl['id'])
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_port_range(self):
         with self._mock_service_create() as service_create_call:
 
@@ -219,7 +191,6 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
                 dest_ports=port_list,
                 service_id=mock.ANY)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_without_ports(self):
         with self._mock_service_create() as service_create_call:
 
@@ -234,7 +205,6 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
                 dest_ports=[],
                 service_id=mock.ANY)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_icmp_lifecycle(self):
         with self._mock_icmp_service_create() as service_create_call, \
             self._mock_icmp_service_delete() as service_delete_call:
@@ -251,7 +221,6 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
 
             service_delete_call.assert_called_with(cl['id'])
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_update_protocol_fails(self):
         with self._mock_icmp_service_create():
 
@@ -266,7 +235,6 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
                               protocol='tcp',
                               dest_ports=['80'])
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_icmpv6_protocol_fails(self):
         self.assertRaises(webob.exc.HTTPClientError,
                           self.create_policy_classifier,
@@ -278,12 +246,11 @@ class TestPolicyClassifier(NsxPolicyMappingTestCase):
 class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
     def _prepare_rule_set(self, name='test'):
-        with self._mock_service_create(),\
-             self._mock_profile_create():
+        with self._mock_service_create():
 
-            rule = self._create_simple_policy_rule()
+            self.rule = self._create_simple_policy_rule()
             return self.create_policy_rule_set(
-                    name=name, policy_rules=[rule['id']])['policy_rule_set']
+                name=name, policy_rules=[self.rule['id']])['policy_rule_set']
 
     def assert_neutron_resources(self, net_count, subnet_count, port_count):
         networks = self._plugin.get_networks(self._context)
@@ -305,25 +272,27 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
                     cond_val=group_id,
                     group_id=group_id)
 
-    def ingress_map_call(self, prs_id, provider_ids, consumer_ids):
+    def ingress_map_call(self, prs_id, provider_ids,
+                         consumer_ids, service_ids):
         return call(domain_id=TEST_PROJECT,
-                    profile_id=driver.append_in_dir(prs_id),
                     map_id=mock.ANY,
                     name=driver.append_in_dir(prs_id),
+                    service_ids=service_ids,
                     description=mock.ANY,
                     source_groups=consumer_ids,
-                    dest_groups=provider_ids)
+                    dest_groups=provider_ids,
+                    )
 
-    def egress_map_call(self, prs_id, provider_ids, consumer_ids):
+    def egress_map_call(self, prs_id, provider_ids,
+                        consumer_ids, service_ids):
         return call(domain_id=TEST_PROJECT,
-                    profile_id=driver.append_out_dir(prs_id),
                     map_id=mock.ANY,
+                    service_ids=service_ids,
                     name=driver.append_out_dir(prs_id),
                     description=mock.ANY,
                     source_groups=provider_ids,
                     dest_groups=consumer_ids)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_first_ptg_for_project(self):
         '''Create first ptg for tenant and verify domain creation'''
 
@@ -360,7 +329,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
         # Create group pair
         with self._mock_group_create() as group_create,\
-            self._mock_profile_list(profile_ids),\
             self._mock_map_create() as map_create,\
             self._mock_domain_create():
 
@@ -375,13 +343,17 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             # validate communication map creation on backend
             calls = []
             if direction_in:
-                calls.append(self.ingress_map_call(policy_rule_set['id'],
-                                                   [provider_ptg],
-                                                   [consumer_ptg]))
+                calls.append(self.ingress_map_call(
+                    policy_rule_set['id'],
+                    [provider_ptg],
+                    [consumer_ptg],
+                    [self.rule['policy_classifier_id']]))
             if direction_out:
-                calls.append(self.egress_map_call(policy_rule_set['id'],
-                                                  [provider_ptg],
-                                                  [consumer_ptg]))
+                calls.append(self.egress_map_call(
+                    policy_rule_set['id'],
+                    [provider_ptg],
+                    [consumer_ptg],
+                    [self.rule['policy_classifier_id']]))
             map_create.assert_has_calls(calls)
 
             # validate neutron resources
@@ -389,7 +361,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
         # Delete producer
         with self._mock_map_delete() as map_delete,\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_delete() as group_delete,\
             self._mock_domain_delete() as domain_delete:
 
@@ -416,7 +387,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
         # Delete consumer
         with self._mock_map_delete() as map_delete,\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_delete() as group_delete,\
             self._mock_domain_delete() as domain_delete:
 
@@ -431,19 +401,15 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             # last group is deleted, domain should go as well
             domain_delete.assert_called_with(TEST_PROJECT)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_ptg_pair_with_single_rule_in(self):
         self._test_ptg_pair_with_single_rule(True, False)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_ptg_pair_with_single_rule_out(self):
         self._test_ptg_pair_with_single_rule(False, True)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_ptg_pair_with_single_rule_bi(self):
         self._test_ptg_pair_with_single_rule(True, True)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_fail_isolated(self):
         '''Verify integrity when backend fails on isolated group creation.
 
@@ -470,7 +436,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
             self.assert_neutron_rollback()
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_fail_connected(self):
         '''Verify integrity when backend fails on connectivity map creation
 
@@ -481,11 +446,8 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         '''
 
         policy_rule_set = self._prepare_rule_set()
-        profile_ids = [driver.append_in_dir(policy_rule_set['id']),
-                       driver.append_out_dir(policy_rule_set['id'])]
 
         with self._mock_group_create(),\
-            self._mock_profile_list(profile_ids),\
             self._mock_map_create_fails(),\
             self._mock_group_delete() as group_delete:
 
@@ -497,7 +459,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
             self.assert_neutron_resources(1, 1, 1)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_fail_multi_connected(self):
         '''Verify integrity when backend fails on connectivity map creation
 
@@ -509,15 +470,14 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         '''
 
         prs1 = self._prepare_rule_set()['id']
+        service1 = self.rule['policy_classifier_id']
         prs2 = self._prepare_rule_set()['id']
+        service2 = self.rule['policy_classifier_id']
         prs3 = self._prepare_rule_set()['id']
-        profile_ids = [driver.append_in_dir(prs1), driver.append_out_dir(prs1),
-                       driver.append_in_dir(prs2), driver.append_out_dir(prs2),
-                       driver.append_in_dir(prs3), driver.append_out_dir(prs3)]
+        service3 = self.rule['policy_classifier_id']
 
         # Create a and c
         with self._mock_group_create(),\
-            self._mock_profile_list(profile_ids),\
             self._mock_map_create():
 
             ab_dict = {prs1: None}
@@ -530,7 +490,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
                 consumed_policy_rule_sets=bc_dict)['policy_target_group']['id']
 
         with self._mock_group_create(),\
-            self._mock_profile_list(profile_ids),\
             self._mock_nth_map_create_fails(n=6) as map_create,\
             self._mock_map_delete() as map_delete,\
             self._mock_group_delete() as group_delete:
@@ -542,12 +501,13 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
                               provided_policy_rule_sets=bc_dict)
 
             b = mock.ANY
-            map_create_calls = [self.ingress_map_call(prs1, [a], [b]),
-                                self.egress_map_call(prs1, [a], [b]),
-                                self.ingress_map_call(prs2, [b], [c]),
-                                self.egress_map_call(prs2, [b], [c]),
-                                self.ingress_map_call(prs3, [b], [c]),
-                                self.egress_map_call(prs3, [b], [c])]
+            map_create_calls = [
+                self.ingress_map_call(prs1, [a], [b], [service1]),
+                self.egress_map_call(prs1, [a], [b], [service1]),
+                self.ingress_map_call(prs2, [b], [c], [service2]),
+                self.egress_map_call(prs2, [b], [c], [service2]),
+                self.ingress_map_call(prs3, [b], [c], [service3]),
+                self.egress_map_call(prs3, [b], [c], [service3])]
 
             map_create.assert_has_calls(map_create_calls, any_order=True)
 
@@ -564,7 +524,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
 
             self.assert_neutron_resources(2, 2, 2)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_ptg_pair_multi_rule_set(self):
         '''Create ptg pair based on 3 rule sets
 
@@ -572,17 +531,14 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         second - only egress connectivity, and third - both
         '''
         prs1 = self._prepare_rule_set()['id']
+        service1 = self.rule['policy_classifier_id']
         prs2 = self._prepare_rule_set()['id']
+        service2 = self.rule['policy_classifier_id']
         prs3 = self._prepare_rule_set()['id']
-
-        profile_ids = [driver.append_in_dir(prs1),
-                       driver.append_out_dir(prs2),
-                       driver.append_in_dir(prs3),
-                       driver.append_out_dir(prs3)]
+        service3 = self.rule['policy_classifier_id']
 
         with self._mock_domain_create(),\
             self._mock_group_create() as group_create,\
-            self._mock_profile_list(profile_ids),\
             self._mock_map_create() as map_create:
 
             rule_set_dict = {prs1: None, prs2: None, prs3: None}
@@ -598,25 +554,27 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
                  self.group_call('ptg2', consumer_id)])
 
             map_calls = [
-                self.ingress_map_call(prs1, [provider_id], [consumer_id]),
-                self.egress_map_call(prs2, [provider_id], [consumer_id]),
-                self.ingress_map_call(prs3, [provider_id], [consumer_id]),
-                self.egress_map_call(prs3, [provider_id], [consumer_id])]
+                self.ingress_map_call(prs1, [provider_id],
+                                      [consumer_id], [service1]),
+                self.egress_map_call(prs2, [provider_id],
+                                     [consumer_id], [service2]),
+                self.ingress_map_call(prs3, [provider_id],
+                                      [consumer_id], [service3]),
+                self.egress_map_call(prs3, [provider_id],
+                                     [consumer_id], [service3])]
             map_create.assert_has_calls(map_calls, any_order=True)
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_ptg_ring(self):
         ring_size = 10
 
         prs_ids = []
+        services = []
         for i in range(0, ring_size):
             prs_ids.append(self._prepare_rule_set()['id'])
-
-        profile_ids = [driver.append_in_dir(prs_id) for prs_id in prs_ids]
+            services.append(self.rule['policy_classifier_id'])
 
         # Create ring topology
         with self._mock_domain_create(),\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_create() as group_create,\
             self._mock_map_create() as map_create:
 
@@ -641,11 +599,13 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
                     map_calls.append(self.ingress_map_call(
                         prs_ids[i],
                         [ptg_id],
-                        [ptg_ids[i - 1]]))
+                        [ptg_ids[i - 1]],
+                        [services[i]]))
 
             map_calls.append(self.ingress_map_call(prs_ids[0],
                                                    [ptg_ids[0]],
-                                                   [ptg_id]))
+                                                   [ptg_id],
+                                                   [services[0]]))
 
             group_create.assert_has_calls(group_calls)
             map_create.assert_has_calls(map_calls, any_order=True)
@@ -655,14 +615,15 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         # Delete single group and verify connectors are deleted
         with self._mock_map_delete() as map_delete,\
             self._mock_map_create() as map_create,\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_delete() as group_delete:
 
             ptg_id = ptg_ids[2]
             self.delete_policy_target_group(ptg_id)
 
             map_calls = [call(TEST_PROJECT, driver.append_in_dir(prs_ids[2])),
-                         call(TEST_PROJECT, driver.append_in_dir(prs_ids[3]))]
+                         call(TEST_PROJECT, driver.append_out_dir(prs_ids[2])),
+                         call(TEST_PROJECT, driver.append_in_dir(prs_ids[3])),
+                         call(TEST_PROJECT, driver.append_out_dir(prs_ids[3]))]
 
             map_delete.assert_has_calls(map_calls)
             map_create.assert_not_called()
@@ -671,7 +632,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         # Remove connectors from single group
         with self._mock_map_delete() as map_delete,\
             self._mock_map_create() as map_create,\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_delete() as group_delete:
 
             ptg_id = ptg_ids[5]
@@ -683,18 +643,16 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             map_create.assert_not_called()
             group_delete.assert_not_called()
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_create_ptg_star(self):
         '''Star-like topology (single producer and N consumers) lifecycle'''
 
         star_size = 10
         policy_rule_set = self._prepare_rule_set()
+        service = self.rule['policy_classifier_id']
         prs_id = policy_rule_set['id']
-        profile_ids = [driver.append_in_dir(prs_id)]
 
         # Create topology
         with self._mock_domain_create(),\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_create() as group_create,\
             self._mock_map_create() as map_create:
 
@@ -722,7 +680,14 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
                 map_calls.append(self.ingress_map_call(
                     prs_id,
                     [provider_id],
-                    consumer_ids[:]))
+                    consumer_ids[:],
+                    [service]))
+
+                map_calls.append(self.egress_map_call(
+                    prs_id,
+                    [provider_id],
+                    consumer_ids[:],
+                    [service]))
 
             group_create.assert_has_calls(group_calls)
             map_create.assert_has_calls(map_calls)
@@ -733,7 +698,6 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         # Delete one consumer group
         with self._mock_map_delete() as map_delete,\
             self._mock_map_create() as map_create,\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_delete() as group_delete:
 
             consumer_id = consumer_ids.pop(0)
@@ -742,7 +706,8 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
             map_create.assert_has_calls(
                 [self.ingress_map_call(prs_id,
                                       [provider_id],
-                                      consumer_ids)])
+                                      consumer_ids,
+                                      [service])])
 
             map_delete.assert_not_called()
 
@@ -754,163 +719,21 @@ class TestPolicyTargetGroup(NsxPolicyMappingTestCase):
         # Delete provider group
         with self._mock_map_delete() as map_delete,\
             self._mock_map_create() as map_create,\
-            self._mock_profile_list(profile_ids),\
             self._mock_group_delete() as group_delete:
 
             self.delete_policy_target_group(provider_id)
 
             map_create.assert_not_called()
-            map_delete.assert_called_with(TEST_PROJECT,
-                                          driver.append_in_dir(prs_id))
+            map_delete.assert_has_calls(
+                [call(TEST_PROJECT, driver.append_in_dir(prs_id)),
+                 call(TEST_PROJECT, driver.append_out_dir(prs_id))])
 
             star_size -= 1
             group_delete.assert_called_with(TEST_PROJECT, provider_id)
 
-
-class TestPolicyRuleSet(NsxPolicyMappingTestCase):
-
-    @unittest2.skip(TEMPORARY_SKIP)
-    def test_bidirectional(self):
-        ''' Create and delete bidirectional rule set'''
-
-        with self._mock_profile_create() as profile_create,\
-            self._mock_profile_delete() as profile_delete:
-
-            rule = self._create_simple_policy_rule()
-            rule_set = self.create_policy_rule_set(
-                name='test', policy_rules=[rule['id']])['policy_rule_set']
-
-            calls = [call(name=mock.ANY,
-                          description=mock.ANY,
-                          profile_id=driver.append_in_dir(rule_set['id']),
-                          services=[rule['policy_classifier_id']]),
-                     call(name=mock.ANY,
-                          description=mock.ANY,
-                          profile_id=driver.append_out_dir(rule_set['id']),
-                          services=[rule['policy_classifier_id']])]
-
-            profile_create.assert_has_calls(calls)
-
-            self.delete_policy_rule_set(rule_set['id'])
-
-            calls = [call(driver.append_in_dir(rule_set['id'])),
-                     call(driver.append_out_dir(rule_set['id']))]
-            profile_delete.assert_has_calls(calls)
-
-    @unittest2.skip(TEMPORARY_SKIP)
-    def test_empty(self):
-        ''' Create and delete empty rule set and verify no backend calls'''
-        rule = self._create_simple_policy_rule()
-        rule_set = self.create_policy_rule_set(
-            name='test', policy_rules=[rule['id']])['policy_rule_set']
-
-        self.delete_policy_rule_set(rule_set['id'])
-
-    @unittest2.skip(TEMPORARY_SKIP)
-    def test_create_fails(self):
-        ''' Create bidirectional rule set and fail second API call'''
-
-        with self._mock_nth_profile_create_fails() as profile_create,\
-            self._mock_profile_delete() as profile_delete:
-
-            rule = self._create_simple_policy_rule()
-            self.assertRaises(webob.exc.HTTPClientError,
-                              self.create_policy_rule_set,
-                              name='test',
-                              policy_rules=[rule['id']])
-
-            # Two create calls expected
-            calls = [call(name=mock.ANY,
-                          description=mock.ANY,
-                          profile_id=mock.ANY,
-                          services=[rule['policy_classifier_id']]),
-                     call(name=mock.ANY,
-                          description=mock.ANY,
-                          profile_id=mock.ANY,
-                          services=[rule['policy_classifier_id']])]
-
-            profile_create.assert_has_calls(calls)
-
-            # Rollback - two delete calls expected
-            calls = [call(mock.ANY), call(mock.ANY)]
-            profile_delete.assert_has_calls(calls)
-
-    @unittest2.skip(TEMPORARY_SKIP)
-    def _assert_profile_call(self, mock_calls,
-                             name, profile_id, services):
-        '''Asserts service list in any order'''
-
-        services_set = set(services)
-        for mock_call in mock_calls.call_args_list:
-            if isinstance(mock_call, dict):
-                if (mock_call.get('name') == name and
-                    mock_call.get('profile_id') == profile_id and
-                    set(mock_call.get('services')) == services_set):
-
-                    return True
-
-    @unittest2.skip(TEMPORARY_SKIP)
-    def test_multi_set(self):
-        '''Test lifecycle of set with 3 rules having different dirs'''
-
-        # Create rule set with 3 rules
-        with self._mock_profile_create() as profile_create:
-
-            rule1 = self._create_simple_policy_rule('in', 'tcp', '7887')
-            rule2 = self._create_simple_policy_rule('out', 'udp', '8778')
-            rule3 = self._create_simple_policy_rule('bi', 'tcp', '5060')
-
-            rule_set = self.create_policy_rule_set(
-                name='test', policy_rules=[rule1['id'],
-                                           rule2['id'],
-                                           rule3['id']])['policy_rule_set']
-
-            self.assertEqual(2, profile_create.call_count)
-            profile_create._assert_profile_call(
-                driver.append_in_dir('test'),
-                driver.append_in_dir(rule_set['id']),
-                [rule1['policy_classifier_id'], rule3['policy_classifier_id']])
-            profile_create._assert_profile_call(
-                driver.append_out_dir('test'),
-                driver.append_out_dir(rule_set['id']),
-                [rule2['policy_classifier_id'], rule3['policy_classifier_id']])
-
-        # Replace rule3 with rule4
-        with self._mock_profile_create() as profile_update:
-            rule4 = self._create_simple_policy_rule('out', 'tcp', '555:777')
-
-            rule_set1 = self.update_policy_rule_set(
-                rule_set['id'], policy_rules=[rule1['id'],
-                                              rule2['id'],
-                                              rule4['id']])['policy_rule_set']
-
-            self.assertEqual(rule_set['id'], rule_set1['id'])
-            self.assertEqual(2, profile_create.call_count)
-            profile_update._assert_profile_call(
-                driver.append_in_dir('test'),
-                driver.append_in_dir(rule_set['id']),
-                [rule1['policy_classifier_id']])
-            profile_update._assert_profile_call(
-                driver.append_out_dir('test'),
-                driver.append_out_dir(rule_set['id']),
-                [rule2['policy_classifier_id'], rule4['policy_classifier_id']])
-
-        # Delete rule1 from the rule set and verify ingress profile is
-        # is deleted on backend
-        with self._mock_profile_delete() as profile_delete:
-            self.update_policy_rule_set(rule_set['id'],
-                                        policy_rules=[rule2['id'],
-                                                      rule4['id']])
-
-            profile_delete.assert_called_once_with(
-                driver.append_in_dir(rule_set['id']))
-
-        # Delete the rule set and verify egress profile is deleted
-        with self._mock_profile_delete() as profile_delete:
-            self.delete_policy_rule_set(rule_set['id'])
-
-            profile_delete.assert_called_once_with(
-                driver.append_out_dir(rule_set['id']))
+# TODO(annak) - add tests for classifier consolidation across rules
+# TODO(annak) - add tests for updating/deleting rules within rule sets an
+# classifiers within rules
 
 
 class TestPolicyTargetTag(NsxPolicyMappingTestCase):
@@ -920,7 +743,6 @@ class TestPolicyTargetTag(NsxPolicyMappingTestCase):
             return self.create_policy_target_group(
                 name='test')['policy_target_group']
 
-    @unittest2.skip(TEMPORARY_SKIP)
     def test_target_lifecycle(self):
         self._mock_nsx_db()
 
