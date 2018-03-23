@@ -743,6 +743,20 @@ class TestFlowClassifier(TestAIMServiceFunctionChainingBase):
             source_ip_prefix='192.168.0.0/24',
             destination_ip_prefix='192.168.1.0/24',
             expected_res_status=201)['flow_classifier']
+
+        # Same subnets, different networks.
+        net3 = self._make_network(self.fmt, 'net3', True)
+        self._make_subnet(self.fmt, net1, '192.168.2.1', '192.168.2.0/24')
+        net4 = self._make_network(self.fmt, 'net4', True)
+        self._make_subnet(self.fmt, net1, '192.168.3.1', '192.168.3.0/24')
+        self.create_flow_classifier(
+            l7_parameters={
+                'logical_source_network': net3['network']['id'],
+                'logical_destination_network': net4['network']['id']},
+            source_ip_prefix='192.168.0.0/24',
+            destination_ip_prefix='192.168.1.0/24',
+            expected_res_status=201)
+
         self.delete_flow_classifier(fc['id'], expected_res_status=204)
 
 
