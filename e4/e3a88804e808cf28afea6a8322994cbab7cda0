@@ -1,0 +1,9 @@
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Fri, 23 Mar 2018 14:11:12 +0000
+Reviewed-on: https://review.openstack.org/555384
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
