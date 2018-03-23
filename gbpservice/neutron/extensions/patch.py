@@ -494,8 +494,6 @@ try:
     # method when using L7 parameters.
     # -            key: L7Parameter(key, val)
     # +            key: L7Parameter(keyword=key, value=val)
-    # Also, make sure classifiers with different l7 params are not considered
-    # conflicting
 
     def create_flow_classifier(self, context, flow_classifier):
         fc = flow_classifier['flow_classifier']
@@ -533,15 +531,8 @@ try:
                     fc,
                     flow_classifier_db
                 ):
-                    # REVISIT(ivar): Conflict considers l7_parameters
-                    if (validators.is_attr_set(fc['l7_parameters']) and
-                        validators.is_attr_set(
-                            flow_classifier_db['l7_parameters'])):
-                        if (fc['l7_parameters'] ==
-                                flow_classifier_db['l7_parameters']):
-                            raise fc_ext.FlowClassifierInConflict(
-                                id=flow_classifier_db['id']
-                            )
+                    raise fc_ext.FlowClassifierInConflict(
+                        id=flow_classifier_db['id'])
             flow_classifier_db = flowclassifier_db.FlowClassifier(
                 id=uuidutils.generate_uuid(),
                 tenant_id=tenant_id,
@@ -563,6 +554,32 @@ try:
             return self._make_flow_classifier_dict(flow_classifier_db)
     flowclassifier_db.FlowClassifierDbPlugin.create_flow_classifier = (
         create_flow_classifier)
+
+    # Flowclassifier validation should also take into account l7_parameters.
+
+    old_validation = (
+        flowclassifier_db.FlowClassifierDbPlugin.flowclassifier_basic_conflict)
+
+    def flowclassifier_basic_conflict(cls, first_flowclassifier,
+                                      second_flowclassifier):
+        def _l7_params_conflict(fc1, fc2):
+            if (validators.is_attr_set(fc1['l7_parameters']) and
+                    validators.is_attr_set(fc2['l7_parameters'])):
+                if fc1['l7_parameters'] == fc2['l7_parameters']:
+                    return True
+            return all(not validators.is_attr_set(fc['l7_parameters'])
+                       for fc in [fc1, fc2])
+        return cls._old_flowclassifier_basic_conflict(
+            first_flowclassifier, second_flowclassifier) and (
+            _l7_params_conflict(first_flowclassifier, second_flowclassifier))
+
+    if getattr(flowclassifier_db.FlowClassifierDbPlugin,
+               '_old_flowclassifier_basic_conflict', None) is None:
+        flowclassifier_db.FlowClassifierDbPlugin.\
+            _old_flowclassifier_basic_conflict = old_validation
+        flowclassifier_db.FlowClassifierDbPlugin.\
+            flowclassifier_basic_conflict = classmethod(
+                flowclassifier_basic_conflict)
 
     # NOTE(ivar): Trunk subports don't have a device ID, we need this
     # validation to pass
