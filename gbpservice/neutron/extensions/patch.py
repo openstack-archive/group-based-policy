@@ -26,6 +26,7 @@ from neutron_lib.api import validators
 from neutron_lib import constants
 from neutron_lib import exceptions as n_exc
 from oslo_log import log
+from oslo_utils import excutils
 from oslo_utils import uuidutils
 from sqlalchemy import event
 from sqlalchemy.orm import exc
@@ -447,6 +448,13 @@ try:
     from networking_sfc.db import flowclassifier_db
     from networking_sfc.db import sfc_db
     from networking_sfc.extensions import flowclassifier as fc_ext
+    from networking_sfc.services.flowclassifier.common import (
+        exceptions as fc_exc)
+    from networking_sfc.services.flowclassifier import driver_manager as fc_mgr
+    from networking_sfc.services.flowclassifier import plugin as fc_plugin
+    from networking_sfc.services.sfc.common import exceptions as sfc_exc
+    from networking_sfc.services.sfc import driver_manager as sfc_mgr
+    from networking_sfc.services.sfc import plugin as sfc_plugin
     from neutron.services.trunk import constants as tcst
     from oslo_utils import uuidutils
 
@@ -558,6 +566,82 @@ try:
                 egress=egress['id'])
     sfc_db.SfcDbPlugin._validate_port_pair_ingress_egress = (
         _validate_port_pair_ingress_egress)
+
+    if not getattr(sfc_plugin.SfcPlugin, '_patch_db_retry', False):
+        sfc_plugin.SfcPlugin.create_port_pair = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.create_port_pair))
+        sfc_plugin.SfcPlugin.create_port_pair_group = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.create_port_pair_group))
+        sfc_plugin.SfcPlugin.create_port_chain = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.create_port_chain))
+
+        sfc_plugin.SfcPlugin.update_port_pair = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.update_port_pair))
+        sfc_plugin.SfcPlugin.update_port_pair_group = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.update_port_pair_group))
+        sfc_plugin.SfcPlugin.update_port_chain = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.update_port_chain))
+
+        sfc_plugin.SfcPlugin.delete_port_pair = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.delete_port_pair))
+        sfc_plugin.SfcPlugin.delete_port_pair_group = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.delete_port_pair_group))
+        sfc_plugin.SfcPlugin.delete_port_chain = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.delete_port_chain))
+        sfc_plugin.SfcPlugin._patch_db_retry = True
+
+    if not getattr(fc_plugin.FlowClassifierPlugin, '_patch_db_retry', False):
+        fc_plugin.FlowClassifierPlugin.create_flow_classifier = (
+            db_api.retry_if_session_inactive()(
+                fc_plugin.FlowClassifierPlugin.create_flow_classifier))
+        fc_plugin.FlowClassifierPlugin.update_flow_classifier = (
+            db_api.retry_if_session_inactive()(
+                fc_plugin.FlowClassifierPlugin.update_flow_classifier))
+        fc_plugin.FlowClassifierPlugin.delete_flow_classifier = (
+            db_api.retry_if_session_inactive()(
+                fc_plugin.FlowClassifierPlugin.delete_flow_classifier))
+        fc_plugin.FlowClassifierPlugin._patch_db_retry = True
+
+    # Overrides SFC implementation to avoid eating retriable exceptions
+    def get_call_drivers(exception, name):
+        def _call_drivers(self, method_name, context, raise_orig_exc=False):
+            for driver in self.ordered_drivers:
+                try:
+                    getattr(driver.obj, method_name)(context)
+                except Exception as e:
+                    # This is an internal failure.
+                    if db_api.is_retriable(e):
+                        with excutils.save_and_reraise_exception():
+                            LOG.debug(
+                                "DB exception raised by extension driver "
+                                "'%(name)s' in %(method)s",
+                                {'name': driver.name, 'method': method_name},
+                                exc_info=e)
+                    LOG.exception(e)
+                    LOG.error("%(plugin)s driver '%(name)s' "
+                              "failed in %(method)s",
+                              {'name': driver.name, 'method': method_name,
+                               'plugin': name})
+                    if raise_orig_exc:
+                        raise
+                    else:
+                        raise exception(method=method_name)
+        return _call_drivers
+
+    sfc_mgr.SfcDriverManager._call_drivers = get_call_drivers(
+        sfc_exc.SfcDriverError, 'SFC')
+    fc_mgr.FlowClassifierDriverManager._call_drivers = get_call_drivers(
+        fc_exc.FlowClassifierDriverError, 'FlowClassifier')
+
 except ImportError as e:
     LOG.warning("Import error while patching networking-sfc: %s",
                 e.message)
