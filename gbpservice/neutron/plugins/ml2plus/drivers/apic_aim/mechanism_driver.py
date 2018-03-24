@@ -174,7 +174,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           db.DbMixin):
 
     class TopologyRpcEndpoint(object):
-        target = oslo_messaging.Target(version='2')
+        target = oslo_messaging.Target(version='2.0')
 
         def __init__(self, mechanism_driver):
             self.md = mechanism_driver
