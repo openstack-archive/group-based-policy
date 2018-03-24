@@ -469,6 +469,8 @@ try:
     from networking_sfc.db import flowclassifier_db
     from networking_sfc.db import sfc_db
     from networking_sfc.extensions import flowclassifier as fc_ext
+    from networking_sfc.services.flowclassifier import plugin as fc_plugin
+    from networking_sfc.services.sfc import plugin as sfc_plugin
     from neutron.services.trunk import constants
     from oslo_utils import uuidutils
 
@@ -580,6 +582,50 @@ try:
                 egress=egress['id'])
     sfc_db.SfcDbPlugin._validate_port_pair_ingress_egress = (
         _validate_port_pair_ingress_egress)
+
+    if not getattr(sfc_plugin.SfcPlugin, '_patch_db_retry', False):
+        sfc_plugin.SfcPlugin.create_port_pair = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.create_port_pair))
+        sfc_plugin.SfcPlugin.create_port_pair_group = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.create_port_pair_group))
+        sfc_plugin.SfcPlugin.create_port_chain = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.create_port_chain))
+
+        sfc_plugin.SfcPlugin.update_port_pair = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.update_port_pair))
+        sfc_plugin.SfcPlugin.update_port_pair_group = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.update_port_pair_group))
+        sfc_plugin.SfcPlugin.update_port_chain = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.update_port_chain))
+
+        sfc_plugin.SfcPlugin.delete_port_pair = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.delete_port_pair))
+        sfc_plugin.SfcPlugin.delete_port_pair_group = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.delete_port_pair_group))
+        sfc_plugin.SfcPlugin.delete_port_chain = (
+            db_api.retry_if_session_inactive()(
+                sfc_plugin.SfcPlugin.delete_port_chain))
+        sfc_plugin.SfcPlugin._patch_db_retry = True
+
+    if not getattr(fc_plugin.FlowClassifierPlugin, '_patch_db_retry', False):
+        fc_plugin.FlowClassifierPlugin.create_flow_classifier = (
+            db_api.retry_if_session_inactive()(
+                fc_plugin.FlowClassifierPlugin.create_flow_classifier))
+        fc_plugin.FlowClassifierPlugin.update_flow_classifier = (
+            db_api.retry_if_session_inactive()(
+                fc_plugin.FlowClassifierPlugin.update_flow_classifier))
+        fc_plugin.FlowClassifierPlugin.delete_flow_classifier = (
+            db_api.retry_if_session_inactive()(
+                fc_plugin.FlowClassifierPlugin.delete_flow_classifier))
+        fc_plugin.FlowClassifierPlugin._patch_db_retry = True
 except ImportError as e:
     LOG.warning("Import error while patching networking-sfc: %s",
                 e.message)
