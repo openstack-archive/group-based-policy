@@ -10,7 +10,7 @@
                     "get_resource": "Firewall_Policy"
                 },
                 "name": "FWaaS",
-                "description": "Firewll Resource"
+                "description": "Firewall Resource"
             }
         },
         "Firewall_Policy": {
