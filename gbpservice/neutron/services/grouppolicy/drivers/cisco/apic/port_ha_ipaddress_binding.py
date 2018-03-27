@@ -47,16 +47,15 @@ class HAIPAddressToPortAssocation(model_base.BASEV2):
 
 class PortForHAIPAddress(object):
 
-    def __init__(self):
-        self.session = db_api.get_writer_session()
-
-    def _get_ha_ipaddress(self, port_id, ipaddress):
-        return self.session.query(HAIPAddressToPortAssocation).filter_by(
+    def _get_ha_ipaddress(self, port_id, ipaddress, session=None):
+        session = session or db_api.get_writer_session()
+        return session.query(HAIPAddressToPortAssocation).filter_by(
             port_id=port_id, ha_ip_address=ipaddress).first()
 
     def get_port_for_ha_ipaddress(self, ipaddress, network_id):
         """Returns the Neutron Port ID for the HA IP Addresss."""
-        port_ha_ip = self.session.query(HAIPAddressToPortAssocation).join(
+        session = db_api.get_writer_session()
+        port_ha_ip = session.query(HAIPAddressToPortAssocation).join(
             models_v2.Port).filter(
                 HAIPAddressToPortAssocation.ha_ip_address == ipaddress).filter(
                     models_v2.Port.network_id == network_id).first()
@@ -64,31 +63,35 @@ class PortForHAIPAddress(object):
 
     def get_ha_ipaddresses_for_port(self, port_id):
         """Returns the HA IP Addressses associated with a Port."""
-        objs = self.session.query(HAIPAddressToPortAssocation).filter_by(
+        session = db_api.get_writer_session()
+        objs = session.query(HAIPAddressToPortAssocation).filter_by(
             port_id=port_id).all()
         return sorted([x['ha_ip_address'] for x in objs])
 
-    def set_port_id_for_ha_ipaddress(self, port_id, ipaddress):
+    def set_port_id_for_ha_ipaddress(self, port_id, ipaddress, session=None):
         """Stores a Neutron Port Id as owner of HA IP Addr (idempotent API)."""
-        self.session.expunge_all()
+        session = session or db_api.get_writer_session()
+        session.expunge_all()
         try:
-            with self.session.begin(subtransactions=True):
-                obj = self._get_ha_ipaddress(port_id, ipaddress)
+            with session.begin(subtransactions=True):
+                obj = self._get_ha_ipaddress(port_id, ipaddress, session)
                 if obj:
                     return obj
                 else:
                     obj = HAIPAddressToPortAssocation(port_id=port_id,
                                                       ha_ip_address=ipaddress)
-                    self.session.add(obj)
+                    session.add(obj)
                     return obj
         except db_exc.DBDuplicateEntry:
             LOG.debug('Duplicate IP ownership entry for tuple %s',
                       (port_id, ipaddress))
 
-    def delete_port_id_for_ha_ipaddress(self, port_id, ipaddress):
-        with self.session.begin(subtransactions=True):
+    def delete_port_id_for_ha_ipaddress(self, port_id, ipaddress,
+                                        session=None):
+        session = session or db_api.get_writer_session()
+        with session.begin(subtransactions=True):
             try:
-                return self.session.query(
+                return session.query(
                     HAIPAddressToPortAssocation).filter_by(
                         port_id=port_id,
                         ha_ip_address=ipaddress).delete()
@@ -96,7 +99,8 @@ class PortForHAIPAddress(object):
                 return
 
     def get_ha_port_associations(self):
-        return self.session.query(HAIPAddressToPortAssocation).all()
+        session = db_api.get_writer_session()
+        return session.query(HAIPAddressToPortAssocation).all()
 
 
 class HAIPOwnerDbMixin(object):
@@ -128,12 +132,14 @@ class HAIPOwnerDbMixin(object):
             try:
                 old_owner = self.ha_ip_handler.get_port_for_ha_ipaddress(
                     ipa, network_id or port['network_id'])
-                with self.ha_ip_handler.session.begin(subtransactions=True):
+                session = db_api.get_writer_session()
+                with session.begin(subtransactions=True):
                     self.ha_ip_handler.set_port_id_for_ha_ipaddress(port_id,
-                                                                    ipa)
+                                                                    ipa,
+                                                                    session)
                     if old_owner and old_owner['port_id'] != port_id:
                         self.ha_ip_handler.delete_port_id_for_ha_ipaddress(
-                            old_owner['port_id'], ipa)
+                            old_owner['port_id'], ipa, session)
                         ports_to_update.add(old_owner['port_id'])
             except db_exc.DBReferenceError as dbe:
                 LOG.debug("Ignoring FK error for port %s: %s", port_id, dbe)
