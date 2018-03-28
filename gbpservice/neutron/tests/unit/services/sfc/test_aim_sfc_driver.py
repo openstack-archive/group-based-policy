@@ -326,16 +326,17 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         self.assertIsNotNone(irp)
         self.assertIsNotNone(erp)
 
-        # Ingress Ports
-        iprts = [self._show_port(pp['ingress']) for pp in pps]
+        iprts = [(self._show_port(pp['ingress']), pp['name']) for pp in pps]
         self.assertEqual(
-            sorted([{'ip': iprt['fixed_ips'][0]['ip_address'],
-                     'mac': iprt['mac_address']} for iprt in iprts]),
+            sorted([{'ip': iprt[0]['fixed_ips'][0]['ip_address'],
+                     'mac': iprt[0]['mac_address'],
+                     'name': iprt[1]} for iprt in iprts]),
             irp.destinations)
-        eprts = [self._show_port(pp['egress']) for pp in pps]
+        eprts = [(self._show_port(pp['egress']), pp['name']) for pp in pps]
         self.assertEqual(
-            sorted([{'ip': eprt['fixed_ips'][0]['ip_address'],
-                     'mac': eprt['mac_address']} for eprt in eprts]),
+            sorted([{'ip': eprt[0]['fixed_ips'][0]['ip_address'],
+                     'mac': eprt[0]['mac_address'],
+                     'name': eprt[1]} for eprt in eprts]),
             erp.destinations)
 
     def _verify_pc_mapping(self, pc, multiple=False):
