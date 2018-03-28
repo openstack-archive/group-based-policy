@@ -181,13 +181,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         def __init__(self, mechanism_driver):
             self.md = mechanism_driver
 
-        @db_api.retry_db_errors
-        def update_link(self, *args, **kwargs):
-            self.md.update_link(*args, **kwargs)
+        @db_api.retry_if_session_inactive()
+        def update_link(self, context, *args, **kwargs):
+            context._session = db_api.get_session()
+            self.md.update_link(context, *args, **kwargs)
 
-        @db_api.retry_db_errors
-        def delete_link(self, *args, **kwargs):
-            self.md.delete_link(*args, **kwargs)
+        @db_api.retry_if_session_inactive()
+        def delete_link(self, context, *args, **kwargs):
+            context._session = db_api.get_session()
+            self.md.delete_link(context, *args, **kwargs)
 
     def __init__(self):
         LOG.info(_LI("APIC AIM MD __init__"))
@@ -2070,7 +2072,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 hlink = aim_infra.HostLink(host_name=host,
                                            interface_name=interface,
                                            **attrs)
-                self.aim.create(aim_ctx, hlink)
+                self.aim.create(aim_ctx, hlink, overwrite=True)
             self._update_network_links(context, host)
 
     # Topology RPC method handler
