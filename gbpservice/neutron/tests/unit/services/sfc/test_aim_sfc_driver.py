@@ -143,7 +143,8 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                 self._plugin.mechanism_manager.mech_drivers['apic_aim'].obj)
         return self._aim_mech_driver
 
-    def _create_simple_ppg(self, pairs=2, leftn_id=None, rightn_id=None):
+    def _create_simple_ppg(self, pairs=2, leftn_id=None, rightn_id=None,
+                           check_type=None, check_freq=None, check_port=None):
         nets = []
         # Pairs go in 2 networks
         if not leftn_id or not rightn_id:
@@ -167,9 +168,19 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                                        expected_res_status=201)['port_pair']
             port_pairs.append(pp)
         # This goes through
+        kwargs = {}
+        port_pair_group_parameters = {}
+        if check_type:
+            port_pair_group_parameters['healthcheck_type'] = check_type
+        if check_freq:
+            port_pair_group_parameters['healthcheck_frequency'] = check_freq
+        if check_port:
+            port_pair_group_parameters['healthcheck_tcp_port'] = check_port
+        if port_pair_group_parameters:
+            kwargs['port_pair_group_parameters'] = port_pair_group_parameters
         return self.create_port_pair_group(
             port_pairs=[pp['id'] for pp in port_pairs],
-            expected_res_status=201)['port_pair_group']
+            expected_res_status=201, **kwargs)['port_pair_group']
 
     def _create_simple_flowc(self, src_svi=False, dst_svi=False):
         kwargs = {}
@@ -258,15 +269,42 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         # DeviceCluster. Only one created
         dc = self.aim_mgr.get(ctx, aim_sg.DeviceCluster(
             tenant_name=apic_tn, name='ppg_' + ppg['id']))
+        ppg_params = ppg['port_pair_group_parameters']
+        hcheck_type = ppg_params.get('healthcheck_type')
+        if hcheck_type:
+            hcheck_frequency = ppg_params.get('healthcheck_frequency')
+            hcheck_tcp_port = ppg_params.get('healthcheck_tcp_port')
+        mp = self.aim_mgr.get(ctx, aim_sg.ServiceRedirectMonitoringPolicy(
+            tenant_name=apic_tn, name='ppg_' + ppg['id']))
+        if hcheck_type:
+            self.assertIsNotNone(mp)
+            self.assertEqual(hcheck_type, mp.type)
+            if hcheck_frequency:
+                self.assertEqual(str(hcheck_frequency), mp.frequency)
+            if hcheck_tcp_port:
+                self.assertEqual(str(hcheck_tcp_port), mp.tcp_port)
+        else:
+            # Test hcheck toggle
+            self.assertIsNone(mp)
+
         self.assertIsNotNone(dc)
         self.assertEqual(self.physdom.name, dc.physical_domain_name)
         pps = [self.show_port_pair(x)['port_pair'] for x in ppg['port_pairs']]
 
+        srgh_dn_by_pp = {}
         for pp in pps:
             self.assertIsNotNone(self.aim_mgr.get(
                 ctx, aim_sg.ConcreteDevice(tenant_name=apic_tn,
                                            device_cluster_name=dc.name,
                                            name='pp_' + pp['id'])))
+            srhg = aim_sg.ServiceRedirectHealthGroup(
+                tenant_name=dc.tenant_name, name='pp_' + pp['id'])
+            srgh_dn_by_pp[pp['id']] = srhg.dn
+            srhg = self.aim_mgr.get(ctx, srhg)
+            if hcheck_type:
+                self.assertIsNotNone(srhg)
+            else:
+                self.assertIsNone(srhg)
 
         for pp in pps:
             # Each of these CD have 2 CDIs
@@ -317,7 +355,6 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
 
         self.assertEqual({egr.dn for egr in egr_cdis},
                          set(edci.concrete_interfaces))
-
         # Redirect Policy Ingress
         irp = self.aim_mgr.get(ctx, aim_sg.ServiceRedirectPolicy(
             tenant_name=dc.tenant_name, name='ingr_ppg_' + ppg['id']))
@@ -327,16 +364,16 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         self.assertIsNotNone(erp)
 
         # Ingress Ports
-        iprts = [self._show_port(pp['ingress']) for pp in pps]
-        self.assertEqual(
-            sorted([{'ip': iprt['fixed_ips'][0]['ip_address'],
-                     'mac': iprt['mac_address']} for iprt in iprts]),
-            irp.destinations)
-        eprts = [self._show_port(pp['egress']) for pp in pps]
-        self.assertEqual(
-            sorted([{'ip': eprt['fixed_ips'][0]['ip_address'],
-                     'mac': eprt['mac_address']} for eprt in eprts]),
-            erp.destinations)
+        for type, pbr in [('ingress', irp), ('egress', erp)]:
+            prts = [(self._show_port(pp[type]), pp) for pp in pps]
+            observed_destinations = []
+            for port, pp in prts:
+                dst = {'ip': port['fixed_ips'][0]['ip_address'],
+                       'mac': port['mac_address']}
+                if hcheck_type:
+                    dst['redirect_health_group_dn'] = srgh_dn_by_pp[pp['id']]
+                observed_destinations.append(dst)
+            self.assertEqual(sorted(observed_destinations), pbr.destinations)
 
     def _verify_pc_mapping(self, pc, multiple=False):
         ctx = self._aim_context
@@ -508,6 +545,12 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
             0, len(self.aim_mgr.find(ctx, aim_sg.DeviceCluster)))
         self.assertEqual(
             0, len(self.aim_mgr.find(ctx, aim_sg.DeviceClusterInterface)))
+        self.assertEqual(
+            0, len(self.aim_mgr.find(ctx,
+                                     aim_sg.ServiceRedirectMonitoringPolicy)))
+        self.assertEqual(
+            0, len(self.aim_mgr.find(ctx, aim_sg.ServiceRedirectHealthGroup)))
+
         ppgs = [self.show_port_pair_group(x)['port_pair_group'] for x in
                 pc['port_pair_groups']]
         for ppg in ppgs:
@@ -669,6 +712,58 @@ class TestPortPairGroup(TestAIMServiceFunctionChainingBase):
         self.update_port_pair_group(
             ppg2['id'], port_pairs=[pp3['id'], pp1['id']],
             expected_res_status=500)
+
+    def test_healthcheck_group(self):
+        # Correct creation
+        net1 = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
+        net2 = self._make_network(self.fmt, 'net2', True)
+        self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
+
+        # Service 1
+        p11 = self._make_port(self.fmt, net1['network']['id'])['port']
+        self._bind_port_to_host(p11['id'], 'h1')
+        p12 = self._make_port(self.fmt, net2['network']['id'])['port']
+        self._bind_port_to_host(p12['id'], 'h1')
+        pp1 = self.create_port_pair(ingress=p11['id'], egress=p12['id'],
+                                    expected_res_status=201)['port_pair']
+        ppg1 = self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_type': 'tcp', 'healthcheck_frequency': 60,
+                'healthcheck_tcp_port': 8080},
+            expected_res_status=201)['port_pair_group']
+        self.assertEqual('tcp', ppg1['port_pair_group_parameters'][
+            'healthcheck_type'])
+        self.assertEqual(60, ppg1['port_pair_group_parameters'][
+            'healthcheck_frequency'])
+        self.assertEqual(8080, ppg1['port_pair_group_parameters'][
+            'healthcheck_tcp_port'])
+        self.delete_port_pair_group(ppg1['id'])
+        self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_type': 'no', 'healthcheck_frequency': 60,
+                'healthcheck_tcp_port': 8080},
+            expected_res_status=400)
+        self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_type': 'tcp', 'healthcheck_frequency': -1,
+                'healthcheck_tcp_port': 8080},
+            expected_res_status=400)
+        self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_type': 'tcp', 'healthcheck_frequency': 60,
+                'healthcheck_tcp_port': 80800},
+            expected_res_status=400)
+        ppg1 = self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_type': 'icmp'},
+            expected_res_status=201)['port_pair_group']
+        self.assertEqual('icmp', ppg1['port_pair_group_parameters'][
+            'healthcheck_type'])
+        self.assertTrue('check_frequency' not in ppg1[
+            'port_pair_group_parameters'])
+        self.assertTrue('tcp_port' not in ppg1[
+            'port_pair_group_parameters'])
 
 
 class TestFlowClassifier(TestAIMServiceFunctionChainingBase):
@@ -1233,6 +1328,18 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
         self._verify_pc_mapping(pc)
         self.update_flow_classifier(fc['id'], name='newname')
         self._verify_pc_mapping(pc)
+
+    def test_pc_validation_hcheck(self):
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        ppg = self._create_simple_ppg(pairs=2, check_type='icmp')
+        ppg2 = self._create_simple_ppg(pairs=2, check_type='tcp',
+                                       check_freq=31, check_port=90)
+        pc = self.create_port_chain(port_pair_groups=[ppg['id'], ppg2['id']],
+                                    flow_classifiers=[fc['id']],
+                                    expected_res_status=201)['port_chain']
+        self._verify_pc_mapping(pc)
+        self._verify_pc_delete(pc)
 
 
 class TestPortChainSVI(TestPortChain):
