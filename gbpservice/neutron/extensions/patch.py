@@ -227,6 +227,7 @@ try:
     from networking_sfc.db import flowclassifier_db
     from networking_sfc.db import sfc_db
     from networking_sfc.extensions import flowclassifier as fc_ext
+    from networking_sfc.extensions import sfc as sfc_ext  # noqa
     from networking_sfc.services.flowclassifier.common import (
         exceptions as fc_exc)
     from networking_sfc.services.flowclassifier import driver_manager as fc_mgr
@@ -247,6 +248,14 @@ try:
             ('networking_sfc.extensions.'
              'flowclassifier')].SUPPORTED_L7_PARAMETERS.update(
             sfc_cts.AIM_FLC_L7_PARAMS)
+    if 'sfc' in sys.modules:
+        sys.modules['sfc'].RESOURCE_ATTRIBUTE_MAP['port_pair_groups'][
+            'port_pair_group_parameters']['validate']['type:dict'].update(
+                sfc_cts.AIM_PPG_PARAMS)
+    if 'networking_sfc.extensions.sfc' in sys.modules:
+        sys.modules['networking_sfc.extensions.sfc'].RESOURCE_ATTRIBUTE_MAP[
+            'port_pair_groups']['port_pair_group_parameters']['validate'][
+            'type:dict'].update(sfc_cts.AIM_PPG_PARAMS)
     # REVISIT(ivar): The following diff will fix flow classifier creation
     # method when using L7 parameters.
     # -            key: L7Parameter(key, val)
