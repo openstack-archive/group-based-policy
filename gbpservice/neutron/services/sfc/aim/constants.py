@@ -15,10 +15,14 @@
 # could be dangerous for compatibility once they suddenly start supporting
 # them. We create our own resource type and make sure to modify it once
 # support is added to the SFC project.
+
+from networking_sfc.extensions import flowclassifier
+
 GBP_FLOW_CLASSIFIER = 'gbp_flowclassifier'
 GBP_PORT = 'gbp_port'
 LOGICAL_SRC_NET = 'logical_source_network'
 LOGICAL_DST_NET = 'logical_destination_network'
+HEALTHCHECK_POLICY = 'healthcheck_policy'
 AIM_FLC_L7_PARAMS = {
     LOGICAL_SRC_NET: {
         'allow_post': True, 'allow_put': False,
@@ -28,6 +32,21 @@ AIM_FLC_L7_PARAMS = {
         'allow_post': True, 'allow_put': False,
         'is_visible': True, 'default': None,
         'validate': {'type:uuid_or_none': None}}
+}
+AIM_PPG_PARAMS = {
+    HEALTHCHECK_POLICY: {
+        'type:dict': {
+            'check_type': {
+                'type:values': [None, 'icmp', 'tcp']
+            },
+            'check_frequency': {
+                'type:non_negative': None
+            },
+            'tcp_port': {
+                'convert_to': flowclassifier.normalize_port_value
+            },
+        }
+    }
 }
 AIM_FLC_PARAMS = ['source_ip_prefix', 'destination_ip_prefix']
 GBP_NETWORK_VRF = 'gbp_network_vrf'

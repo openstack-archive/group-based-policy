@@ -670,6 +670,62 @@ class TestPortPairGroup(TestAIMServiceFunctionChainingBase):
             ppg2['id'], port_pairs=[pp3['id'], pp1['id']],
             expected_res_status=500)
 
+    def test_healthcheck_group(self):
+        # Correct creation
+        net1 = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
+        net2 = self._make_network(self.fmt, 'net2', True)
+        self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
+
+        # Service 1
+        p11 = self._make_port(self.fmt, net1['network']['id'])['port']
+        self._bind_port_to_host(p11['id'], 'h1')
+        p12 = self._make_port(self.fmt, net2['network']['id'])['port']
+        self._bind_port_to_host(p12['id'], 'h1')
+        pp1 = self.create_port_pair(ingress=p11['id'], egress=p12['id'],
+                                    expected_res_status=201)['port_pair']
+        ppg1 = self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_policy': {'check_type': 'tcp',
+                                       'check_frequency': 60,
+                                       'tcp_port': 8080}},
+            expected_res_status=201)['port_pair_group']
+        self.assertEqual('tcp', ppg1['port_pair_group_parameters'][
+            'healthcheck_policy']['check_type'])
+        self.assertEqual(60, ppg1['port_pair_group_parameters'][
+            'healthcheck_policy']['check_frequency'])
+        self.assertEqual(8080, ppg1['port_pair_group_parameters'][
+            'healthcheck_policy']['tcp_port'])
+        self.delete_port_pair_group(ppg1['id'])
+        self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_policy': {'check_type': 'no',
+                                       'check_frequency': 60,
+                                       'tcp_port': 8080}},
+            expected_res_status=400)
+        self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_policy': {'check_type': 'tcp',
+                                       'check_frequency': -1,
+                                       'tcp_port': 8080}},
+            expected_res_status=400)
+        self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_policy': {'check_type': 'tcp',
+                                       'check_frequency': 60,
+                                       'tcp_port': 80800}},
+            expected_res_status=400)
+        ppg1 = self.create_port_pair_group(
+            port_pairs=[pp1['id']], port_pair_group_parameters={
+                'healthcheck_policy': {'check_type': 'icmp'}},
+            expected_res_status=201)['port_pair_group']
+        self.assertEqual('icmp', ppg1['port_pair_group_parameters'][
+            'healthcheck_policy']['check_type'])
+        self.assertTrue('check_frequency' not in ppg1[
+            'port_pair_group_parameters']['healthcheck_policy'])
+        self.assertTrue('tcp_port' not in ppg1[
+            'port_pair_group_parameters']['healthcheck_policy'])
+
 
 class TestFlowClassifier(TestAIMServiceFunctionChainingBase):
 
