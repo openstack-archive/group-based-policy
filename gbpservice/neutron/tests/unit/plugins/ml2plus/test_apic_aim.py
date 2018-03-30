@@ -593,6 +593,9 @@ class TestAimMapping(ApicAimTestCase):
         self.assertIsNotNone(aim_ext_net)
         return aim_ext_net
 
+    def _scope_default_svi_l3out_name_by_vrf(self, vrf_name):
+        return md.DEFAULT_SVI_L3OUT_NAME + '_' + vrf_name
+
     def _check_network(self, net, routers=None, scope=None, project=None,
                        vrf=None):
         dns = copy.copy(net.get(DN))
@@ -650,6 +653,16 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(net['name'], l3out.display_name)
             self.assertEqual(vrf_aname, l3out.vrf_name)
             self._check_dn_is_resource(dns, 'ExternalNetwork', ext_net)
+
+            default_l3out_name = self._scope_default_svi_l3out_name_by_vrf(
+                                                                    vrf_aname)
+            svi_default_l3out = self._get_l3out(default_l3out_name,
+                                                vrf_tenant_aname)
+            self.assertEqual(tenant_aname, svi_default_l3out.tenant_name)
+            self.assertEqual(default_l3out_name, svi_default_l3out.name)
+            self.assertEqual(md.DEFAULT_SVI_L3OUT_NAME,
+                             svi_default_l3out.display_name)
+            self.assertEqual(vrf_aname, svi_default_l3out.vrf_name)
         else:
             aim_bd = self._get_bd(aname, tenant_aname)
             self.assertEqual(tenant_aname, aim_bd.tenant_name)
@@ -1081,6 +1094,9 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('networks', net['id'])
         self.assertFalse(extn.get_network_extn_db(session, net['id']))
         self._check_network_deleted(net)
+        default_l3out_name = self._scope_default_svi_l3out_name_by_vrf(
+                                                                'DefaultVRF')
+        self._l3out_should_not_exist(default_l3out_name)
 
     def test_security_group_lifecycle(self):
         # Test create
@@ -1516,6 +1532,11 @@ class TestAimMapping(ApicAimTestCase):
             {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
+        if is_svi:
+            default_l3out_name = self._scope_default_svi_l3out_name_by_vrf(
+                                                                'DefaultVRF')
+            self._l3out_should_not_exist(default_l3out_name)
+
         # Verify ports were notified.
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
@@ -1602,6 +1623,10 @@ class TestAimMapping(ApicAimTestCase):
             self._check_network(net, [router], scope)
         else:
             self._check_network(net, [], scope)
+            vrf_aname = self.name_mapper.address_scope(None, scope['id'])
+            default_l3out_name = self._scope_default_svi_l3out_name_by_vrf(
+                                                                    vrf_aname)
+            self._l3out_should_not_exist(default_l3out_name)
 
         # Check subnet1.
         subnet = self._show('subnets', subnet1_id)['subnet']
