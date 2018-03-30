@@ -529,6 +529,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     bgp_enable=self._is_bgp_enabled(current))
                 self.aim.create(aim_ctx, aim_l3out)
 
+                aim_l3out_np = aim_resource.L3OutNodeProfile(
+                    tenant_name=tenant_aname, l3out_name=aname,
+                    name=L3OUT_NODE_PROFILE_NAME)
+                self.aim.create(aim_ctx, aim_l3out_np)
+                aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
+                    tenant_name=tenant_aname, l3out_name=aname,
+                    node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                    name=L3OUT_IF_PROFILE_NAME)
+                self.aim.create(aim_ctx, aim_l3out_ip)
+
                 aim_ext_net = aim_resource.ExternalNetwork(
                     tenant_name=tenant_aname,
                     l3out_name=aname, name=L3OUT_EXT_EPG)
@@ -3363,10 +3373,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not l3out:
             l3out, _, _ = self._get_aim_external_objects(network)
         if new_path:
-            aim_l3out_np = aim_resource.L3OutNodeProfile(
-                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
-                name=L3OUT_NODE_PROFILE_NAME)
-            self.aim.create(aim_ctx, aim_l3out_np, overwrite=True)
             for node_path in node_paths:
                 apic_router_id = self._allocate_apic_router_ids(aim_ctx,
                                                                 node_path)
@@ -3377,11 +3383,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     router_id_loopback=False)
                 self.aim.create(aim_ctx, aim_l3out_node, overwrite=True)
 
-            aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
-                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
-                node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                name=L3OUT_IF_PROFILE_NAME)
-            self.aim.create(aim_ctx, aim_l3out_ip, overwrite=True)
+            if not network['subnets']:
+                return
             subnet = (session.query(models_v2.Subnet)
                       .filter(models_v2.Subnet.id ==
                               network['subnets'][0]).one())
