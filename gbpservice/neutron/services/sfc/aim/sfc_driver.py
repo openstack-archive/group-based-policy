@@ -594,11 +594,12 @@ class SfcAIMDriver(SfcAIMDriverBase):
                                                     prefix)
         aim_ctx = aim_context.AimContext(plugin_context.session)
         cidr = netaddr.IPNetwork(cidr)
-        l3out = self.aim_mech._get_svi_net_l3out(net)
+        network_db = self.plugin._get_network(plugin_context, net['id'])
+        l3out = self.aim_mech._get_default_svi_l3out(network_db)
         if l3out:
             if cidr.prefixlen == 0:
                 # Use default External Network
-                ext_net = self.aim_mech._get_svi_default_external_epg(net)
+                ext_net = self.aim_mech._get_default_svi_ext_epg(network_db)
                 ext_net_db = self.aim.get(aim_ctx, ext_net)
                 if not ext_net_db:
                     raise exceptions.DefaultExternalNetworkNotFound(
@@ -639,7 +640,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
         flc_aid = self._get_external_group_aim_name(plugin_context, flowc,
                                                     prefix)
         aim_ctx = aim_context.AimContext(plugin_context.session)
-        l3out = self.aim_mech._get_svi_net_l3out(net)
+        network_db = self.plugin._get_network(plugin_context, net['id'])
+        l3out = self.aim_mech._get_default_svi_l3out(network_db)
         cidr = netaddr.IPNetwork(cidr)
         ext_net = None
         if l3out:
@@ -650,7 +652,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
                 epg = self.aim.get(aim_ctx, ext_net)
             else:
                 epg = self.aim.get(
-                    aim_ctx, self.aim_mech._get_svi_default_external_epg(net))
+                    aim_ctx,
+                    self.aim_mech._get_default_svi_ext_epg(network_db))
         else:
             epg = self.aim.get(aim_ctx, self.aim_mech._get_epg_by_network_id(
                 plugin_context.session, net['id']))
