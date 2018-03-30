@@ -89,6 +89,7 @@ DEFAULT_SG_NAME = 'DefaultSecurityGroup'
 L3OUT_NODE_PROFILE_NAME = 'NodeProfile'
 L3OUT_IF_PROFILE_NAME = 'IfProfile'
 L3OUT_EXT_EPG = 'ExtEpg'
+DEFAULT_SVI_L3OUT_NAME = 'DefaultSVIL3Out'
 
 SUPPORTED_VNIC_TYPES = [portbindings.VNIC_NORMAL,
                         portbindings.VNIC_DIRECT]
@@ -463,6 +464,58 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 'name': mapping.domain_name})
         return domains
 
+    def _create_default_svi_l3out(self, aim_ctx, vrf):
+        aim_default_svi_l3out = aim_resource.L3Outside(
+            tenant_name=vrf.tenant_name,
+            name=DEFAULT_SVI_L3OUT_NAME,
+            display_name=DEFAULT_SVI_L3OUT_NAME, vrf_name=vrf.name,
+            l3_domain_dn=self.l3_domain_dn)
+        self.aim.create(aim_ctx, aim_default_svi_l3out,
+                        overwrite=True)
+        aim_default_svi_ext_net = aim_resource.ExternalNetwork(
+            tenant_name=vrf.tenant_name,
+            l3out_name=DEFAULT_SVI_L3OUT_NAME, name=L3OUT_EXT_EPG)
+        self.aim.create(aim_ctx, aim_default_svi_ext_net,
+                        overwrite=True)
+        aim_ext_subnet_ipv4_1 = aim_resource.ExternalSubnet(
+            tenant_name=vrf.tenant_name,
+            l3out_name=DEFAULT_SVI_L3OUT_NAME,
+            external_network_name=L3OUT_EXT_EPG, cidr='0.0.0.0/1')
+        self.aim.create(aim_ctx, aim_ext_subnet_ipv4_1,
+                        overwrite=True)
+        aim_ext_subnet_ipv4_2 = aim_resource.ExternalSubnet(
+            tenant_name=vrf.tenant_name,
+            l3out_name=DEFAULT_SVI_L3OUT_NAME,
+            external_network_name=L3OUT_EXT_EPG, cidr='128.0.0.0/1')
+        self.aim.create(aim_ctx, aim_ext_subnet_ipv4_2,
+                        overwrite=True)
+        aim_ext_subnet_ipv6_1 = aim_resource.ExternalSubnet(
+            tenant_name=vrf.tenant_name,
+            l3out_name=DEFAULT_SVI_L3OUT_NAME,
+            external_network_name=L3OUT_EXT_EPG, cidr='::/1')
+        self.aim.create(aim_ctx, aim_ext_subnet_ipv6_1,
+                        overwrite=True)
+        aim_ext_subnet_ipv6_2 = aim_resource.ExternalSubnet(
+            tenant_name=vrf.tenant_name,
+            l3out_name=DEFAULT_SVI_L3OUT_NAME,
+            external_network_name=L3OUT_EXT_EPG, cidr='8000::/1')
+        self.aim.create(aim_ctx, aim_ext_subnet_ipv6_2,
+                        overwrite=True)
+
+    def _delete_default_svi_l3out(self, aim_ctx, vrf):
+        if not self._is_vrf_used_by_l3outs(aim_ctx.db_session,
+                                           vrf):
+            LOG.debug("Deleting default SVI for %(vrf)s from tenant "
+                "%(tenant)s",
+                {'vrf': vrf.name,
+                 'tenant': vrf.tenant_name})
+            aim_l3outs = self.aim.find(
+                aim_ctx, aim_resource.L3Outside, tenant_name=vrf.tenant_name,
+                name=DEFAULT_SVI_L3OUT_NAME, vrf_name=vrf.name,
+                monitored=False)
+            if aim_l3outs:
+                self.aim.delete(aim_ctx, aim_l3outs[0], cascade=True)
+
     def create_network_precommit(self, context):
         current = context.current
         LOG.debug("APIC AIM MD creating network: %s", current)
@@ -566,6 +619,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
                 self._add_network_mapping(session, current['id'], None, None,
                                           vrf, aim_ext_net)
+
+                # TBD: Create the SVI default l3out also
+                self._create_default_svi_l3out(aim_ctx, vrf)
             return
         else:
             bd, epg = self._map_network(session, current)
@@ -781,12 +837,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.aim.delete(aim_ctx, aim_l3out_np, cascade=True)
             else:
                 self.aim.delete(aim_ctx, l3out, cascade=True)
+
                 # Before we can clean up the default vrf, we have to
                 # remove the association in the network_mapping first.
                 mapping = self._get_network_mapping(session, current['id'])
+                l3out_vrf = self._get_network_vrf(mapping)
                 self._set_network_vrf(mapping, self._map_unrouted_vrf())
                 vrf = self._map_default_vrf(session, current)
                 self._cleanup_default_vrf(aim_ctx, vrf)
+
+                # TBD: also delete the default SVI if this is the last
+                # SVI l3out in this vrf
+                self._delete_default_svi_l3out(aim_ctx, l3out_vrf)
         else:
             mapping = self._get_network_mapping(session, current['id'])
             bd = self._get_network_bd(mapping)
@@ -2403,6 +2465,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # NOTE: Must only be called for networks that are not yet
         # attached to any router.
 
+        old_vrf = self._get_network_vrf(network_db.aim_mapping)
         if not self._is_svi_db(network_db):
             bd = self._get_network_bd(network_db.aim_mapping)
             epg = self._get_network_epg(network_db.aim_mapping)
@@ -2444,6 +2507,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out = self.aim.create(aim_ctx, l3out)
                 self._set_network_l3out(network_db.aim_mapping,
                                         l3out)
+                self._create_default_svi_l3out(aim_ctx, new_vrf)
                 for old_child in self.aim.get_subtree(aim_ctx, old_l3out):
                     new_child = copy.copy(old_child)
                     new_child.tenant_name = new_vrf.tenant_name
@@ -2458,8 +2522,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             else:
                 l3out = self.aim.update(aim_ctx, l3out,
                                         vrf_name=new_vrf.name)
+                self._create_default_svi_l3out(aim_ctx, new_vrf)
 
         self._set_network_vrf_and_notify(ctx, network_db.aim_mapping, new_vrf)
+        if self._is_svi_db(network_db):
+            self._delete_default_svi_l3out(aim_ctx, old_vrf)
 
         # All non-router ports on this network need to be notified
         # since their BD's VRF and possibly their BD's and EPG's
@@ -2521,6 +2588,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out = self.aim.create(aim_ctx, l3out)
                 self._set_network_l3out(network_db.aim_mapping,
                                         l3out)
+                self._create_default_svi_l3out(aim_ctx, new_vrf)
                 for old_child in self.aim.get_subtree(aim_ctx, old_l3out):
                     new_child = copy.copy(old_child)
                     new_child.tenant_name = new_tenant_name
@@ -2537,8 +2605,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out = self._get_network_l3out(network_db.aim_mapping)
                 l3out = self.aim.update(aim_ctx, l3out,
                                         vrf_name=new_vrf.name)
+                self._create_default_svi_l3out(aim_ctx, new_vrf)
 
         self._set_network_vrf_and_notify(ctx, network_db.aim_mapping, new_vrf)
+        if self._is_svi_db(network_db):
+            self._delete_default_svi_l3out(aim_ctx, old_vrf)
 
         # All non-router ports on this network need to be notified
         # since their BD's VRF and possibly their BD's and EPG's
@@ -2600,6 +2671,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     l3out = self.aim.create(aim_ctx, l3out)
                     self._set_network_l3out(network_db.aim_mapping,
                                             l3out)
+                    self._create_default_svi_l3out(aim_ctx, new_vrf)
                     for old_child in self.aim.get_subtree(aim_ctx, old_l3out):
                         new_child = copy.copy(old_child)
                         new_child.tenant_name = new_vrf.tenant_name
@@ -2616,9 +2688,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     l3out = self._get_network_l3out(network_db.aim_mapping)
                     l3out = self.aim.update(aim_ctx, l3out,
                                             vrf_name=new_vrf.name)
+                    self._create_default_svi_l3out(aim_ctx, new_vrf)
 
             self._set_network_vrf_and_notify(ctx, network_db.aim_mapping,
                                              new_vrf)
+            if network_db.aim_mapping.l3out_name:
+                self._delete_default_svi_l3out(aim_ctx, old_vrf)
 
         # All non-router ports on all networks in topology need to be
         # notified since their BDs' VRFs and possibly their BDs' and

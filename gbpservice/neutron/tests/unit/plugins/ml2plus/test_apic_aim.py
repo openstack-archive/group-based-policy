@@ -650,6 +650,14 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(net['name'], l3out.display_name)
             self.assertEqual(vrf_aname, l3out.vrf_name)
             self._check_dn_is_resource(dns, 'ExternalNetwork', ext_net)
+
+            svi_default_l3out = self._get_l3out(md.DEFAULT_SVI_L3OUT_NAME,
+                                                vrf_tenant_aname)
+            self.assertEqual(tenant_aname, svi_default_l3out.tenant_name)
+            self.assertEqual(md.DEFAULT_SVI_L3OUT_NAME, svi_default_l3out.name)
+            self.assertEqual(md.DEFAULT_SVI_L3OUT_NAME,
+                             svi_default_l3out.display_name)
+            self.assertEqual(vrf_aname, svi_default_l3out.vrf_name)
         else:
             aim_bd = self._get_bd(aname, tenant_aname)
             self.assertEqual(tenant_aname, aim_bd.tenant_name)
@@ -699,6 +707,7 @@ class TestAimMapping(ApicAimTestCase):
         aname = self.name_mapper.network(None, net['id'])
         if net[SVI]:
             self._l3out_should_not_exist(aname)
+            self._l3out_should_not_exist(md.DEFAULT_SVI_L3OUT_NAME)
         else:
             self._bd_should_not_exist(aname)
             self._epg_should_not_exist(aname)
