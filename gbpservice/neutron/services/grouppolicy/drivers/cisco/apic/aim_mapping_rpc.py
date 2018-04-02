@@ -56,7 +56,6 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self.opflex_topic, self.opflex_endpoints, fanout=False)
         return self.opflex_conn.consume_in_threads()
 
-    @db_api.retry_db_errors
     def _retrieve_vrf_details(self, context, **kwargs):
         with context.session.begin(subtransactions=True):
             details = {'l3_policy_id': kwargs['vrf_id']}
@@ -76,12 +75,15 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             LOG.exception(e)
             return {'l3_policy_id': vrf}
 
+    @db_api.retry_if_session_inactive()
     def get_vrf_details(self, context, **kwargs):
         return self._get_vrf_details(context, **kwargs)
 
+    @db_api.retry_if_session_inactive()
     def request_vrf_details(self, context, **kwargs):
         return self._get_vrf_details(context, **kwargs)
 
+    @db_api.retry_if_session_inactive()
     def get_gbp_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_gbp_details for: %s", kwargs)
         try:
@@ -93,6 +95,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             LOG.exception(e)
             return {'device': device}
 
+    @db_api.retry_if_session_inactive()
     def request_endpoint_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_endpoint_details for: %s", kwargs)
         try:
@@ -124,7 +127,6 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             LOG.debug("APIC ownership update for port %s", p)
             self._send_port_update_notification(context, p)
 
-    @db_api.retry_db_errors
     def _get_trunk_details(self, context, request, host):
         if self._trunk_plugin:
             device = request.get('device')
@@ -171,7 +173,6 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # - self._is_metadata_optimized(context, port);
     # - self._set_dhcp_lease_time(details)
     # - self._get_dns_domain(context, port)
-    @db_api.retry_db_errors
     def _get_gbp_details(self, context, request, host):
         with context.session.begin(subtransactions=True):
             device = request.get('device')
