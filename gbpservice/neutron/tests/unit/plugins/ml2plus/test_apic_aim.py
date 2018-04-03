@@ -1053,7 +1053,7 @@ class TestAimMapping(ApicAimTestCase):
         self._check_network_deleted(net)
 
     def test_svi_network_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
         extn = extn_db.ExtensionDbMixin()
 
         # test create.
@@ -4271,7 +4271,7 @@ class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
 class TestExtensionAttributes(ApicAimTestCase):
 
     def test_bgp_enabled_network_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_writer_session()
         extn = extn_db.ExtensionDbMixin()
 
         # Test create SVI network without BGP.
