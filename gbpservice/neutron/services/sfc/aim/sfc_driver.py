@@ -352,7 +352,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             ingress_port = self.plugin.get_port(plugin_context, pp['ingress'])
             egress_port = self.plugin.get_port(plugin_context, pp['egress'])
             pp_id = self.name_mapper.port_pair(session, pp['id'])
-            pp_name = aim_utils.sanitize_display_name(ppg['name'])
+            pp_name = aim_utils.sanitize_display_name(pp['name'])
             cd = aim_sg.ConcreteDevice(
                 tenant_name=dc.tenant_name, device_cluster_name=dc.name,
                 name=pp_id, display_name=pp_name)
@@ -376,7 +376,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
                     device_name=cd.name, name=p_id, display_name=p_name,
                     path=path, host=host)
                 cdi = self.aim.create(aim_ctx, cdi)
-                store.append((cdi, encap, p))
+                store.append((cdi, encap, pp_name, p))
         # Ingress and Egress CDIs have the same length.
         # All the ingress devices must be load balanced, and so must the egress
         # (for reverse path). Create the proper PBR policies as well as
@@ -395,8 +395,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
                                                      tenant)
 
         for i in range(len(ingress_cdis)):
-            icdi, iencap, iport = ingress_cdis[i]
-            ecdi, eencap, eport = egress_cdis[i]
+            icdi, iencap, pp_name, iport = ingress_cdis[i]
+            ecdi, eencap, _, eport = egress_cdis[i]
             internal_dci.encap = iencap
             external_dci.encap = eencap
             internal_dci.concrete_interfaces.append(icdi.dn)
@@ -404,11 +404,11 @@ class SfcAIMDriver(SfcAIMDriverBase):
             if iport['fixed_ips']:
                 ipbr.destinations.append(
                     {'ip': iport['fixed_ips'][0]['ip_address'],
-                     'mac': iport['mac_address']})
+                     'mac': iport['mac_address'], 'name': pp_name})
             if eport['fixed_ips']:
                 epbr.destinations.append(
                     {'ip': eport['fixed_ips'][0]['ip_address'],
-                     'mac': eport['mac_address']})
+                     'mac': eport['mac_address'], 'name': pp_name})
 
         self.aim.create(aim_ctx, internal_dci)
         self.aim.create(aim_ctx, external_dci)
@@ -570,9 +570,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
     def _map_flowc_network_group(self, plugin_context, net, cidr, flowc,
                                  prefix):
-        flc_aid = self._get_external_group_aim_name(plugin_context, flowc,
-                                                    prefix)
-        flc_aname = aim_utils.sanitize_display_name(flowc['name'])
+        flc_aid, flc_aname = self._get_external_group_aim_name(
+            plugin_context, flowc, prefix)
         aim_ctx = aim_context.AimContext(plugin_context.session)
         cidr = netaddr.IPNetwork(cidr)
         l3out = self.aim_mech._get_svi_net_l3out(net)
@@ -617,9 +616,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
     def _delete_flowc_network_group_mapping(self, plugin_context, net, flowc,
                                             tenant, cidr, prefix=''):
-        flc_aid = self._get_external_group_aim_name(plugin_context, flowc,
-                                                    prefix)
-        flc_aname = aim_utils.sanitize_display_name(flowc['name'])
+        flc_aid, _ = self._get_external_group_aim_name(plugin_context, flowc,
+                                                       prefix)
         aim_ctx = aim_context.AimContext(plugin_context.session)
         l3out = self.aim_mech._get_svi_net_l3out(net)
         cidr = netaddr.IPNetwork(cidr)
@@ -628,7 +626,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             if cidr.prefixlen != 0:
                 ext_net = aim_resource.ExternalNetwork(
                     tenant_name=l3out.tenant_name, l3out_name=l3out.name,
-                    name=flc_aid, display_name=flc_aname)
+                    name=flc_aid)
                 epg = self.aim.get(aim_ctx, ext_net)
             else:
                 epg = self.aim.get(
@@ -937,5 +935,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             cidr = flowc['destination_ip_prefix']
             net = self._get_flowc_dst_network(plugin_context, flowc)
         cidr = aim_utils.sanitize_display_name(cidr)
-        return self.name_mapper.network(plugin_context.session, net['id'],
+        name = self.name_mapper.network(plugin_context.session, net['id'],
                                         prefix=cidr + '_')
+        display_name = aim_utils.sanitize_display_name(net['name'])
+        return name, display_name
