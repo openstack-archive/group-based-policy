@@ -332,6 +332,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
         aim_ctx = aim_context.AimContext(session)
         # Create Logical device model, container for all the PPG port pairs.
         dc = self._get_ppg_device_cluster(session, ppg, tenant)
+        mp = self._get_ppg_monitoring_policy(session, ppg, tenant)
         type, domain = self._get_ppg_domain(plugin_context, ppg)
         if not type and not domain:
             raise exceptions.PortPairsNoUniqueDomain(id=ppg['port_pairs'])
@@ -341,7 +342,23 @@ class SfcAIMDriver(SfcAIMDriverBase):
         else:
             dc.device_type = 'VIRTUAL'
             dc.vmm_domain = [{'type': type, 'name': domain}]
+        internal_dci = aim_sg.DeviceClusterInterface(
+            tenant_name=dc.tenant_name, device_cluster_name=dc.name,
+            name=INGRESS, display_name=INGRESS)
+        external_dci = aim_sg.DeviceClusterInterface(
+            tenant_name=dc.tenant_name, device_cluster_name=dc.name,
+            name=EGRESS, display_name=EGRESS)
+        # Create 2 PBR rules per PPG, one per direction.
+        ipbr = self._get_ppg_service_redirect_policy(session, ppg, INGRESS,
+                                                     tenant)
+        epbr = self._get_ppg_service_redirect_policy(session, ppg, EGRESS,
+                                                     tenant)
         self.aim.create(aim_ctx, dc)
+        if mp:
+            for pbr in [ipbr, epbr]:
+                pbr.monitoring_policy_tenant_name = mp.tenant_name
+                pbr.monitoring_policy_name = mp.name
+            self.aim.create(aim_ctx, mp)
         # For each port pair, create the corresponding Concrete Devices
         # (represented by the static path of each interface)
         ingress_cdis = []
@@ -356,8 +373,14 @@ class SfcAIMDriver(SfcAIMDriverBase):
             cd = aim_sg.ConcreteDevice(
                 tenant_name=dc.tenant_name, device_cluster_name=dc.name,
                 name=pp_id, display_name=pp_name)
-            # Create ConcreteDevice
             self.aim.create(aim_ctx, cd)
+            srhg = None
+            if mp:
+                # Create health groups
+                srhg = aim_sg.ServiceRedirectHealthGroup(
+                    tenant_name=dc.tenant_name, name=pp_id,
+                    display_name=pp_name)
+                self.aim.create(aim_ctx, srhg)
             for p, store in [(ingress_port, ingress_cdis),
                              (egress_port, egress_cdis)]:
                 p_id = self.name_mapper.port(session, p['id'])
@@ -376,39 +399,27 @@ class SfcAIMDriver(SfcAIMDriverBase):
                     device_name=cd.name, name=p_id, display_name=p_name,
                     path=path, host=host)
                 cdi = self.aim.create(aim_ctx, cdi)
-                store.append((cdi, encap, pp_name, p))
-        # Ingress and Egress CDIs have the same length.
-        # All the ingress devices must be load balanced, and so must the egress
-        # (for reverse path). Create the proper PBR policies as well as
-        # the Logical Interfaces (which see all the physical interfaces of a
-        # specific direction as they were one).
-        internal_dci = aim_sg.DeviceClusterInterface(
-            tenant_name=dc.tenant_name, device_cluster_name=dc.name,
-            name=INGRESS, display_name=INGRESS)
-        external_dci = aim_sg.DeviceClusterInterface(
-            tenant_name=dc.tenant_name, device_cluster_name=dc.name,
-            name=EGRESS, display_name=EGRESS)
-        # Create 2 PBR rules per PPG, one per direction.
-        ipbr = self._get_ppg_service_redirect_policy(session, ppg, INGRESS,
-                                                     tenant)
-        epbr = self._get_ppg_service_redirect_policy(session, ppg, EGRESS,
-                                                     tenant)
+                store.append((cdi, encap, p, srhg, pp_id))
 
         for i in range(len(ingress_cdis)):
-            icdi, iencap, pp_name, iport = ingress_cdis[i]
-            ecdi, eencap, _, eport = egress_cdis[i]
+            icdi, iencap, iport, isrhg, pp_id = ingress_cdis[i]
+            ecdi, eencap, eport, esrhg, _ = egress_cdis[i]
             internal_dci.encap = iencap
             external_dci.encap = eencap
             internal_dci.concrete_interfaces.append(icdi.dn)
             external_dci.concrete_interfaces.append(ecdi.dn)
             if iport['fixed_ips']:
-                ipbr.destinations.append(
-                    {'ip': iport['fixed_ips'][0]['ip_address'],
-                     'mac': iport['mac_address'], 'name': pp_name})
+                destination = {'ip': iport['fixed_ips'][0]['ip_address'],
+                               'mac': iport['mac_address'], 'name': pp_id}
+                if isrhg:
+                    destination['redirect_health_group_dn'] = isrhg.dn
+                ipbr.destinations.append(destination)
             if eport['fixed_ips']:
-                epbr.destinations.append(
-                    {'ip': eport['fixed_ips'][0]['ip_address'],
-                     'mac': eport['mac_address'], 'name': pp_name})
+                destination = {'ip': eport['fixed_ips'][0]['ip_address'],
+                               'mac': eport['mac_address'], 'name': pp_id}
+                if esrhg:
+                    destination['redirect_health_group_dn'] = esrhg.dn
+                epbr.destinations.append(destination)
 
         self.aim.create(aim_ctx, internal_dci)
         self.aim.create(aim_ctx, external_dci)
@@ -420,7 +431,15 @@ class SfcAIMDriver(SfcAIMDriverBase):
         session = plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         dc = self._get_ppg_device_cluster(session, ppg, tenant)
+        mp = self._get_ppg_monitoring_policy(session, ppg, tenant)
         self.aim.delete(aim_ctx, dc, cascade=True)
+        if mp:
+            self.aim.delete(aim_ctx, mp, cascade=True)
+            for pp in ppg['port_pairs']:
+                pp_id = self.name_mapper.port_pair(session, pp)
+                srhg = aim_sg.ServiceRedirectHealthGroup(
+                    tenant_name=dc.tenant_name, name=pp_id)
+                self.aim.delete(aim_ctx, srhg)
         for prefix in [PBR_INGR_PREFIX, PBR_EGR_PREFIX]:
             pbr_id = self.name_mapper.port_pair_group(session, ppg['id'],
                                                       prefix=prefix)
@@ -695,7 +714,11 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
     def _should_regenerate_ppg(self, context):
         attrs = ['port_pairs', 'name']
-        return any(context.current[a] != context.original[a] for a in attrs)
+        param_curr = context.current['port_pair_group_parameters']
+        param_orig = context.original['port_pair_group_parameters']
+        return (any(context.current[a] != context.original[a] for a in attrs)
+                or any(param_curr[x] != param_orig[x] for x in
+                       sfc_cts.AIM_PPG_PARAMS.keys()))
 
     def _should_regenerate_pc(self, context):
         attrs = ['flow_classifiers', 'port_pair_groups', 'name']
@@ -718,6 +741,24 @@ class SfcAIMDriver(SfcAIMDriverBase):
         ppg_aname = aim_utils.sanitize_display_name(ppg['name'])
         return aim_sg.DeviceCluster(tenant_name=tenant_aid, name=ppg_aid,
                                     display_name=ppg_aname, managed=False)
+
+    def _get_ppg_monitoring_policy(self, session, ppg, tenant):
+        tenant_aid = tenant
+        ppg_aid = self.name_mapper.port_pair_group(session, ppg['id'])
+        ppg_aname = aim_utils.sanitize_display_name(ppg['name'])
+        result = None
+        ppg_params = ppg.get('port_pair_group_parameters', {})
+        monitoring_policy = ppg_params.get('healthcheck_type')
+        if monitoring_policy:
+            kwargs = {'type': monitoring_policy}
+            if 'healthcheck_frequency' in ppg_params:
+                kwargs['frequency'] = ppg_params['healthcheck_frequency']
+            if 'healthcheck_tcp_port' in ppg_params:
+                kwargs['tcp_port'] = ppg_params['healthcheck_tcp_port']
+            result = aim_sg.ServiceRedirectMonitoringPolicy(
+                tenant_name=tenant_aid, name=ppg_aid,
+                display_name=ppg_aname, **kwargs)
+        return result
 
     def _get_ppg_domain(self, plugin_context, ppg):
         pp = self.sfc_plugin.get_port_pair(plugin_context,
