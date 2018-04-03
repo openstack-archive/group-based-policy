@@ -68,12 +68,13 @@ from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    constants as aim_cst)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
-from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
 
 LOG = log.getLogger(__name__)
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
@@ -1853,7 +1854,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._associate_domain(context, is_vmm=True)
         self._update_sg_rule_with_remote_group_set(context, port)
         self._insert_provisioning_block(context)
-        registry.notify(sfc_cts.GBP_PORT, events.PRECOMMIT_UPDATE,
+        registry.notify(aim_cst.GBP_PORT, events.PRECOMMIT_UPDATE,
                         self, driver_context=context)
 
     def update_port_postcommit(self, context):
@@ -2119,7 +2120,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for net, seg in nets_segs:
             self._rebuild_host_path_for_network(context, net, seg, host,
                                                 hlinks)
-        registry.notify(sfc_cts.GBP_NETWORK_LINK,
+        registry.notify(aim_cst.GBP_NETWORK_LINK,
                         events.PRECOMMIT_UPDATE, self, context=context,
                         networks_map=nets_segs, host_links=hlinks,
                         host=host)
@@ -3917,19 +3918,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         with db_api.context_manager.writer.using(context):
             self._add_network_mapping(context.session, network_id, bd, epg,
                                       vrf)
-            registry.notify(sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+            registry.notify(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
                             self, context=context, network_id=network_id)
 
     def _set_network_epg_and_notify(self, context, mapping, epg):
         with db_api.context_manager.writer.using(context):
             self._set_network_epg(mapping, epg)
-            registry.notify(sfc_cts.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE,
+            registry.notify(aim_cst.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE,
                             self, context=context,
                             network_id=mapping.network_id)
 
     def _set_network_vrf_and_notify(self, context, mapping, vrf):
         with db_api.context_manager.writer.using(context):
             self._set_network_vrf(mapping, vrf)
-            registry.notify(sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+            registry.notify(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
                             self, context=context,
                             network_id=mapping.network_id)
