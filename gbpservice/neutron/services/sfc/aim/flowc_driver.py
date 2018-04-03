@@ -20,6 +20,7 @@ from neutron import manager
 from neutron_lib.api import validators
 from oslo_log import log as logging
 
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
 from gbpservice.neutron.services.sfc.aim import exceptions as sfc_exc
@@ -61,16 +62,16 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
 
     def create_flow_classifier_precommit(self, context):
         self._validate_flow_classifier(context)
-        registry.notify(sfc_cts.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_CREATE,
+        registry.notify(constants.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_CREATE,
                         self, driver_context=context)
 
     def update_flow_classifier_precommit(self, context):
         self._validate_flow_classifier(context)
-        registry.notify(sfc_cts.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_UPDATE,
+        registry.notify(constants.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_UPDATE,
                         self, driver_context=context)
 
     def delete_flow_classifier_precommit(self, context):
-        registry.notify(sfc_cts.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_DELETE,
+        registry.notify(constants.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_DELETE,
                         self, driver_context=context)
 
     def _validate_flow_classifier(self, context):

@@ -31,6 +31,7 @@ from oslo_log import log as logging
 from sqlalchemy import or_
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
 from gbpservice.neutron.services.sfc.aim import exceptions
@@ -93,15 +94,15 @@ class SfcAIMDriver(SfcAIMDriverBase):
         # (can't delete a flowclassifier if in use).
         for event in [events.PRECOMMIT_UPDATE, events.PRECOMMIT_CREATE]:
             registry.subscribe(self._handle_flow_classifier,
-                               sfc_cts.GBP_FLOW_CLASSIFIER, event)
-        registry.subscribe(self._handle_port_bound, sfc_cts.GBP_PORT,
+                               constants.GBP_FLOW_CLASSIFIER, event)
+        registry.subscribe(self._handle_port_bound, constants.GBP_PORT,
                            events.PRECOMMIT_UPDATE)
         registry.subscribe(self._handle_net_gbp_change,
-                           sfc_cts.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE)
+                           constants.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE)
         registry.subscribe(self._handle_net_gbp_change,
-                           sfc_cts.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE)
+                           constants.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE)
         registry.subscribe(self._handle_net_link_change,
-                           sfc_cts.GBP_NETWORK_LINK, events.PRECOMMIT_UPDATE)
+                           constants.GBP_NETWORK_LINK, events.PRECOMMIT_UPDATE)
 
     @property
     def plugin(self):
@@ -893,7 +894,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             for chain in self._get_chains_by_classifier_id(context,
                                                            flowc_id):
                 chains[chain['id']] = chain
-        if rtype == sfc_cts.GBP_NETWORK_VRF:
+        if rtype == constants.GBP_NETWORK_VRF:
             # Don't need to check PPGs if the EPG is changing
             for ppg_id in ppg_ids:
                 for chain in self._get_chains_by_ppg_ids(context, [ppg_id]):
