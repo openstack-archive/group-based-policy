@@ -647,7 +647,7 @@ def load_nfp_modules_from_path(conf, controller, path):
                         LOG.error(message)
                         message = ("(module - %s) - does not implement"
                                    "nfp_module_init()") % (identify(pymodule))
-                        LOG.warn(message)
+                        LOG.warning(message)
                 except ImportError:
                     message = "Failed to import module %s" % (pyfile)
                     LOG.error(message)
