@@ -1,0 +1,9 @@
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Code-Review+2: Anna Khmelnitsky <akhmelnitsky@vmware.com>
+Workflow+1: Amit Bose <amitbose@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Wed, 04 Apr 2018 16:29:21 +0000
+Reviewed-on: https://review.openstack.org/555584
+Project: openstack/group-based-policy
+Branch: refs/heads/master
