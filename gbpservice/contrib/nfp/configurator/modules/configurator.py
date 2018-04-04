@@ -368,7 +368,7 @@ class ConfiguratorModule(object):
         else:
             msg = ("Identified duplicate registration with service type %s." %
                    service_type)
-            LOG.warn(msg)
+            LOG.warning(msg)
 
         # Register the service agent irrespective of previous registration
         self.sa_instances.update({service_type: service_agent})
