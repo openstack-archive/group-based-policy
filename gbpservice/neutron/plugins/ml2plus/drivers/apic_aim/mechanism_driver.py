@@ -50,6 +50,8 @@ from neutron.plugins.ml2 import models
 from neutron_lib.api.definitions import portbindings
 from neutron_lib.api.definitions import provider_net as provider
 from neutron_lib import constants as n_constants
+from neutron.plugins.ml2.drivers.openvswitch.agent.common \
+    import constants as a_const
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import directory
@@ -2151,7 +2153,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         elif network_type != 'local':
             return False
 
-        self._complete_binding(context, segment)
+        self._complete_binding(context, segment, agent)
         return True
 
     def _dvs_bind_port(self, context, segment, agent):
@@ -2225,14 +2227,74 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._complete_binding(context, segment)
                 return True
 
-    def _complete_binding(self, context, segment):
+    def get_vif_type(self, agent):
+        if agent['agent_type'] == ofcst.AGENT_TYPE_OPFLEX_VPP:
+            return portbindings.VIF_TYPE_VHOST_USER
+        else:
+            if (agent['configurations'].get('datapath_type') ==
+            a_const.OVS_DATAPATH_NETDEV):
+                return portbindings.VIF_TYPE_VHOST_USER
+            else:
+                return portbindings.VIF_TYPE_OVS
+
+    @staticmethod
+    def agent_vhu_sockpath(agent, port_id):
+        """Return the agent's vhost-user socket path for a given port"""
+        sockdir = agent['configurations'].get('vhostuser_socket_dir',
+                                              a_const.VHOST_USER_SOCKET_DIR)
+        sock_name = (n_constants.VHOST_USER_DEVICE_PREFIX + port_id)[:14]
+        return os.path.join(sockdir, sock_name)
+
+    def get_vhost_mode(self):
+        # NOTE(sean-k-mooney): this function converts the ovs vhost user
+        # driver mode into the qemu vhost user mode. If OVS is the server,
+        # qemu is the client and vice-versa. For ACI MD, we will need to
+        # support agent capabilities field to choose client-mode. As of
+        # now only support server mode for nova.
+        return portbindings.VHOST_USER_MODE_SERVER
+
+    def get_vif_details(self, context, agent):
+        # a_config = agent['configurations']
+        vif_type = self.get_vif_type(agent)
+        details = {}
+        if vif_type == portbindings.VIF_TYPE_VHOST_USER:
+            sock_path = self.agent_vhu_sockpath(agent,
+                                                context.current['id'])
+            mode = self.get_vhost_mode()
+            details = {portbindings.VHOST_USER_MODE: mode,
+                       portbindings.VHOST_USER_SOCKET: sock_path}
+            if agent['agent_type'] == ofcst.AGENT_TYPE_OPFLEX_VPP:
+                details.update({portbindings.CAP_PORT_FILTER: False,
+                                portbindings.OVS_HYBRID_PLUG: False,
+                                portbindings.VHOST_USER_OVS_PLUG: False})
+            else:
+                details.update({portbindings.OVS_DATAPATH_TYPE:
+                                a_const.OVS_DATAPATH_NETDEV,
+                                portbindings.VHOST_USER_OVS_PLUG: True})
+
+        if agent['agent_type'] == ofcst.AGENT_TYPE_OPFLEX_OVS:
+            details.update(self.update_binding_sg())
+
+        return details
+
+    def update_binding_sg(self):
         enable_firewall = False
         if self.enable_iptables_firewall:
             enable_firewall = self.sg_enabled
-        context.set_binding(
-            segment[api.ID], portbindings.VIF_TYPE_OVS,
-            {portbindings.CAP_PORT_FILTER: enable_firewall,
-             portbindings.OVS_HYBRID_PLUG: enable_firewall})
+        return {portbindings.CAP_PORT_FILTER: enable_firewall,
+                portbindings.OVS_HYBRID_PLUG: enable_firewall}
+
+    def _complete_binding(self, context, segment, agent=None):
+        if agent:
+            context.set_binding(
+                segment[api.ID],
+                self.get_vif_type(agent),
+                self.get_vif_details(context, agent))
+        else:
+            context.set_binding(
+                segment[api.ID],
+                portbindings.VIF_TYPE_OVS,
+                self.update_binding_sg())
 
     @property
     def plugin(self):
