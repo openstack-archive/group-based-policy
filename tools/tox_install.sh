@@ -5,8 +5,11 @@
 # default:
 # pip install {opts} {packages}
 
-cd /home/zuul/src/git.openstack.org/openstack/requirements
-git checkout stable/pike
+DIR=/home/zuul/src/git.openstack.org/openstack/requirements
+if [ -d "$DIR" ]; then
+    cd $DIR
+    git checkout stable/pike
+fi
 
 set -e
 set -x
