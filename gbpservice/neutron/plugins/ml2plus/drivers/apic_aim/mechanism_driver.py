@@ -15,6 +15,7 @@
 
 import copy
 import netaddr
+import os
 import re
 import sqlalchemy as sa
 
@@ -46,6 +47,8 @@ from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import db as n_db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import driver_context as ml2_context
+from neutron.plugins.ml2.drivers.openvswitch.agent.common import (
+    constants as a_const)
 from neutron.plugins.ml2 import models
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
@@ -172,6 +175,7 @@ class KeystoneNotificationEndpoint(object):
 
 class ApicMechanismDriver(api_plus.MechanismDriver,
                           db.DbMixin):
+    NIC_NAME_LEN = 14
 
     class TopologyRpcEndpoint(object):
         target = oslo_messaging.Target(version='3.0')
@@ -1746,6 +1750,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                      self._opflex_bind_port):
                 return
 
+            # Try to bind OpFlex VPP agent.
+            if self._agent_bind_port(context, ofcst.AGENT_TYPE_OPFLEX_VPP,
+                                     self._opflex_bind_port):
+                return
+
         # If we reached here, it means that either there is no active opflex
         # agent running on the host, or the agent on the host is not
         # configured for this physical network. Treat the host as a physical
@@ -2142,8 +2151,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return False
         elif network_type != 'local':
             return False
-
-        self._complete_binding(context, segment)
+        context.set_binding(
+            segment[api.ID], self._opflex_get_vif_type(agent),
+            self._opflex_get_vif_details(context, agent))
         return True
 
     def _dvs_bind_port(self, context, segment, agent):
@@ -2214,17 +2224,66 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             elif segment.get('aim_ml2_created'):
                 # Complete binding if another driver did not bind the
                 # dynamic segment that we created.
-                self._complete_binding(context, segment)
+                context.set_binding(segment[api.ID], portbindings.VIF_TYPE_OVS,
+                    self._update_binding_sg())
                 return True
 
-    def _complete_binding(self, context, segment):
+    def _opflex_get_vif_type(self, agent):
+        if agent['agent_type'] == ofcst.AGENT_TYPE_OPFLEX_VPP:
+            return portbindings.VIF_TYPE_VHOST_USER
+        else:
+            if (agent['configurations'].get('datapath_type') ==
+            a_const.OVS_DATAPATH_NETDEV):
+                return portbindings.VIF_TYPE_VHOST_USER
+            else:
+                return portbindings.VIF_TYPE_OVS
+
+    @staticmethod
+    def _agent_vhu_sockpath(agent, port_id):
+        """Return the agent's vhost-user socket path for a given port"""
+        sockdir = agent['configurations'].get('vhostuser_socket_dir',
+                                              a_const.VHOST_USER_SOCKET_DIR)
+        sock_name = (n_constants.VHOST_USER_DEVICE_PREFIX +
+                     port_id)[:ApicMechanismDriver.NIC_NAME_LEN]
+        return os.path.join(sockdir, sock_name)
+
+    def _get_vhost_mode(self):
+        # REVISIT(kshastri):  this function converts the ovs vhost user
+        # driver mode into the qemu vhost user mode. If OVS is the server,
+        # qemu is the client and vice-versa. For ACI MD, we will need to
+        # support agent capabilities field to choose client-mode. As of
+        # now only support server mode for nova.
+        return portbindings.VHOST_USER_MODE_SERVER
+
+    def _opflex_get_vif_details(self, context, agent):
+        vif_type = self._opflex_get_vif_type(agent)
+        details = {}
+        if vif_type == portbindings.VIF_TYPE_VHOST_USER:
+            sock_path = self._agent_vhu_sockpath(agent,
+                                                context.current['id'])
+            mode = self._get_vhost_mode()
+            details = {portbindings.VHOST_USER_MODE: mode,
+                       portbindings.VHOST_USER_SOCKET: sock_path}
+            if agent['agent_type'] == ofcst.AGENT_TYPE_OPFLEX_VPP:
+                details.update({portbindings.CAP_PORT_FILTER: False,
+                                portbindings.OVS_HYBRID_PLUG: False,
+                                portbindings.VHOST_USER_OVS_PLUG: False,
+                                ofcst.VHOST_USER_VPP_PLUG: True})
+            else:
+                details.update({portbindings.OVS_DATAPATH_TYPE:
+                                a_const.OVS_DATAPATH_NETDEV,
+                                portbindings.VHOST_USER_OVS_PLUG: True})
+
+        if agent['agent_type'] == ofcst.AGENT_TYPE_OPFLEX_OVS:
+            details.update(self._update_binding_sg())
+        return details
+
+    def _update_binding_sg(self):
         enable_firewall = False
         if self.enable_iptables_firewall:
             enable_firewall = self.sg_enabled
-        context.set_binding(
-            segment[api.ID], portbindings.VIF_TYPE_OVS,
-            {portbindings.CAP_PORT_FILTER: enable_firewall,
-             portbindings.OVS_HYBRID_PLUG: enable_firewall})
+        return {portbindings.CAP_PORT_FILTER: enable_firewall,
+                portbindings.OVS_HYBRID_PLUG: enable_firewall}
 
     @property
     def plugin(self):
