@@ -593,8 +593,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
     def _map_flowc_network_group(self, plugin_context, net, cidr, flowc,
                                  prefix):
-        flc_aid, flc_aname = self._get_external_group_aim_name(
-            plugin_context, flowc, prefix)
+        flc_aid = self._get_external_group_aim_name(plugin_context, flowc,
+                                                    prefix)
         aim_ctx = aim_context.AimContext(plugin_context.session)
         cidr = netaddr.IPNetwork(cidr)
         l3out = self.aim_mech._get_svi_net_l3out(net)
@@ -611,7 +611,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
                 # L3Out. Return the External network
                 ext_net = aim_resource.ExternalNetwork(
                     tenant_name=l3out.tenant_name, l3out_name=l3out.name,
-                    name=flc_aid, display_name=flc_aname)
+                    name=flc_aid)
                 ext_sub = aim_resource.ExternalSubnet(
                     tenant_name=ext_net.tenant_name,
                     l3out_name=ext_net.l3out_name,
@@ -639,8 +639,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
     def _delete_flowc_network_group_mapping(self, plugin_context, net, flowc,
                                             tenant, cidr, prefix=''):
-        flc_aid, _ = self._get_external_group_aim_name(plugin_context, flowc,
-                                                       prefix)
+        flc_aid = self._get_external_group_aim_name(plugin_context, flowc,
+                                                    prefix)
         aim_ctx = aim_context.AimContext(plugin_context.session)
         l3out = self.aim_mech._get_svi_net_l3out(net)
         cidr = netaddr.IPNetwork(cidr)
@@ -982,5 +982,4 @@ class SfcAIMDriver(SfcAIMDriverBase):
         cidr = aim_utils.sanitize_display_name(cidr)
         name = self.name_mapper.network(plugin_context.session, net['id'],
                                         prefix=cidr + '_')
-        display_name = aim_utils.sanitize_display_name(net['name'])
-        return name, display_name
+        return name
