@@ -89,6 +89,23 @@ AGENT_TYPE_DVS = md.AGENT_TYPE_DVS
 AGENT_CONF_DVS = {'alive': True, 'binary': 'anotherbinary',
                   'topic': 'anothertopic', 'agent_type': AGENT_TYPE_DVS,
                   'configurations': {'opflex_networks': None}}
+
+AGENT_TYPE_VPP = ofcst.AGENT_TYPE_OPFLEX_VPP
+AGENT_CONF_VPP = {'alive': True, 'binary': 'somebinary',
+                  'topic': 'sometopic', 'agent_type': AGENT_TYPE_VPP,
+                  'configurations': {
+                      'opflex_networks': None,
+                      'vhostuser_socket_dir': '/var/run/vpp-sockets'}}
+
+AGENT_CONF_OPFLEX_OVS_DPDK = {'alive': True, 'binary': 'somebinary',
+                              'topic': 'sometopic',
+                              'agent_type': ofcst.AGENT_TYPE_OPFLEX_OVS,
+                              'configurations': {
+                                  'opflex_networks': None,
+                                  'bridge_mappings': {'physnet1': 'br-eth1'},
+                                  'vhostuser_socket_dir':
+                                      '/var/run/openvswitch',
+                                  'datapath_type': 'netdev'}}
 BOOKED_PORT_VALUE = 'myBookedPort'
 
 DN = 'apic:distinguished_names'
@@ -4052,6 +4069,39 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual({'port_filter': False},
                          port['binding:vif_details'])
         self.assertEqual(n_constants.PORT_STATUS_ACTIVE, port['status'])
+
+    def test_bind_port_ovs_dpdk(self):
+        self._register_agent('host1', AGENT_CONF_OPFLEX_OVS_DPDK)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        port = self._bind_port_to_host(port_id, 'host1')['port']
+        self.assertEqual('vhostuser', port['binding:vif_type'])
+        self.assertEqual(
+            {'datapath_type': 'netdev', 'port_filter': False,
+             'ovs_hybrid_plug': False, 'vhostuser_ovs_plug': True,
+             'vhostuser_mode': 'server', 'vhostuser_socket':
+                 AGENT_CONF_OPFLEX_OVS_DPDK['configurations'][
+                     'vhostuser_socket_dir'] + '/' + ('vhu' + port_id)[:14]},
+            port['binding:vif_details'])
+
+    def test_bind_port_vpp(self):
+        self._register_agent('host1', AGENT_CONF_VPP)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        port = self._bind_port_to_host(port_id, 'host1')['port']
+        self.assertEqual('vhostuser', port['binding:vif_type'])
+        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False,
+                          'vhostuser_ovs_plug': False,
+                          'vhostuser_vpp_plug': True,
+                          'vhostuser_mode': 'server',
+                          'vhostuser_socket': AGENT_CONF_VPP['configurations'][
+                              'vhostuser_socket_dir'] + '/' + (
+                              ('vhu' + port_id)[:14])},
+                         port['binding:vif_details'])
 
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
