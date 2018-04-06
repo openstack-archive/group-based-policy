@@ -1797,6 +1797,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                           "port %s", port['id'])
             return epg
 
+    def _is_isolated_subnet(self, context, subnet):
+        filters = {'device_owner': [n_constants.DEVICE_OWNER_ROUTER_INTF],
+                   'fixed_ips': {'subnet_id': subnet}}
+        ports = self._get_ports(context, filters=filters)
+        for port in ports:
+            for ip in port['fixed_ips']:
+                if ip['subnet_id'] == subnet['id']:
+                    return False
+        return True
+
     def _get_subnet_details(self, plugin_context, port, details):
         # L2P might not exist for a pure Neutron port
         l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
@@ -1854,7 +1864,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     # use the first DHCP agent in our list for the
                     # metadata host-route next-hop IPs
                     if not metadata_route and dhcp_ports and (
-                        not optimized or (optimized and not default_route)):
+                            not optimized or (optimized and
+                            self._is_isolated_subnet(plugin_context, subnet))):
                         for ip in dhcp_ports[dhcp_ports.keys()[0]]:
                             subnet['host_routes'].append(
                                 {'destination': dhcp.METADATA_DEFAULT_CIDR,

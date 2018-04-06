@@ -24,6 +24,7 @@ from aim.api import status as aim_status
 from aim import context as aim_context
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
+from neutron.agent.linux import dhcp
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.common import utils as n_utils
 from neutron.db import api as db_api
@@ -2960,7 +2961,8 @@ class TestPolicyTarget(AIMBaseTestCase,
     def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
                                        expected_epg_name, expected_epg_tenant,
                                        subnet, default_route=None,
-                                       map_tenant_name=True):
+                                       map_tenant_name=True, dhcp_port=None,
+                                       optimized_metadata=False):
         self.assertEqual(mapping, req_mapping['gbp_details'])
         self.assertEqual(port_id, mapping['port_id'])
         self.assertEqual(expected_epg_name, mapping['endpoint_group_name'])
@@ -2969,7 +2971,16 @@ class TestPolicyTarget(AIMBaseTestCase,
         self.assertEqual(exp_tenant, mapping['ptg_tenant'])
         self.assertEqual('someid', mapping['vm-name'])
         self.assertTrue(mapping['enable_dhcp_optimization'])
-        self.assertFalse(mapping['enable_metadata_optimization'])
+        if optimized_metadata:
+            self.assertTrue(mapping['enable_metadata_optimization'])
+        else:
+            self.assertFalse(mapping['enable_metadata_optimization'])
+        if dhcp_port:
+            self.assertTrue(
+                {'destination': dhcp.METADATA_DEFAULT_CIDR,
+                 'nexthop': dhcp_port['fixed_ips'][0]['ip_address']} in
+                mapping['subnets'][0]['host_routes'],
+                "Metadata route missing in %s" % mapping['subnets'][0])
         self.assertEqual(1, len(mapping['subnets']))
         self.assertEqual(subnet['subnet']['cidr'],
                          mapping['subnets'][0]['cidr'])
@@ -3035,10 +3046,24 @@ class TestPolicyTarget(AIMBaseTestCase,
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])
 
+    def _create_dhcp_port(self, subnet):
+        attrs = {'tenant_id': subnet['project_id'],
+                 'network_id': subnet['network_id'],
+                 'fixed_ips': [{'subnet_id': subnet['id']}],
+                 'device_id': '',
+                 'device_owner': n_constants.DEVICE_OWNER_DHCP,
+                 'mac_address': n_constants.ATTR_NOT_SPECIFIED,
+                 'name': '%s-%s' % (subnet['network_id'], subnet['id']),
+                 'admin_state_up': True}
+        port_info = {'port': attrs}
+        dhcp_port = self._plugin.create_port(self._context, port_info)
+        return dhcp_port
+
     # TODO(Kent): we should also add the ML2 related UTs for
     # get_gbp_details(). Its missing completely....
-    def _do_test_get_gbp_details(self, pre_vrf=None):
+    def _do_test_get_gbp_details(self, pre_vrf=None, optimized_metadata=False):
         self.driver.aim_mech_driver.apic_optimized_dhcp_lease_time = 100
+        self.driver.aim_mech_driver.enable_metadata_opt = optimized_metadata
         es1, es1_sub = self._setup_external_segment(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
         es2, es2_sub1 = self._setup_external_segment(
@@ -3061,10 +3086,14 @@ class TestPolicyTarget(AIMBaseTestCase,
                                     l3_policy_id=l3p['id'])['l2_policy']
         ptg = self.create_policy_target_group(
             name="ptg1", l2_policy_id=l2p['id'])['policy_target_group']
+        subnet = self._plugin._get_subnet(self._neutron_admin_context,
+                                          ptg['subnets'][0])
         segmentation_labels = ['label1', 'label2']
         pt1 = self.create_policy_target(
             policy_target_group_id=ptg['id'],
             segmentation_labels=segmentation_labels)['policy_target']
+        # Add a DHCP port, so that the metadata host-routes get populated
+        dhcp_port = self._create_dhcp_port(subnet._as_dict())
         self._bind_port_to_host(pt1['port_id'], 'h1')
         fip = self._make_floatingip(self.fmt, es1_sub['network_id'],
                                     port_id=pt1['port_id'])['floatingip']
@@ -3087,7 +3116,8 @@ class TestPolicyTarget(AIMBaseTestCase,
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
 
         self._verify_gbp_details_assertions(
-            mapping, req_mapping, pt1['port_id'], epg_name, epg_tenant, subnet)
+            mapping, req_mapping, pt1['port_id'], epg_name, epg_tenant,
+            subnet, dhcp_port=dhcp_port, optimized_metadata=optimized_metadata)
 
         if pre_vrf:
             vrf_name = pre_vrf.name
@@ -3263,6 +3293,9 @@ class TestPolicyTarget(AIMBaseTestCase,
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
+
+    def test_get_gbp_details_optimized_metadata(self):
+        self._do_test_get_gbp_details(optimized_metadata=True)
 
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
