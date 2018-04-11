@@ -245,15 +245,13 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                                   ppg_args=None):
         flowc_ids = []
         ppg_args = ppg_args or []
-        flowcs_args = flowcs_args or [{'src_svi': self.src_svi,
-                                       'dst_svi': self.dst_svi}] * flowcs
+        flowcs_args = flowcs_args or []
         for i in range(flowcs):
             try:
                 flowc_ids.append(
                     self._create_simple_flowc(**flowcs_args[i])['id'])
             except IndexError:
-                flowc_ids.append(self._create_simple_flowc(
-                    src_svi=self.src_svi, dst_svi=self.dst_svi)['id'])
+                flowc_ids.append(self._create_simple_flowc()['id'])
         ppg_ids = []
         for i in range(ppgs):
             try:
@@ -413,8 +411,7 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                 flowc['l7_parameters']['logical_source_network'])
             dst_net = self._show_network(
                 flowc['l7_parameters']['logical_destination_network'])
-            apic_tn = 'prj_' + dst_net['tenant_id'] if not self.dst_svi else (
-                'common')
+            apic_tn = 'prj_' + dst_net['tenant_id']
             device_clusters = []
             sg = self.aim_mgr.get(ctx, aim_sg.ServiceGraph(
                 tenant_name=apic_tn, name='ptc_' + pc['id']))
@@ -435,12 +432,10 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
             for net, pref, cidr in [(src_net, 'src_', src_cidr),
                                     (dst_net, 'dst_', dst_cird)]:
                 if net['apic:svi']:
-                    vrf = aim_res.VRF.from_dn(
-                        net['apic:distinguished_names']['VRF'])
-                    ext = aim_res.ExternalNetwork(
-                        tenant_name=vrf.tenant_name,
-                        l3out_name='DefaultSVIL3Out' + '_' + vrf.name,
-                        name='ExtEpg')
+                    # TODO(ivar): this will not work, there's no L3Outside
+                    # DN extension for external networks.
+                    ext = aim_res.ExternalNetwork.from_dn(
+                        net['apic:distinguished_names']['ExternalNetwork'])
                     if cidr in ['0.0.0.0/0', '::/0']:
                         # use default external EPG
                         ext_net = self.aim_mgr.get(ctx, ext)
@@ -451,23 +446,11 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                                 l3out_name=ext.l3out_name,
                                 name=cidr.replace(
                                     '/', '_') + '_' + 'net_' + net['id']))
+                    ext_sub = self.aim_mgr.get(ctx, aim_res.ExternalSubnet(
+                        tenant_name=ext.tenant_name, l3out_name=ext.l3out_name,
+                        external_network_name=ext_net.name, cidr=cidr))
                     self.assertIsNotNone(ext_net)
-                    if cidr in ['0.0.0.0/0', '::/0']:
-                        for c in ['128.0.0.0/1', '0.0.0.0/1']:
-                            ext_sub = self.aim_mgr.get(
-                                ctx, aim_res.ExternalSubnet(
-                                    tenant_name=ext.tenant_name,
-                                    l3out_name=ext.l3out_name,
-                                    external_network_name=ext_net.name,
-                                    cidr=c))
-                            self.assertIsNotNone(ext_sub)
-                    else:
-                        ext_sub = self.aim_mgr.get(
-                            ctx, aim_res.ExternalSubnet(
-                                tenant_name=ext.tenant_name,
-                                l3out_name=ext.l3out_name,
-                                external_network_name=ext_net.name, cidr=cidr))
-                        self.assertIsNotNone(ext_sub)
+                    self.assertIsNotNone(ext_sub)
                     self.assertTrue(
                         contract.name in (ext_net.consumed_contract_names if
                                           pref == 'src_' else
@@ -1278,7 +1261,6 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                 name=fc['destination_ip_prefix'].replace(
                     '/', '_') + '_' + 'net_' + dst_net_id)[0]
             self.assertEqual(2, len(ext_net.provided_contract_names))
-            self.assertTrue('DefaultSVIL3Out' in ext_net.l3out_name)
             self.delete_port_chain(pc2['id'])
             self.assertIsNone(self.aim_mgr.get(self._aim_context, ext_net))
 
@@ -1417,7 +1399,3 @@ class TestPortChainSVI(TestPortChain):
                                     expected_res_status=201)['port_chain']
         self._verify_pc_mapping(pc)
         self._verify_pc_delete(pc)
-
-    def test_pc_mapping_two_flowcs(self):
-        # TODO(ivar): re enable after fixing the conflicting address scope
-        pass
