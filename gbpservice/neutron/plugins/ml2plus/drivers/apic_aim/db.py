@@ -138,20 +138,6 @@ class DbMixin(object):
                           vrf_name=vrf.name).
                 first() is not None)
 
-    def _is_vrf_used_by_l3outs(self, session, vrf):
-        return (session.query(NetworkMapping.network_id).
-                filter(NetworkMapping.vrf_tenant_name == vrf.tenant_name,
-                       NetworkMapping.vrf_name == vrf.name,
-                       NetworkMapping.l3out_name.isnot(None)).
-                first() is not None)
-
-    def _get_l3outs_for_vrf(self, session, vrf):
-        return (session.query(NetworkMapping).
-                filter(NetworkMapping.vrf_tenant_name == vrf.tenant_name,
-                       NetworkMapping.vrf_name == vrf.name,
-                       NetworkMapping.l3out_name.isnot(None)).
-                all())
-
     def _get_network_bd(self, mapping):
         return aim_resource.BridgeDomain(
             tenant_name=mapping.bd_tenant_name,
