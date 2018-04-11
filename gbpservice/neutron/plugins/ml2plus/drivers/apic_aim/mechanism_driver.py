@@ -446,9 +446,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # For now, we are only handling changes to DHCP
         # ports and LBaaS ports. This can be expanded in
         # the future to handle other changes, if needed
-        return bool(port and any(port['device_owner'].startswith(x) for x in
-                    (n_constants.DEVICE_OWNER_DHCP,
-                     n_constants.DEVICE_OWNER_LOADBALANCERV2)))
+        # return bool(port and any(port['device_owner'].startswith(x) for x in
+        #            (n_constants.DEVICE_OWNER_DHCP,
+        #             n_constants.DEVICE_OWNER_LOADBALANCERV2)))
+        return False
 
     def _notify_if_dependent_port_change(self, context, port):
         # Under some scenarios, opflex agents might not get
