@@ -10,16 +10,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+API_NAME = 'sfc_patch'
+API_VERSION_OPTION = ''
+
+
+def build_option_parser(parser):
+    """Hook to add global options"""
+    return parser
+
 try:
     from networking_sfc.cli import port_pair_group
     from networking_sfc.osc.sfc import port_pair_group as osc_ppg
-
-    API_NAME = 'sfc_patch'
-    API_VERSION_OPTION = ''
-
-    def build_option_parser(parser):
-        """Hook to add global options"""
-        return parser
 
     # Removing field limitation
     def add_known_arguments(self, parser):
