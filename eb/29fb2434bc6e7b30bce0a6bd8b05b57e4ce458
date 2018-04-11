@@ -1,0 +1,10 @@
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Code-Review+1: pippo <huang.zhiping@99cloud.net>
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Wed, 11 Apr 2018 15:41:08 +0000
+Reviewed-on: https://review.openstack.org/560177
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
