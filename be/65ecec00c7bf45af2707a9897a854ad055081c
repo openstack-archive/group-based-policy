@@ -1,0 +1,9 @@
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 12 Apr 2018 17:30:23 +0000
+Reviewed-on: https://review.openstack.org/560687
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/pike
