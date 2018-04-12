@@ -44,6 +44,7 @@ FLOWC_DST = 'dst'
 LOG = logging.getLogger(__name__)
 PHYSDOM_TYPE = 'PhysDom'
 SUPPORTED_DOM_TYPES = [PHYSDOM_TYPE]
+DEFAULT_SUBNETS = ['128.0.0.0/1', '0.0.0.0/1', '8000::/1', '::/1']
 MAX_PPGS_PER_CHAIN = 3
 
 
@@ -596,26 +597,20 @@ class SfcAIMDriver(SfcAIMDriverBase):
         cidr = netaddr.IPNetwork(cidr)
         l3out = self.aim_mech._get_svi_net_l3out(net)
         if l3out:
-            if cidr.prefixlen == 0:
-                # Use default External Network
-                ext_net = self.aim_mech._get_svi_default_external_epg(net)
-                ext_net_db = self.aim.get(aim_ctx, ext_net)
-                if not ext_net_db:
-                    raise exceptions.DefaultExternalNetworkNotFound(
-                        id=net['id'])
-            else:
-                # Create ExternalNetwork and ExternalSubnet on the proper
-                # L3Out. Return the External network
-                ext_net = aim_resource.ExternalNetwork(
-                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
-                    name=flc_aid)
+            # Create ExternalNetwork and ExternalSubnet on the proper
+            # L3Out. Return the External network
+            ext_net = aim_resource.ExternalNetwork(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                name=flc_aid)
+            ext_net_db = self.aim.get(aim_ctx, ext_net)
+            if not ext_net_db:
+                ext_net_db = self.aim.create(aim_ctx, ext_net)
+            subnets = [str(cidr)] if cidr.prefixlen != 0 else DEFAULT_SUBNETS
+            for sub in subnets:
                 ext_sub = aim_resource.ExternalSubnet(
                     tenant_name=ext_net.tenant_name,
                     l3out_name=ext_net.l3out_name,
-                    external_network_name=ext_net.name, cidr=str(cidr))
-                ext_net_db = self.aim.get(aim_ctx, ext_net)
-                if not ext_net_db:
-                    ext_net_db = self.aim.create(aim_ctx, ext_net)
+                    external_network_name=ext_net.name, cidr=sub)
                 ext_sub_db = self.aim.get(aim_ctx, ext_sub)
                 if not ext_sub_db:
                     self.aim.create(aim_ctx, ext_sub)
@@ -643,14 +638,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
         cidr = netaddr.IPNetwork(cidr)
         ext_net = None
         if l3out:
-            if cidr.prefixlen != 0:
-                ext_net = aim_resource.ExternalNetwork(
-                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
-                    name=flc_aid)
-                epg = self.aim.get(aim_ctx, ext_net)
-            else:
-                epg = self.aim.get(
-                    aim_ctx, self.aim_mech._get_svi_default_external_epg(net))
+            ext_net = aim_resource.ExternalNetwork(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                name=flc_aid)
+            epg = self.aim.get(aim_ctx, ext_net)
         else:
             epg = self.aim.get(aim_ctx, self.aim_mech._get_epg_by_network_id(
                 plugin_context.session, net['id']))
@@ -976,7 +967,11 @@ class SfcAIMDriver(SfcAIMDriverBase):
         else:
             cidr = flowc['destination_ip_prefix']
             net = self._get_flowc_dst_network(plugin_context, flowc)
-        cidr = aim_utils.sanitize_display_name(cidr)
+        cidr = netaddr.IPNetwork(cidr)
+        if cidr.prefixlen == 0:
+            cidr = 'default'
+        else:
+            cidr = aim_utils.sanitize_display_name(str(cidr))
         name = self.name_mapper.network(plugin_context.session, net['id'],
                                         prefix=cidr + '_')
         return name
