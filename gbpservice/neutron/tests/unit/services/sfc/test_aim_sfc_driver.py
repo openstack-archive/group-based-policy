@@ -436,21 +436,26 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                     # DN extension for external networks.
                     ext = aim_res.ExternalNetwork.from_dn(
                         net['apic:distinguished_names']['ExternalNetwork'])
+                    name_prefix = cidr.replace('/', '_')
+                    subnets = [cidr]
                     if cidr in ['0.0.0.0/0', '::/0']:
                         # use default external EPG
-                        ext_net = self.aim_mgr.get(ctx, ext)
-                    else:
-                        ext_net = self.aim_mgr.get(
-                            ctx, aim_res.ExternalNetwork(
-                                tenant_name=ext.tenant_name,
-                                l3out_name=ext.l3out_name,
-                                name=cidr.replace(
-                                    '/', '_') + '_' + 'net_' + net['id']))
-                    ext_sub = self.aim_mgr.get(ctx, aim_res.ExternalSubnet(
-                        tenant_name=ext.tenant_name, l3out_name=ext.l3out_name,
-                        external_network_name=ext_net.name, cidr=cidr))
+                        name_prefix = 'default'
+                        subnets = ['128.0.0.0/1', '0.0.0.0/1', '8000::/1',
+                                   '::/1']
+                    ext_net = self.aim_mgr.get(
+                        ctx, aim_res.ExternalNetwork(
+                            tenant_name=ext.tenant_name,
+                            l3out_name=ext.l3out_name,
+                            name=name_prefix + '_' + 'net_' + net['id']))
+                    for sub in subnets:
+                        ext_sub = self.aim_mgr.get(ctx, aim_res.ExternalSubnet(
+                            tenant_name=ext.tenant_name,
+                            l3out_name=ext.l3out_name,
+                            external_network_name=ext_net.name, cidr=sub))
+                        self.assertIsNotNone(ext_sub)
+
                     self.assertIsNotNone(ext_net)
-                    self.assertIsNotNone(ext_sub)
                     self.assertTrue(
                         contract.name in (ext_net.consumed_contract_names if
                                           pref == 'src_' else
