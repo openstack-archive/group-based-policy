@@ -653,7 +653,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
             if operation == lb_const.DELETE:
                 msg = (
                     "Failed to delete loadbalancer %s" % (loadbalancer['id']))
-                LOG.warn(msg)
+                LOG.warning(msg)
                 del LBaaSV2EventHandler.instance_mapping[loadbalancer['id']]
             else:
                 self.plugin_rpc.update_status(
@@ -696,7 +696,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         except Exception:
             if operation == lb_const.DELETE:
                 msg = ("Failed to delete listener %s" % (listener['id']))
-                LOG.warn(msg)
+                LOG.warning(msg)
             else:
                 self.plugin_rpc.update_status(
                     lb_const.LISTENER, listener['id'], root_lb_id,
@@ -738,7 +738,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         except Exception:
             if operation == lb_const.DELETE:
                 msg = "Failed to delete pool %s" % (pool['id'])
-                LOG.warn(msg)
+                LOG.warning(msg)
             else:
                 self.plugin_rpc.update_status(
                     lb_const.POOL, pool['id'], root_lb_id,
@@ -779,7 +779,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
         except Exception:
             if operation == lb_const.DELETE:
                 msg = ("Failed to delete member %s" % (member['id']))
-                LOG.warn(msg)
+                LOG.warning(msg)
             else:
                 self.plugin_rpc.update_status(
                     lb_const.MEMBER, member['id'], root_lb_id,
@@ -827,7 +827,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
             if operation == lb_const.DELETE:
                 msg = ("Failed to delete pool health monitor."
                        " assoc_id: %s" % (assoc_id))
-                LOG.warn(msg)
+                LOG.warning(msg)
             else:
                 self.plugin_rpc.update_status(
                     lb_const.HEALTHMONITOR, healthmonitor['id'], root_lb_id,
