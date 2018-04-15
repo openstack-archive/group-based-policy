@@ -115,6 +115,32 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             LOG.exception(e)
             return None
 
+    # REVISIT: this should exist in the mechanism driver, and should
+    #          be addressed by any patch that refactors this RPC class
+    def notify_filtered_ports_per_network(self, context, **kwargs):
+        LOG.debug("APIC AIM handling get_ports_for_network for: %s", kwargs)
+        try:
+            host_id = kwargs.get('host')
+            network_id = kwargs.get('network')
+            core_plugin = self._core_plugin
+            filters = {'network_id': [network_id]}
+            ports_to_update = core_plugin.get_ports(context, filters)
+            # Exclude DHCP and LBaaS ports -- these are possible triggers
+            # for the network notifaction that resulted in the agents calling
+            # this RPC. Updates for those ports and will be handled from their
+            # own port notifications, if needed.
+            for p in ports_to_update:
+                if (p.get(portbindings.HOST_ID) == host_id) and not (
+                        p['device_owner'].startswith(
+                            constants.DEVICE_OWNER_DHCP) or
+                        p['device_owner'].startswith(
+                            constants.DEVICE_OWNER_LOADBALANCERV2)):
+                    self._send_port_update_notification(context, p['id'])
+        except Exception as e:
+            LOG.error("An exception has occurred while requesting ports "
+                      "for network %s", kwargs.get('network'))
+            LOG.exception(e)
+
     # Child class needs to support:
     # - self._send_port_update_notification(context, port)
     def ip_address_owner_update(self, context, **kwargs):
