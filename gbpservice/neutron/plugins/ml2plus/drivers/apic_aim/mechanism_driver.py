@@ -47,7 +47,7 @@ from neutron.plugins.ml2 import db as n_db
 from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import driver_context as ml2_context
 from neutron.plugins.ml2 import models
-from neutron_lib.api.definitions import provider_net as provider
+from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
@@ -443,37 +443,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                  name=self.ap_name)
             if not self.aim.get(aim_ctx, ap):
                 self.aim.create(aim_ctx, ap)
-
-    def _is_dependent_port_change(self, port):
-        # For now, we are only handling changes to DHCP
-        # ports and LBaaS ports. This can be expanded in
-        # the future to handle other changes, if needed
-        return bool(port and any(port['device_owner'].startswith(x) for x in
-                    (n_constants.DEVICE_OWNER_DHCP,
-                     n_constants.DEVICE_OWNER_LOADBALANCERV2)))
-
-    def _notify_if_dependent_port_change(self, context, port):
-        # Under some scenarios, opflex agents might not get
-        # triggers to update EP files, even though parameters
-        # contained in the files have changed (e.g. metadata
-        # route when using HA DHCP). We ensure that the EP files
-        # get updated by triggering port update notifications
-        # to the agents, which tells them to go get all their EP
-        # files for the ports they own on that network.
-        if self._is_dependent_port_change(port):
-            plugin_context = context._plugin_context
-            net = self.plugin.get_network(plugin_context, port['network_id'])
-            # Notifications are only needed to opflex networks, which will
-            # have opflex agents
-            if not net or not self._is_opflex_type(net[provider.NETWORK_TYPE]):
-                return
-
-            filters = {'network_id': [net['id']]}
-            ports_to_update = self.plugin.get_ports(plugin_context, filters)
-            # Exclude ports that triggered this notification
-            affected_port_ids = [p['id'] for p in ports_to_update
-                                 if not self._is_dependent_port_change(p)]
-            self._notify_port_update_bulk(plugin_context, affected_port_ids)
 
     def _get_unique_domains(self, mappings):
         domains = []
@@ -1897,8 +1866,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context.bottom_bound_segment,
                 context.host
             )
-        # REVISIT: it may be possible to move this to the precommit
-        self._notify_if_dependent_port_change(context, port)
 
     def delete_port_precommit(self, context):
         port = context.current
@@ -2056,8 +2023,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context.bottom_bound_segment,
                 context.host
             )
-        # REVISIT: it may be possible to move this to the precommit
-        self._notify_if_dependent_port_change(context, port)
 
     def create_floatingip(self, context, current):
         if current['port_id']:
