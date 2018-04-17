@@ -175,7 +175,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           db.DbMixin):
 
     class TopologyRpcEndpoint(object):
-        target = oslo_messaging.Target(version='2.0')
+        target = oslo_messaging.Target(version='3.0')
 
         def __init__(self, mechanism_driver):
             self.md = mechanism_driver
@@ -183,12 +183,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         @db_api.retry_if_session_inactive()
         def update_link(self, context, *args, **kwargs):
             context._session = db_api.get_writer_session()
-            self.md.update_link(context, *args, **kwargs)
+            return self.md.update_link(context, *args, **kwargs)
 
         @db_api.retry_if_session_inactive()
         def delete_link(self, context, *args, **kwargs):
             context._session = db_api.get_writer_session()
-            self.md.delete_link(context, *args, **kwargs)
+            return self.md.delete_link(context, *args, **kwargs)
 
     def __init__(self):
         LOG.info("APIC AIM MD __init__")
