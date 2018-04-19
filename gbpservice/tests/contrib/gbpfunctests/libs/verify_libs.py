@@ -318,7 +318,7 @@ class Gbp_Verify(object):
         elif cmd_val == 1:
             for arg, val in kwargs.items():
                 if arg == 'network_service_params':
-                    if re.findall('(%s)' % (val), cmd_out) == []:
+                    if not re.findall('(%s)' % (val), cmd_out):
                         _log.info(cmd_out)
                         _log.info(
                             "The Attribute== %s and its Value== %s DID NOT "

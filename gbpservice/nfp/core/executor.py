@@ -156,7 +156,7 @@ class EventGraphExecutor(object):
     def run(self, graph_id, node):
         graph = self.running[graph_id]
         leafs = self._leafs(graph['data'], node)
-        if leafs == []:
+        if not leafs:
             results = self._results(graph, node)
             self._schedule(node, results=results)
         else:
@@ -227,5 +227,5 @@ class EventGraphExecutor(object):
                 graph['data'][root].remove(completed_node)
                 result = self._prepare_result(completed_node, result)
                 results = self._update_result(graph, root, result)
-                if graph['data'][root] == []:
+                if not graph['data'][root]:
                     self._schedule(root, results=results)
