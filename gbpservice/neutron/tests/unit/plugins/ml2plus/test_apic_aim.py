@@ -4479,6 +4479,62 @@ class TestExtensionAttributes(ApicAimTestCase):
             400)
         self._update('networks', net1['id'], {'apic:nat_type': ''}, 400)
 
+    def test_network_with_nested_domain_lifecycle(self):
+        session = db_api.get_session()
+        extn = extn_db.ExtensionDbMixin()
+        vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
+                     'vlan_ranges': [{'start': '6', 'end': '9'},
+                                     {'start': '11', 'end': '14'}]}
+        expt_vlans = [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14]
+        kwargs = {'apic:nested_domain_name': 'myk8s',
+                  'apic:nested_domain_type': 'k8s',
+                  'apic:nested_domain_infra_vlan': '4093',
+                  'apic:nested_domain_service_vlan': '1000',
+                  'apic:nested_domain_node_network_vlan': '1001',
+                  'apic:nested_domain_allowed_vlans': vlan_dict,
+                  }
+
+        # Test create SVI network without BGP.
+        net1 = self._make_network(self.fmt, 'net1', True,
+                                  arg_list=tuple(kwargs.keys()),
+                                  **kwargs)['network']
+        self.assertEqual('myk8s', net1['apic:nested_domain_name'])
+        self.assertEqual('k8s', net1['apic:nested_domain_type'])
+        self.assertEqual(4093, net1['apic:nested_domain_infra_vlan'])
+        self.assertEqual(1000, net1['apic:nested_domain_service_vlan'])
+        self.assertEqual(1001, net1['apic:nested_domain_node_network_vlan'])
+        self.assertItemsEqual(expt_vlans,
+                net1['apic:nested_domain_allowed_vlans'])
+
+        vlan_dict = {'vlans_list': ['2', '3', '4', '3']}
+        expt_vlans = [2, 3, 4]
+        data = {'network': {'apic:nested_domain_name': 'new-myk8s',
+                            'apic:nested_domain_type': 'new-k8s',
+                            'apic:nested_domain_infra_vlan': '1093',
+                            'apic:nested_domain_service_vlan': '2000',
+                            'apic:nested_domain_node_network_vlan': '2001',
+                            'apic:nested_domain_allowed_vlans': vlan_dict}}
+        req = self.new_update_request('networks', data, net1['id'],
+                                      self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_code, 200)
+        net1 = self.deserialize(self.fmt, resp)['network']
+        self.assertEqual('new-myk8s', net1['apic:nested_domain_name'])
+        self.assertEqual('new-k8s', net1['apic:nested_domain_type'])
+        self.assertEqual(1093, net1['apic:nested_domain_infra_vlan'])
+        self.assertEqual(2000, net1['apic:nested_domain_service_vlan'])
+        self.assertEqual(2001, net1['apic:nested_domain_node_network_vlan'])
+        self.assertItemsEqual(expt_vlans,
+                net1['apic:nested_domain_allowed_vlans'])
+
+        # Test delete.
+        self._delete('networks', net1['id'])
+        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        db_vlans = (session.query(
+            extn_db.NetworkExtNestedDomainAllowedVlansDb).filter_by(
+                network_id=net1['id']).all())
+        self.assertEqual([], db_vlans)
+
     def test_external_subnet_lifecycle(self):
         session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
