@@ -5146,6 +5146,60 @@ class TestNetworkServicePolicy(AIMBaseTestCase):
                 netaddr.IPAddress(allocation_pool_after_nsp[0].get('end')) + 1)
 
 
+class TestNestedDomain(AIMBaseTestCase):
+
+    def setUp(self, **kwargs):
+        super(TestNestedDomain, self).setUp(**kwargs)
+        self.plugin = self._plugin
+
+    def test_get_nested_domain_details(self):
+        self._register_agent('host1', test_aim_md.AGENT_CONF_OPFLEX)
+        vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
+                     'vlan_ranges': [{'start': '6', 'end': '9'},
+                                     {'start': '11', 'end': '14'}]}
+
+    def _test_get_nested_domain_details(self, vlans_arg):
+        self._register_agent('host1', test_aim_md.AGENT_CONF_OPFLEX)
+        expt_vlans = [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14]
+        kwargs = {'apic:nested_domain_name': 'myk8s',
+                  'apic:nested_domain_type': 'k8s',
+                  'apic:nested_domain_infra_vlan': '4093',
+                  'apic:nested_domain_service_vlan': '1000',
+                  'apic:nested_domain_node_network_vlan': '1001',
+                  'apic:nested_domain_allowed_vlans': vlans_arg,
+                  }
+        net = self._make_network(self.fmt, 'net1', True,
+                arg_list=tuple(kwargs.keys()), **kwargs)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:')['port']
+        p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        self.assertEqual('myk8s', details['nested_domain_name'])
+        self.assertEqual('k8s', details['nested_domain_type'])
+        self.assertEqual(4093, details['nested_domain_infra_vlan'])
+        self.assertEqual(1000, details['nested_domain_service_vlan'])
+        self.assertEqual(1001, details['nested_domain_node_network_vlan'])
+        self.assertItemsEqual(expt_vlans,
+                details['nested_domain_allowed_vlans'])
+        self.assertEqual(4094, details['nested_host_vlan'])
+
+    def test_get_nested_domain_details_vlan_dict_input(self):
+        vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
+                     'vlan_ranges': [{'start': '6', 'end': '9'},
+                                     {'start': '11', 'end': '14'}]}
+        self._test_get_nested_domain_details(vlan_dict)
+
+    def test_get_nested_domain_details_vlan_string_input(self):
+        vlan_str = "{'vlans_list': ['2', '3', '4', '3'], " + (
+                   "'vlan_ranges': [{'start': '6', 'end': '9'}, ") + (
+                   "{'start': '11', 'end': '14'}]}")
+        self._test_get_nested_domain_details(vlan_str)
+
+
 class TestNeutronPortOperation(AIMBaseTestCase):
 
     def setUp(self, **kwargs):
