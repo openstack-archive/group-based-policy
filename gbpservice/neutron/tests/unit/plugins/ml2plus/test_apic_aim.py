@@ -6005,6 +6005,21 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 vlan_p1 = self._check_binding(p1['port']['id'])
                 ext_net = aim_resource.ExternalNetwork.from_dn(
                     net1[DN]['ExternalNetwork'])
+
+                l3out_np = aim_resource.L3OutNodeProfile(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    name=md.L3OUT_NODE_PROFILE_NAME)
+                l3out_np = self.aim_mgr.get(aim_ctx, l3out_np)
+                self.assertEqual(l3out_np.name, md.L3OUT_NODE_PROFILE_NAME)
+                l3out_ip = aim_resource.L3OutInterfaceProfile(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    name=md.L3OUT_IF_PROFILE_NAME)
+                l3out_ip = self.aim_mgr.get(aim_ctx, l3out_ip)
+                self.assertEqual(l3out_ip.name, md.L3OUT_IF_PROFILE_NAME)
+
                 l3out_if = aim_resource.L3OutInterface(
                     tenant_name=ext_net.tenant_name,
                     l3out_name=ext_net.l3out_name,
@@ -6136,6 +6151,21 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 else:
                     ext_net = aim_resource.ExternalNetwork.from_dn(
                         net1[DN]['ExternalNetwork'])
+
+                    l3out_np = aim_resource.L3OutNodeProfile(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        name=md.L3OUT_NODE_PROFILE_NAME)
+                    l3out_np = self.aim_mgr.get(aim_ctx, l3out_np)
+                    self.assertEqual(l3out_np.name, md.L3OUT_NODE_PROFILE_NAME)
+                    l3out_ip = aim_resource.L3OutInterfaceProfile(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        name=md.L3OUT_IF_PROFILE_NAME)
+                    l3out_ip = self.aim_mgr.get(aim_ctx, l3out_ip)
+                    self.assertEqual(l3out_ip.name, md.L3OUT_IF_PROFILE_NAME)
+
                     l3out_node = aim_resource.L3OutNode(
                         tenant_name=ext_net.tenant_name,
                         l3out_name=ext_net.l3out_name,
