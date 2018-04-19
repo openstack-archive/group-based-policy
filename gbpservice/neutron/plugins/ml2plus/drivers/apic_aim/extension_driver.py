@@ -100,7 +100,23 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         res_dict = {cisco_apic.SVI: is_svi,
                     cisco_apic.BGP: is_bgp_enabled,
                     cisco_apic.BGP_TYPE: bgp_type,
-                    cisco_apic.BGP_ASN: asn}
+                    cisco_apic.BGP_ASN: asn,
+                    cisco_apic.NESTED_DOMAIN_NAME:
+                    data.get(cisco_apic.NESTED_DOMAIN_NAME),
+                    cisco_apic.NESTED_DOMAIN_TYPE:
+                    data.get(cisco_apic.NESTED_DOMAIN_TYPE),
+                    cisco_apic.NESTED_DOMAIN_INFRA_VLAN:
+                    data.get(cisco_apic.NESTED_DOMAIN_INFRA_VLAN),
+                    cisco_apic.NESTED_DOMAIN_SERVICE_VLAN:
+                    data.get(cisco_apic.NESTED_DOMAIN_SERVICE_VLAN),
+                    cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN:
+                    data.get(cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN),
+                    }
+        if cisco_apic.VLANS_LIST in (data.get(
+                cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS) or {}):
+            res_dict.update({cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS:
+                data.get(cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS)[
+                    cisco_apic.VLANS_LIST]})
         self.set_network_extn_db(plugin_context.session, result['id'],
                                  res_dict)
         result.update(res_dict)
@@ -130,18 +146,26 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             result.update(res_dict)
 
     def process_update_network(self, plugin_context, data, result):
-        # External_cidr, bgp_enable, bgp_type and bgp_asn can be updated.
-        if (cisco_apic.EXTERNAL_CIDRS not in data and
-                cisco_apic.BGP not in data and
-                cisco_apic.BGP_TYPE not in data and
-                cisco_apic.BGP_ASN not in data):
+        # External_cidr, bgp_enable, bgp_type and bgp_asn or
+        # nested domain attributes could be updated
+        update_attrs = [
+                cisco_apic.EXTERNAL_CIDRS, cisco_apic.BGP, cisco_apic.BGP_TYPE,
+                cisco_apic.BGP_ASN,
+                cisco_apic.NESTED_DOMAIN_NAME, cisco_apic.NESTED_DOMAIN_TYPE,
+                cisco_apic.NESTED_DOMAIN_INFRA_VLAN,
+                cisco_apic.NESTED_DOMAIN_SERVICE_VLAN,
+                cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN,
+                cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS]
+
+        if not(set(update_attrs) & set(data.keys())):
             return
+
         res_dict = {}
         if result.get(cisco_apic.DIST_NAMES, {}).get(
             cisco_apic.EXTERNAL_NETWORK):
             if cisco_apic.EXTERNAL_CIDRS in data:
-                res_dict = {cisco_apic.EXTERNAL_CIDRS:
-                            data[cisco_apic.EXTERNAL_CIDRS]}
+                res_dict.update({cisco_apic.EXTERNAL_CIDRS:
+                    data[cisco_apic.EXTERNAL_CIDRS]})
         self.validate_bgp_params(data, result)
         if cisco_apic.BGP in data:
             res_dict.update({cisco_apic.BGP: data[cisco_apic.BGP]})
@@ -149,6 +173,27 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             res_dict.update({cisco_apic.BGP_TYPE: data[cisco_apic.BGP_TYPE]})
         if cisco_apic.BGP_ASN in data:
             res_dict.update({cisco_apic.BGP_ASN: data[cisco_apic.BGP_ASN]})
+        if cisco_apic.NESTED_DOMAIN_NAME in data:
+            res_dict.update({cisco_apic.NESTED_DOMAIN_NAME:
+                data[cisco_apic.NESTED_DOMAIN_NAME]})
+        if cisco_apic.NESTED_DOMAIN_TYPE in data:
+            res_dict.update({cisco_apic.NESTED_DOMAIN_TYPE:
+                data[cisco_apic.NESTED_DOMAIN_TYPE]})
+        if cisco_apic.NESTED_DOMAIN_INFRA_VLAN in data:
+            res_dict.update({cisco_apic.NESTED_DOMAIN_INFRA_VLAN:
+                data[cisco_apic.NESTED_DOMAIN_INFRA_VLAN]})
+        if cisco_apic.NESTED_DOMAIN_SERVICE_VLAN in data:
+            res_dict.update({cisco_apic.NESTED_DOMAIN_SERVICE_VLAN:
+                data[cisco_apic.NESTED_DOMAIN_SERVICE_VLAN]})
+        if cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN in data:
+            res_dict.update({cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN:
+                data[cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN]})
+        if cisco_apic.VLANS_LIST in (data.get(
+                cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS) or {}):
+            res_dict.update({cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS:
+                data.get(cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS)[
+                    cisco_apic.VLANS_LIST]})
+
         if res_dict:
             self.set_network_extn_db(plugin_context.session, result['id'],
                                      res_dict)
