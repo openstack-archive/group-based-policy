@@ -43,6 +43,11 @@ class NetworkExtensionDb(model_base.BASEV2):
                                backref=orm.backref(
                                    'aim_extension_mapping', lazy='joined',
                                    uselist=False, cascade='delete'))
+    nested_domain_name = sa.Column(sa.String(1024), nullable=True)
+    nested_domain_type = sa.Column(sa.String(1024), nullable=True)
+    nested_domain_infra_vlan = sa.Column(sa.Integer, nullable=True)
+    nested_domain_service_vlan = sa.Column(sa.Integer, nullable=True)
+    nested_domain_node_network_vlan = sa.Column(sa.Integer, nullable=True)
 
 
 class NetworkExtensionCidrDb(model_base.BASEV2):
@@ -53,6 +58,16 @@ class NetworkExtensionCidrDb(model_base.BASEV2):
         sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"),
         primary_key=True)
     cidr = sa.Column(sa.String(64), primary_key=True)
+
+
+class NetworkExtNestedDomainAllowedVlansDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_network_nested_domain_allowed_vlans'
+
+    # There is a single pool of VLANs for an APIC
+    vlan = sa.Column(sa.Integer(), primary_key=True)
+    network_id = sa.Column(
+        sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"))
 
 
 class SubnetExtensionDb(model_base.BASEV2):
@@ -87,6 +102,9 @@ class ExtensionDbMixin(object):
                   network_id=network_id).first())
         db_cidrs = (session.query(NetworkExtensionCidrDb).filter_by(
                     network_id=network_id).all())
+        db_vlans = (session.query(
+            NetworkExtNestedDomainAllowedVlansDb).filter_by(
+                network_id=network_id).all())
         result = {}
         if db_obj:
             self._set_if_not_none(result, cisco_apic.EXTERNAL_NETWORK,
@@ -97,6 +115,19 @@ class ExtensionDbMixin(object):
             result[cisco_apic.BGP] = db_obj['bgp_enable']
             result[cisco_apic.BGP_TYPE] = db_obj['bgp_type']
             result[cisco_apic.BGP_ASN] = db_obj['bgp_asn']
+            result[cisco_apic.NESTED_DOMAIN_NAME] = (
+                    db_obj['nested_domain_name'])
+            result[cisco_apic.NESTED_DOMAIN_TYPE] = (
+                    db_obj['nested_domain_type'])
+            result[cisco_apic.NESTED_DOMAIN_INFRA_VLAN] = (
+                    db_obj['nested_domain_infra_vlan'])
+            result[cisco_apic.NESTED_DOMAIN_SERVICE_VLAN] = (
+                    db_obj['nested_domain_service_vlan'])
+            result[cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN] = (
+                    db_obj['nested_domain_node_network_vlan'])
+            result[cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS] = (
+                    [c['vlan'] for c in db_vlans])
+
         if result.get(cisco_apic.EXTERNAL_NETWORK):
             result[cisco_apic.EXTERNAL_CIDRS] = [c['cidr'] for c in db_cidrs]
 
@@ -120,12 +151,33 @@ class ExtensionDbMixin(object):
                 db_obj['bgp_type'] = res_dict[cisco_apic.BGP_TYPE]
             if cisco_apic.BGP_ASN in res_dict:
                 db_obj['bgp_asn'] = res_dict[cisco_apic.BGP_ASN]
+            if cisco_apic.NESTED_DOMAIN_NAME in res_dict:
+                db_obj['nested_domain_name'] = res_dict[
+                        cisco_apic.NESTED_DOMAIN_NAME]
+            if cisco_apic.NESTED_DOMAIN_TYPE in res_dict:
+                db_obj['nested_domain_type'] = res_dict[
+                        cisco_apic.NESTED_DOMAIN_TYPE]
+            if cisco_apic.NESTED_DOMAIN_INFRA_VLAN in res_dict:
+                db_obj['nested_domain_infra_vlan'] = res_dict[
+                        cisco_apic.NESTED_DOMAIN_INFRA_VLAN]
+            if cisco_apic.NESTED_DOMAIN_SERVICE_VLAN in res_dict:
+                db_obj['nested_domain_service_vlan'] = res_dict[
+                        cisco_apic.NESTED_DOMAIN_SERVICE_VLAN]
+            if cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN in res_dict:
+                db_obj['nested_domain_node_network_vlan'] = res_dict[
+                        cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN]
             session.add(db_obj)
 
             if cisco_apic.EXTERNAL_CIDRS in res_dict:
                 self._update_list_attr(session, NetworkExtensionCidrDb, 'cidr',
                                        res_dict[cisco_apic.EXTERNAL_CIDRS],
                                        network_id=network_id)
+
+            if cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS in res_dict:
+                self._update_list_attr(
+                        session, NetworkExtNestedDomainAllowedVlansDb, 'vlan',
+                        res_dict[cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS],
+                        network_id=network_id)
 
     def get_network_ids_by_ext_net_dn(self, session, dn, lock_update=False):
         ids = session.query(NetworkExtensionDb.network_id).filter_by(
@@ -187,6 +239,8 @@ class ExtensionDbMixin(object):
 
     def _update_list_attr(self, session, db_model, column,
                           new_values, **filters):
+        if new_values is None:
+            return
         rows = session.query(db_model).filter_by(**filters).all()
         new_values = set(new_values)
         for r in rows:

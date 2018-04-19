@@ -118,7 +118,18 @@ opts = [
                 help=_('If True, advertise network MTU values if core plugin '
                        'calculates them. MTU is advertised to running '
                        'instances via DHCP and RA MTU options.')),
+    cfg.IntOpt('nested_host_vlan',
+               default=4094,
+               help=_("This is a locally siginificant VLAN used to provide "
+                      "connectivity to the OpenStack VM when configured "
+                      "to host the nested domain (Kubernetes/OpenShift).  "
+                      "Any traffic originating from the VM and intended "
+                      "to go on the Neutron network, is tagged with this "
+                      "VLAN. The VLAN is stripped by the Opflex installed "
+                      "flows on the integration bridge and the traffic is "
+                      "forwarded on the Neutron network.")),
 ]
+
 
 cfg.CONF.register_opts(opts, "aim_mapping")
 
@@ -177,6 +188,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             LOG.info('Implicit AIM contracts will be created '
                      'for l3_policies which do not have them.')
             self._create_per_l3p_implicit_contracts()
+        self._nested_host_vlan = (
+                cfg.CONF.aim_mapping.nested_host_vlan)
 
     @log.log_method_call
     def start_rpc_listeners(self):
@@ -2408,6 +2421,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _get_dns_domain(self, context, port):
         network = self._get_network(context, port['network_id'])
         return network.get('dns_domain')
+
+    def _get_nested_domain(self, context, port):
+        network = self._get_network(context, port['network_id'])
+        return (network.get('apic:nested_domain_name'),
+                network.get('apic:nested_domain_type'),
+                network.get('apic:nested_domain_infra_vlan'),
+                network.get('apic:nested_domain_service_vlan'),
+                network.get('apic:nested_domain_node_network_vlan'),
+                network.get('apic:nested_domain_allowed_vlans'),
+                self._nested_host_vlan)
 
     def _create_per_l3p_implicit_contracts(self):
         admin_context = n_context.get_admin_context()
