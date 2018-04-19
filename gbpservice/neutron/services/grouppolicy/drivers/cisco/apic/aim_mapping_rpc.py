@@ -245,6 +245,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self._add_segmentation_label_details(context, port, details)
             self._set_dhcp_lease_time(details)
             details.pop('_cache', None)
+            self._add_nested_domain_details(context, port, details)
 
         LOG.debug("Details for port %s : %s", port['id'], details)
         return details
@@ -322,6 +323,24 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         details['vrf_name'] = name
         details['vrf_subnets'] = self._get_vrf_subnets(context, tenant_name,
                                                        name, details)
+
+    # Child class needs to support:
+    # - self._get_nested_domain(context, port)
+    def _add_nested_domain_details(self, context, port, details):
+        # This method needs to define requirements for this Mixin's child
+        # classes in order to fill the following result parameters:
+        # - nested_domain_name;
+        # - nested_domain_type;
+        # - nested_domain_infra_vlan;
+        # - nested_domain_service_vlan;
+        # - nested_domain_node_network_vlan;
+        # - nested_domain_allowed_vlans;
+        (details['nested_domain_name'], details['nested_domain_type'],
+            details['nested_domain_infra_vlan'],
+            details['nested_domain_service_vlan'],
+            details['nested_domain_node_network_vlan'],
+            details['nested_domain_allowed_vlans']) = (
+                    self._get_nested_domain(context, port))
 
     # Child class needs to support:
     # - self._get_segmentation_labels(context, port, details)
