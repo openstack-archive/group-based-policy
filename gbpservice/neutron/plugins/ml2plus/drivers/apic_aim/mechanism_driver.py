@@ -530,6 +530,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 other_nets.discard(current['id'])
                 if other_nets:
                     raise exceptions.PreExistingSVICannotUseSameL3out()
+
+                aim_l3out_np = aim_resource.L3OutNodeProfile(
+                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                    name=L3OUT_NODE_PROFILE_NAME)
+                self.aim.create(aim_ctx, aim_l3out_np, overwrite=True)
+                aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
+                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                    node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                    name=L3OUT_IF_PROFILE_NAME)
+                self.aim.create(aim_ctx, aim_l3out_ip, overwrite=True)
             # This means no DN is being provided. Then we should try to create
             # the l3out automatically
             else:
