@@ -201,7 +201,7 @@ common_db_mixin.CommonDbMixin._get_tenant_id_for_create = (
 # and inconsistent behavior. Specifically, when L3 policy is deleted,
 # subnetpool is deleted (old facade), and address scope (new facade) fails to
 # be deleted since the dependent subnetpool deletion is in different session
-# that is not yet commited. The workaround is to switch address scope to old
+# that is not yet committed. The workaround is to switch address scope to old
 # engine facade. This workaround should be removed in Pike.
 def _delete_address_scope(self, context, id):
     with context.session.begin(subtransactions=True):
