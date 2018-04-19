@@ -191,6 +191,52 @@ exc_filters._LE = _LI
 exc_filters.LOG.exception = exc_filters.LOG.debug
 
 
+from neutron_lib.api import validators
+
+
+if not hasattr(validators, '_collect_duplicates'):
+    # This is from neutron-lib 1.5.0 since Ocata package
+    # might come with a lower release which has a bug in
+    # _validate_list_of_items
+
+    def _collect_duplicates(data_list):
+        """Collects duplicate items from a list and returns them.
+
+        :param data_list: A list of items to check for duplicates. The list may
+        include dict items.
+        :returns: A set of items that are duplicates in data_list. If no
+        duplicates are found, the returned set is empty.
+        """
+        seen = []
+        dups = set()
+        for datum in data_list:
+            if datum in seen:
+                dups.add(datum)
+                continue
+            seen.append(datum)
+        return dups
+
+
+    def new_validate_list_of_items(item_validator, data, *args, **kwargs):
+        if not isinstance(data, list):
+            msg = _("'%s' is not a list") % data
+            return msg
+
+        dups = _collect_duplicates(data)
+
+        if dups:
+            msg = _("Duplicate items in the list: '%s'") % ', '.join(
+                [str(d) for d in dups])
+            return msg
+
+        for item in data:
+            msg = item_validator(item, *args, **kwargs)
+            if msg:
+                return msg
+
+    validators._validate_list_of_items = new_validate_list_of_items
+
+
 from neutron.db import models_v2
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2 import models

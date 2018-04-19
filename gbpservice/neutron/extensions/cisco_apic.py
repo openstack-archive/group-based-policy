@@ -13,10 +13,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import functools
+
 from neutron.api.v2 import attributes
 from neutron.extensions import address_scope
 from neutron_lib.api import converters as conv
 from neutron_lib.api import extensions
+from neutron_lib.api import validators as valid
+from oslo_log import log as logging
 
 ALIAS = 'cisco-apic'
 
@@ -29,6 +33,12 @@ SVI = 'apic:svi'
 BGP = 'apic:bgp_enable'
 BGP_ASN = 'apic:bgp_asn'
 BGP_TYPE = 'apic:bgp_type'
+NESTED_DOMAIN_NAME = 'apic:nested_domain_name'
+NESTED_DOMAIN_TYPE = 'apic:nested_domain_type'
+NESTED_DOMAIN_INFRA_VLAN = 'apic:nested_domain_infra_vlan'
+NESTED_DOMAIN_ALLOWED_VLANS = 'apic:nested_domain_allowed_vlans'
+NESTED_DOMAIN_SERVICE_VLAN = 'apic:nested_domain_service_vlan'
+NESTED_DOMAIN_NODE_NETWORK_VLAN = 'apic:nested_domain_node_network_vlan'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -41,6 +51,84 @@ SYNC_SYNCED = 'synced'
 SYNC_BUILD = 'build'
 SYNC_ERROR = 'error'
 SYNC_NOT_APPLICABLE = 'N/A'
+
+VLANS_LIST = 'vlans_list'
+VLAN_RANGES = 'vlan_ranges'
+APIC_MAX_VLAN = 4093
+APIC_MIN_VLAN = 1
+VLAN_RANGE_START = 'start'
+VLAN_RANGE_END = 'end'
+
+LOG = logging.getLogger(__name__)
+
+
+def _validate_apic_vlan(data, key_specs=None):
+    if data is None:
+        return
+    try:
+        val = int(data)
+        if val >= APIC_MIN_VLAN and val <= APIC_MAX_VLAN:
+            return
+        msg = _("Invalid value for VLAN: '%s'") % data
+        LOG.debug(msg)
+        return msg
+    except (ValueError, TypeError):
+        msg = _("Invalid data format for VLAN: '%s'") % data
+        LOG.debug(msg)
+        return msg
+
+
+def _validate_apic_vlan_range(data, key_specs=None):
+    if data is None:
+        return
+
+    expected_keys = [VLAN_RANGE_START, VLAN_RANGE_END]
+    msg = valid._verify_dict_keys(expected_keys, data)
+    if msg:
+        return msg
+    for k in expected_keys:
+        msg = _validate_apic_vlan(data[k])
+        if msg:
+            return msg
+    if int(data[VLAN_RANGE_START]) > int(data[VLAN_RANGE_END]):
+        msg = _("Invalid start, end for VLAN range %s") % data
+        return msg
+
+
+def convert_apic_vlan(value):
+    if value is None:
+        return
+    else:
+        return int(value)
+
+
+def convert_nested_domain_allowed_vlans(value):
+    if value is None:
+        return
+    vlans_list = []
+    if VLANS_LIST in value:
+        for vlan in value[VLANS_LIST]:
+            vlans_list.append(convert_apic_vlan(vlan))
+    if VLAN_RANGES in value:
+        for vlan_range in value[VLAN_RANGES]:
+            for vrng in [VLAN_RANGE_START, VLAN_RANGE_END]:
+                vlan_range[vrng] = convert_apic_vlan(vlan_range[vrng])
+            vlans_list.extend(range(vlan_range[VLAN_RANGE_START],
+                vlan_range[VLAN_RANGE_END] + 1))
+    # eliminate duplicates
+    vlans_list = list(set(vlans_list))
+    # sort
+    vlans_list.sort()
+    value[VLANS_LIST] = vlans_list
+    return value
+
+
+valid.validators['type:apic_vlan'] = _validate_apic_vlan
+valid.validators['type:apic_vlan_list'] = functools.partial(
+        valid._validate_list_of_items, _validate_apic_vlan)
+valid.validators['type:apic_vlan_range_list'] = functools.partial(
+        valid._validate_list_of_items, _validate_apic_vlan_range)
+
 
 APIC_ATTRIBUTES = {
     DIST_NAMES: {'allow_post': False, 'allow_put': False, 'is_visible': True},
@@ -67,6 +155,45 @@ NET_ATTRIBUTES = {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': "0",
         'validate': {'type:non_negative': None},
+    },
+    NESTED_DOMAIN_NAME: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': '',
+        'validate': {'type:string': None},
+    },
+    NESTED_DOMAIN_TYPE: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': '',
+        'validate': {'type:string': None},
+    },
+    NESTED_DOMAIN_INFRA_VLAN: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'validate': {'type:apic_vlan': None},
+        'convert_to': convert_apic_vlan,
+    },
+    NESTED_DOMAIN_SERVICE_VLAN: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'validate': {'type:apic_vlan': None},
+        'convert_to': convert_apic_vlan,
+    },
+    NESTED_DOMAIN_NODE_NETWORK_VLAN: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'validate': {'type:apic_vlan': None},
+        'convert_to': convert_apic_vlan,
+    },
+    NESTED_DOMAIN_ALLOWED_VLANS: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'validate': {
+            'type:dict_or_none': {
+                VLANS_LIST: {'type:apic_vlan_list': None},
+                VLAN_RANGES: {'type:apic_vlan_range_list': None},
+            }
+        },
+        'convert_to': convert_nested_domain_allowed_vlans,
     },
 }
 

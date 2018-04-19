@@ -2381,6 +2381,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         admin_context._session = session
         return admin_context
 
+    def _get_nested_domain(self, context, port):
+        network = self._get_network(context, port['network_id'])
+        return (network.get('apic:nested_domain_name'),
+                network.get('apic:nested_domain_type'),
+                network.get('apic:nested_domain_infra_vlan'),
+                network.get('apic:nested_domain_service_vlan'),
+                network.get('apic:nested_domain_node_network_vlan'),
+                network.get('apic:nested_domain_allowed_vlans'))
+
     def _create_per_l3p_implicit_contracts(self):
         admin_context = n_context.get_admin_context()
         context = type('', (object,), {})()
