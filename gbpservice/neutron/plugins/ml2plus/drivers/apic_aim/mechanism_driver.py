@@ -177,7 +177,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           db.DbMixin):
 
     class TopologyRpcEndpoint(object):
-        target = oslo_messaging.Target(version='2.0')
+        target = oslo_messaging.Target(version='3.0')
 
         def __init__(self, mechanism_driver):
             self.md = mechanism_driver
@@ -189,8 +189,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         @db_api.retry_if_session_inactive()
         def delete_link(self, context, *args, **kwargs):
-            context._session = db_api.get_session()
-            self.md.delete_link(context, *args, **kwargs)
+            # Don't take any action on link deletion in order to tolerate
+            # situations like fabric upgrade or flapping links. Old links
+            # are removed once a specific host is attached somewhere else.
+            # To completely decommission the host, aimctl can be used to
+            # cleanup the hostlink table
+            return
 
     def __init__(self):
         LOG.info(_LI("APIC AIM MD __init__"))
@@ -2086,8 +2090,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                               pod_id, port_description)]))
         with context.session.begin(subtransactions=True):
             if not switch:
-                self.delete_link(context, host, interface, mac, switch, module,
-                                 port)
                 return
 
             session = context.session
