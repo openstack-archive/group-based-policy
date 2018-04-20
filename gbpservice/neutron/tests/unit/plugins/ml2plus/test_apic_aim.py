@@ -7095,7 +7095,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
             check_epg_static_paths(expected_hlink10.path)
 
         # remove first link
-        self.driver.update_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0, 0, '')
+        self.driver.delete_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0)
         self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10))
         if is_svi:
             check_svi_paths(None)
