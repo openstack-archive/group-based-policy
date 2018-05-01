@@ -70,7 +70,7 @@ see this wiki page:
 
 .. _Testr: https://wiki.openstack.org/wiki/Testr
 .. _tox: http://tox.readthedocs.org/en/latest/
-.. _virtualenvs: https://pypi.python.org/pypi/virtualenv
+.. _virtualenvs: https://pypi.org/project/virtualenv
 
 PEP8 and Unit Tests
 +++++++++++++++++++
@@ -184,4 +184,4 @@ References
 ~~~~~~~~~~
 
 .. [#pudb] PUDB debugger:
-   https://pypi.python.org/pypi/pudb
+   https://pypi.org/project/pudb
