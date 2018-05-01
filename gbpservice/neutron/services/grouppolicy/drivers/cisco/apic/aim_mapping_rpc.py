@@ -54,6 +54,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self.opflex_topic, self.opflex_endpoints, fanout=False)
         return self.opflex_conn.consume_in_threads()
 
+    @db_api.retry_if_session_inactive()
     def _retrieve_vrf_details(self, context, **kwargs):
         with context.session.begin(subtransactions=True):
             details = {'l3_policy_id': kwargs['vrf_id']}
@@ -73,15 +74,12 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             LOG.exception(e)
             return {'l3_policy_id': vrf}
 
-    @db_api.retry_if_session_inactive()
     def get_vrf_details(self, context, **kwargs):
         return self._get_vrf_details(context, **kwargs)
 
-    @db_api.retry_if_session_inactive()
     def request_vrf_details(self, context, **kwargs):
         return self._get_vrf_details(context, **kwargs)
 
-    @db_api.retry_if_session_inactive()
     def get_gbp_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_gbp_details for: %s", kwargs)
         try:
@@ -93,27 +91,31 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             LOG.exception(e)
             return {'device': device}
 
-    @db_api.retry_if_session_inactive()
     def request_endpoint_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_endpoint_details for: %s", kwargs)
+        request = kwargs.get('request')
         try:
-            request = kwargs.get('request')
-            host = kwargs.get('host')
-            result = {'device': request['device'],
-                      'timestamp': request['timestamp'],
-                      'request_id': request['request_id'],
-                      'gbp_details': self._get_gbp_details(context, request,
-                                                           host),
-                      'neutron_details': ml2_rpc.RpcCallbacks(
-                          None, None).get_device_details(context, **request),
-                      'trunk_details': self._get_trunk_details(context,
-                                                               request, host)}
-            return result
+            self._request_endpoint_details(context, **kwargs)
         except Exception as e:
             LOG.error("An exception has occurred while requesting device "
                       "gbp details for %s", request.get('device'))
             LOG.exception(e)
             return None
+
+    @db_api.retry_if_session_inactive()
+    def _request_endpoint_details(self, context, **kwargs):
+        request = kwargs.get('request')
+        host = kwargs.get('host')
+        result = {'device': request['device'],
+                  'timestamp': request['timestamp'],
+                  'request_id': request['request_id'],
+                  'gbp_details': self._get_gbp_details(context, request,
+                                                       host),
+                  'neutron_details': ml2_rpc.RpcCallbacks(
+                      None, None).get_device_details(context, **request),
+                  'trunk_details': self._get_trunk_details(context,
+                                                           request, host)}
+        return result
 
     # Child class needs to support:
     # - self._send_port_update_notification(context, port)
@@ -171,6 +173,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # - self._is_metadata_optimized(context, port);
     # - self._set_dhcp_lease_time(details)
     # - self._get_dns_domain(context, port)
+    @db_api.retry_if_session_inactive()
     def _get_gbp_details(self, context, request, host):
         with context.session.begin(subtransactions=True):
             device = request.get('device')
