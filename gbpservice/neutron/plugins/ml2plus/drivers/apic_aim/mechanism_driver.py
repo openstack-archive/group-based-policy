@@ -53,6 +53,7 @@ from neutron_lib import constants as n_constants
 from neutron_lib import exceptions as n_exceptions
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
+from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log
@@ -1781,23 +1782,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 security_group_name=sg_rule['security_group_id'],
                 security_group_subject_name='default',
                 name=sg_rule['id'])
-            aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim)
-            if not aim_sg_rule:
-                continue
-            ip_version = 0
-            if sg_rule['ethertype'] == 'IPv4':
-                ip_version = 4
-            elif sg_rule['ethertype'] == 'IPv6':
-                ip_version = 6
-            for fixed_ip in fixed_ips:
-                if is_delete:
-                    if fixed_ip in aim_sg_rule.remote_ips:
-                        aim_sg_rule.remote_ips.remove(fixed_ip)
-                elif ip_version == netaddr.IPAddress(fixed_ip).version:
-                    if fixed_ip not in aim_sg_rule.remote_ips:
-                        aim_sg_rule.remote_ips.append(fixed_ip)
-            self.aim.update(aim_ctx, sg_rule_aim,
-                            remote_ips=aim_sg_rule.remote_ips)
+            with lockutils.lock(sg_rule['id'], external=True):
+                aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim)
+                if not aim_sg_rule:
+                    continue
+                ip_version = 0
+                if sg_rule['ethertype'] == 'IPv4':
+                    ip_version = 4
+                elif sg_rule['ethertype'] == 'IPv6':
+                    ip_version = 6
+                for fixed_ip in fixed_ips:
+                    if is_delete:
+                        if fixed_ip in aim_sg_rule.remote_ips:
+                            aim_sg_rule.remote_ips.remove(fixed_ip)
+                    elif ip_version == netaddr.IPAddress(fixed_ip).version:
+                        if fixed_ip not in aim_sg_rule.remote_ips:
+                            aim_sg_rule.remote_ips.append(fixed_ip)
+                self.aim.update(aim_ctx, sg_rule_aim,
+                                remote_ips=aim_sg_rule.remote_ips)
 
     def create_port_precommit(self, context):
         port = context.current
