@@ -907,20 +907,28 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                           aim_reverse_filter.name]:
                                 if fname in flist:
                                     flist.remove(fname)
-                        to_add = []
                         # Now add it to the relevant direction list(s)
                         if c_dir == g_const.GP_DIRECTION_IN:
-                            to_add = [aim_contract_subject.in_filters]
+                            aim_contract_subject.in_filters.append(
+                                    aim_filter.name)
+                            aim_contract_subject.out_filters.append(
+                                    aim_reverse_filter.name)
                         elif c_dir == g_const.GP_DIRECTION_OUT:
-                            to_add = [aim_contract_subject.out_filters]
-                        elif c_dir == g_const.GP_DIRECTION_BI:
-                            to_add = [aim_contract_subject.in_filters,
-                                      aim_contract_subject.out_filters]
-                        for flist in to_add:
-                            for fname in filter(
-                                None, [aim_filter.name,
-                                       aim_reverse_filter.name]):
-                                flist.append(fname)
+                            aim_contract_subject.in_filters.append(
+                                    aim_reverse_filter.name)
+                            aim_contract_subject.out_filters.append(
+                                    aim_filter.name)
+                        else:
+                            aim_contract_subject.in_filters.append(
+                                    aim_filter.name)
+                            aim_contract_subject.out_filters.append(
+                                    aim_reverse_filter.name)
+                            aim_contract_subject.in_filters.append(
+                                    aim_reverse_filter.name)
+                            aim_contract_subject.out_filters.append(
+                                    aim_filter.name)
+                    self.aim.create(aim_ctx, aim_contract_subject,
+                                    overwrite=True)
 
     @log.log_method_call
     def create_policy_rule_precommit(self, context):
@@ -1556,9 +1564,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             classifier = context._plugin.get_policy_classifier(
                 context._plugin_context, rule['policy_classifier_id'])
             if classifier['direction'] == g_const.GP_DIRECTION_IN:
-                in_filters += aim_filters
+                for fltr in aim_filters:
+                    if fltr.startswith(alib.REVERSE_PREFIX):
+                        out_filters.append(fltr)
+                    else:
+                        in_filters.append(fltr)
             elif classifier['direction'] == g_const.GP_DIRECTION_OUT:
-                out_filters += aim_filters
+                for fltr in aim_filters:
+                    if fltr.startswith(alib.REVERSE_PREFIX):
+                        in_filters.append(fltr)
+                    else:
+                        out_filters.append(fltr)
             else:
                 in_filters += aim_filters
                 out_filters += aim_filters
