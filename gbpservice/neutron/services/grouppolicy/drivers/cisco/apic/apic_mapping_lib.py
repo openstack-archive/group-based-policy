@@ -27,7 +27,7 @@ IMPLICIT_PREFIX = 'implicit-'
 PER_PROJECT = 'per-project'
 REVERSIBLE_PROTOCOLS = [n_constants.PROTO_NAME_TCP.lower(),
                         n_constants.PROTO_NAME_UDP.lower(),
-                        n_constants.PROTO_NAME_ICMP.lower()]
+                        n_constants.PROTO_NAME_ICMP.lower(), None]
 ICMP_REPLY_TYPES = ['echo-rep', 'dst-unreach', 'src-quench', 'time-exceeded']
 CP_ENTRY = 'os-entry'
 
@@ -78,24 +78,43 @@ def get_filter_entries_for_policy_classifier(classifier):
         f_attrs['dFromPort'] = port_min
     entries['forward_rules'] = {_get_filter_entry_name(x): f_attrs}
     # Also create reverse rule
-    if f_attrs.get('prot') in REVERSIBLE_PROTOCOLS:
+    if not f_attrs.get('prot') or (
+        f_attrs.get('prot') in REVERSIBLE_PROTOCOLS):
         r_entries = {}
-        r_attrs = copy.deepcopy(f_attrs)
-        if r_attrs.get('dToPort') and r_attrs.get('dFromPort'):
-            r_attrs.pop('dToPort')
-            r_attrs.pop('dFromPort')
-            r_attrs['sToPort'] = port_max
-            r_attrs['sFromPort'] = port_min
-        if r_attrs['prot'] == n_constants.PROTO_NAME_TCP.lower():
-            # Only match on established sessions
+        if f_attrs.get('prot') == n_constants.PROTO_NAME_TCP.lower() or (
+            f_attrs.get('prot') == n_constants.PROTO_NAME_UDP.lower()):
+            r_attrs = copy.deepcopy(f_attrs)
+            if f_attrs.get('dToPort') and f_attrs.get('dFromPort'):
+                r_attrs.pop('dToPort')
+                r_attrs.pop('dFromPort')
+                r_attrs['sToPort'] = port_max
+                r_attrs['sFromPort'] = port_min
+            if f_attrs.get('prot') == n_constants.PROTO_NAME_TCP.lower():
+                # Only match on established sessions for tcp
+                r_attrs['tcpRules'] = 'est'
+            r_entries[_get_filter_entry_name(x)] = r_attrs
+        if not f_attrs.get('prot'):
+            # when no protocol is specified add reverse tcp rule
+            # only for established sessions
+            r_attrs = copy.deepcopy(f_attrs)
+            r_attrs['etherT'] = 'ip'
+            r_attrs['prot'] = n_constants.PROTO_NAME_TCP.lower()
             r_attrs['tcpRules'] = 'est'
-        r_entries[_get_filter_entry_name(x)] = r_attrs
-        if r_attrs['prot'] == n_constants.PROTO_NAME_ICMP.lower():
-            r_entries = {}
-            # create more entries:
+            r_entries[_get_filter_entry_name(x)] = r_attrs
+            # add another reverse rulw for UDP
+            r_attrs = copy.deepcopy(f_attrs)
+            r_attrs['etherT'] = 'ip'
+            r_attrs['prot'] = n_constants.PROTO_NAME_UDP.lower()
+            x += 1
+            r_entries[_get_filter_entry_name(x)] = r_attrs
+        if f_attrs.get('prot') == n_constants.PROTO_NAME_ICMP.lower() or (
+            not f_attrs.get('prot')):
+            # create more entries for icmp and no protocol cases
             for reply_type in ICMP_REPLY_TYPES:
                 x += 1
-                r_entry = copy.deepcopy(r_attrs)
+                r_entry = copy.deepcopy(f_attrs)
+                r_entry['etherT'] = 'ip'
+                r_entry['prot'] = n_constants.PROTO_NAME_ICMP.lower()
                 r_entry['icmpv4T'] = reply_type
                 r_entries[_get_filter_entry_name(x)] = r_entry
         entries['reverse_rules'] = r_entries
