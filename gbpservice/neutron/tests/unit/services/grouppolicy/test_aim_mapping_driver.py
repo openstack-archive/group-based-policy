@@ -813,18 +813,20 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 rev_filter = None
 
             direction = pc['direction']
-            expected_filters = []
             if direction == gp_const.GP_DIRECTION_IN:
-                expected_filters = [expected_in_filters]
-            elif direction == gp_const.GP_DIRECTION_OUT:
-                expected_filters = [expected_out_filters]
-            else:
-                expected_filters = [expected_in_filters,
-                                    expected_out_filters]
-            for ef in expected_filters:
-                ef.append(fwd_filter)
+                expected_in_filters.append(fwd_filter)
                 if rev_filter:
-                    ef.append(rev_filter)
+                    expected_out_filters.append(rev_filter)
+            elif direction == gp_const.GP_DIRECTION_OUT:
+                expected_out_filters.append(fwd_filter)
+                if rev_filter:
+                    expected_in_filters.append(rev_filter)
+            else:
+                expected_in_filters.append(fwd_filter)
+                expected_out_filters.append(fwd_filter)
+                if rev_filter:
+                    expected_in_filters.append(rev_filter)
+                    expected_out_filters.append(rev_filter)
 
         self.assertItemsEqual(expected_in_filters,
                               contract_subject.in_filters)
@@ -3266,6 +3268,25 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             # special processing to convert unicode to str
             dict((str(k), str(v)) for k, v in filter_entry.__dict__.items()))
 
+    def _validate_1_to_many_reverse_filter_entries(
+            self, policy_rule, afilter, filter_entries):
+        pc = self.show_policy_classifier(
+            policy_rule['policy_classifier_id'])['policy_classifier']
+        expected_entries = alib.get_filter_entries_for_policy_classifier(pc)
+
+        for e_name, value in expected_entries['reverse_rules'].items():
+            expected_filter_entry = self.driver._aim_filter_entry(
+                    self._neutron_context.session, afilter, e_name,
+                    alib.map_to_aim_filter_entry(value))
+            filter_entry = (
+                entry for entry in filter_entries if entry.name == e_name
+                           ).next()
+            self.assertItemsEqual(
+                    aim_object_to_dict(expected_filter_entry),
+                    # special processing to convert unicode to str
+                    dict((str(k), str(v)) for k, v in aim_object_to_dict(
+                        filter_entry).items()))
+
     def _test_policy_rule_aim_mapping(self, policy_rule):
         aim_filter_name = str(self.name_mapper.policy_rule(
             self._neutron_context.session, policy_rule['id']))
@@ -3293,11 +3314,27 @@ class TestPolicyRuleBase(AIMBaseTestCase):
                 self._aim_context, aim_resource.FilterEntry,
                 tenant_name=aim_filters[0].tenant_name,
                 filter_name=aim_filters[0].name)
-            self.assertEqual(1, len(aim_filter_entries))
-            self._validate_filter_entry(policy_rule, aim_filters[0],
-                                        aim_filter_entries[0])
+            if protocol == 'tcp' or protocol == 'udp' or not (
+                    filter_name.startswith('reverse')):
+                # this will also check the forward entries for
+                # icmp and no protocol case
+                self.assertEqual(1, len(aim_filter_entries))
+                self._validate_filter_entry(policy_rule, aim_filters[0],
+                                            aim_filter_entries[0])
+            elif protocol == 'icmp':
+                # this is only for reverse entries with ICMP
+                self.assertEqual(4, len(aim_filter_entries))
+                self._validate_1_to_many_reverse_filter_entries(
+                        policy_rule, aim_filters[0], aim_filter_entries)
+            else:
+                # this is only for reverse entries when no protocol
+                # is specified. One entry for TCP, one for UDP and
+                # four entries for ICMP
+                self.assertEqual(6, len(aim_filter_entries))
+                self._validate_1_to_many_reverse_filter_entries(
+                        policy_rule, aim_filters[0], aim_filter_entries)
             filter_entries.append(aim_filter_entries[0])
-        aim_obj_list.append(filter_entries)
+        aim_obj_list.extend(filter_entries)
         self.assertEqual(
             filter_entries[0].dn,
             policy_rule[DN]['Forward-FilterEntries'][0])
@@ -3370,12 +3407,20 @@ class TestPolicyRule(TestPolicyRuleBase):
 
         self.delete_policy_classifier(pc['id'], expected_res_status=204)
 
-    def test_policy_rule_lifecycle(self):
+    def _test_policy_rule_lifecycle(self, protocol, direction):
         action1 = self.create_policy_action(
             action_type='redirect')['policy_action']
-        classifier = self.create_policy_classifier(
-            protocol='TCP', port_range="22",
-            direction='bi')['policy_classifier']
+        if protocol == 'ANY':
+            classifier = self.create_policy_classifier(
+                direction=direction)['policy_classifier']
+        elif protocol in ['TCP', 'UDP']:
+            classifier = self.create_policy_classifier(
+                protocol=protocol, port_range="22",
+                direction=direction)['policy_classifier']
+        else:
+            classifier = self.create_policy_classifier(
+                protocol='ICMP',
+                direction=direction)['policy_classifier']
 
         pr = self.create_policy_rule(
             name="pr1", policy_classifier_id=classifier['id'],
@@ -3397,6 +3442,42 @@ class TestPolicyRule(TestPolicyRuleBase):
         self.show_policy_rule(pr_id, expected_res_status=404)
 
         self._test_policy_rule_delete_aim_mapping(new_pr)
+
+    def test_policy_rule_lifecycle_tcp_in(self):
+        self._test_policy_rule_lifecycle(protocol='TCP', direction='in')
+
+    def test_policy_rule_lifecycle_tcp_out(self):
+        self._test_policy_rule_lifecycle(protocol='TCP', direction='out')
+
+    def test_policy_rule_lifecycle_tcp_bi(self):
+        self._test_policy_rule_lifecycle(protocol='TCP', direction='bi')
+
+    def test_policy_rule_lifecycle_icmp_in(self):
+        self._test_policy_rule_lifecycle(protocol='ICMP', direction='in')
+
+    def test_policy_rule_lifecycle_icmp_out(self):
+        self._test_policy_rule_lifecycle(protocol='ICMP', direction='out')
+
+    def test_policy_rule_lifecycle_icmp_bi(self):
+        self._test_policy_rule_lifecycle(protocol='ICMP', direction='bi')
+
+    def test_policy_rule_lifecycle_udp_in(self):
+        self._test_policy_rule_lifecycle(protocol='UDP', direction='in')
+
+    def test_policy_rule_lifecycle_udp_out(self):
+        self._test_policy_rule_lifecycle(protocol='UDP', direction='out')
+
+    def test_policy_rule_lifecycle_udp_bi(self):
+        self._test_policy_rule_lifecycle(protocol='UDP', direction='bi')
+
+    def test_policy_rule_lifecycle_any_in(self):
+        self._test_policy_rule_lifecycle(protocol='ANY', direction='in')
+
+    def test_policy_rule_lifecycle_any_out(self):
+        self._test_policy_rule_lifecycle(protocol='ANY', direction='out')
+
+    def test_policy_rule_lifecycle_any_bi(self):
+        self._test_policy_rule_lifecycle(protocol='ANY', direction='bi')
 
 
 class TestPolicyRuleRollback(TestPolicyRuleBase):
@@ -3477,6 +3558,20 @@ class TestPolicyRuleSet(AIMBaseTestCase):
         prs = self.create_policy_rule_set(
             name="ctr", policy_rules=[x['id'] for x in rules])[
                 'policy_rule_set']
+        self._validate_policy_rule_set_aim_mapping(prs, rules)
+
+        # update directions of policy classifiers
+        for r in rules:
+            pc = self.show_policy_classifier(
+                    r['policy_classifier_id'])['policy_classifier']
+            if pc['direction'] == 'in':
+                new_direction = 'bi'
+            elif pc['direction'] == 'out':
+                new_direction = 'in'
+            else:
+                new_direction = 'out'
+            self.update_policy_classifier(pc['id'],
+                                          direction=new_direction)
         self._validate_policy_rule_set_aim_mapping(prs, rules)
 
         new_rules = self._create_3_direction_rules()
