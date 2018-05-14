@@ -851,16 +851,19 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             direction = pc['direction']
             expected_filters = []
             if direction == gp_const.GP_DIRECTION_IN:
-                expected_filters = [expected_in_filters]
-            elif direction == gp_const.GP_DIRECTION_OUT:
-                expected_filters = [expected_out_filters]
-            else:
-                expected_filters = [expected_in_filters,
-                                    expected_out_filters]
-            for ef in expected_filters:
-                ef.append(fwd_filter)
+                expected_in_filters.append(fwd_filter)
                 if rev_filter:
-                    ef.append(rev_filter)
+                    expected_out_filters.append(rev_filter)
+            elif direction == gp_const.GP_DIRECTION_OUT:
+                expected_out_filters.append(fwd_filter)
+                if rev_filter:
+                    expected_in_filters.append(rev_filter)
+            else:
+                expected_in_filters.append(fwd_filter)
+                expected_out_filters.append(fwd_filter)
+                if rev_filter:
+                    expected_in_filters.append(rev_filter)
+                    expected_out_filters.append(rev_filter)
 
         self.assertItemsEqual(expected_in_filters,
                               contract_subject.in_filters)
@@ -3906,6 +3909,20 @@ class TestPolicyRuleSet(AIMBaseTestCase):
         prs = self.create_policy_rule_set(
             name="ctr", policy_rules=[x['id'] for x in rules])[
                 'policy_rule_set']
+        self._validate_policy_rule_set_aim_mapping(prs, rules)
+
+        # update directions of policy classifiers
+        for r in rules:
+            pc = self.show_policy_classifier(
+                    r['policy_classifier_id'])['policy_classifier']
+            if pc['direction'] == 'in':
+                new_direction = 'bi'
+            elif pc['direction'] == 'out':
+                new_direction = 'in'
+            else:
+                new_direction = 'out'
+            self.update_policy_classifier(pc['id'],
+                                          direction=new_direction)
         self._validate_policy_rule_set_aim_mapping(prs, rules)
 
         new_rules = self._create_3_direction_rules()
