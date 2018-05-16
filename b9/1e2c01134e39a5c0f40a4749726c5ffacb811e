@@ -1,0 +1,9 @@
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Wed, 16 May 2018 18:11:05 +0000
+Reviewed-on: https://review.openstack.org/568668
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/pike
