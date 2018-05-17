@@ -78,7 +78,13 @@ class MechanismManager(managers.MechanismManager):
             if isinstance(driver.obj, driver_api.MechanismDriver):
                 try:
                     driver.obj.ensure_tenant(plugin_context, tenant_id)
-                except Exception:
+                except Exception as e:
+                    if db_api.is_retriable(e):
+                        with excutils.save_and_reraise_exception():
+                            LOG.debug("DB exception raised by Mechanism "
+                                      "driver '%(name)s' in ensure_tenant",
+                                      {'name': driver.name},
+                                      exc_info=e)
                     LOG.exception("Mechanism driver '%s' failed in "
                                   "ensure_tenant", driver.name)
                     raise ml2_exc.MechanismDriverError(method="ensure_tenant")
