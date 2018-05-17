@@ -178,7 +178,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     NIC_NAME_LEN = 14
 
     class TopologyRpcEndpoint(object):
-        target = oslo_messaging.Target(version='3.0')
+        target = oslo_messaging.Target(version=arpc.VERSION)
 
         def __init__(self, mechanism_driver):
             self.md = mechanism_driver
@@ -2055,8 +2055,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     # Topology RPC method handler
     def update_link(self, context, host, interface, mac,
-                    switch, module, port, pod_id='1', port_description='',
-                    force=False):
+                    switch, module, port, pod_id='1', port_description=''):
         LOG.debug('Topology RPC: update_link: %s',
                   ', '.join([str(p) for p in
                              (host, interface, mac, switch, module, port,
@@ -2070,7 +2069,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             hlink = self.aim.get(aim_ctx,
                                  aim_infra.HostLink(host_name=host,
                                                     interface_name=interface))
-            if hlink and hlink.path == port_description and not force:
+            if hlink and hlink.path == port_description:
                 # There was neither a change nor a refresh required.
                 return
             # Create or Update hostlink in AIM
