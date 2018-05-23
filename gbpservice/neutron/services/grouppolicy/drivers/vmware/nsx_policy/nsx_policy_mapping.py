@@ -456,7 +456,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             description=context.current['description'],
             cond_val=group_id)
 
-        # This will take care of connectivity and invoke overriden
+        # This will take care of connectivity and invoke overridden
         # callbacks defined above for security
         super(NsxPolicyMappingDriver,
               self).create_policy_target_group_postcommit(context)
@@ -473,7 +473,7 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
             # need to clean up the project domain on backend
             self._delete_domain(project_id)
 
-        # This will take care of connectivity and invoke overriden
+        # This will take care of connectivity and invoke overridden
         # callbacks defined above for security
         super(NsxPolicyMappingDriver,
               self).delete_policy_target_group_postcommit(context)

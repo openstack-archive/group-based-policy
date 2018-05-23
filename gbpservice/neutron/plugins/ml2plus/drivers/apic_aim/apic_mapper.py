@@ -35,7 +35,7 @@ PORT_CHAIN_TYPE_TAG = 'ptc'
 
 
 class APICNameMapper(object):
-    # This class may be overriden to customize the mapping from
+    # This class may be overridden to customize the mapping from
     # OpenStack resource IDs to APIC resource names. Prefixes can be
     # supplied in order to allow mapping a single OpenStack resource
     # to multiple APIC resources of the same type. There are reverse
