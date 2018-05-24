@@ -1,0 +1,10 @@
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 24 May 2018 21:18:17 +0000
+Reviewed-on: https://review.openstack.org/560141
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/newton
