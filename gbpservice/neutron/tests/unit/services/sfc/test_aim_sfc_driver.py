@@ -385,17 +385,6 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
         ppgs = [self.show_port_pair_group(x)['port_pair_group'] for x in
                 pc['port_pair_groups']]
         if not multiple:
-            routers_count = ctx.db_session.query(l3_db.Router).count()
-            self.assertEqual(
-                len(flowcs),
-                len(self.aim_mgr.find(ctx, aim_res.Contract)) - routers_count)
-            self.assertEqual(
-                len(flowcs),
-                len(self.aim_mgr.find(
-                        ctx, aim_res.ContractSubject)) - routers_count)
-            self.assertEqual(
-                len(flowcs), len(self.aim_mgr.find(
-                        ctx, aim_res.ContractSubject)) - routers_count)
             self.assertEqual(
                 len(flowc_tenants) * len(ppgs),
                 len(self.aim_mgr.find(ctx, aim_sg.DeviceClusterContext)))
@@ -416,42 +405,58 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
             sg = self.aim_mgr.get(ctx, aim_sg.ServiceGraph(
                 tenant_name=apic_tn, name='ptc_' + pc['id']))
             self.assertIsNotNone(sg)
-            # Verify Flow Classifier mapping
-            contract = self.aim_mgr.get(
-                ctx, aim_res.Contract(tenant_name=apic_tn,
-                                      name='flc_' + flowc['id']))
-            self.assertIsNotNone(contract)
-            subject = self.aim_mgr.get(
-                ctx, aim_res.ContractSubject(
-                    tenant_name=apic_tn, contract_name='flc_' + flowc['id'],
-                    name='ptc_' + pc['id']))
-            self.assertIsNotNone(subject)
-            self.assertEqual(['openstack_AnyFilter'], subject.bi_filters)
             src_cidr = flowc['source_ip_prefix']
             dst_cird = flowc['destination_ip_prefix']
-            for net, pref, cidr in [(src_net, 'src_', src_cidr),
-                                    (dst_net, 'dst_', dst_cird)]:
+
+            def get_net_group(net, cidr):
                 if net['apic:svi']:
                     # TODO(ivar): this will not work, there's no L3Outside
                     # DN extension for external networks.
                     ext = aim_res.ExternalNetwork.from_dn(
                         net['apic:distinguished_names']['ExternalNetwork'])
                     name_prefix = cidr.replace('/', '_')
-                    subnets = [cidr]
                     if cidr in ['0.0.0.0/0', '::/0']:
                         # use default external EPG
                         name_prefix = 'default'
-                        subnets = ['128.0.0.0/1', '0.0.0.0/1', '8000::/1',
-                                   '::/1']
                     ext_net = self.aim_mgr.get(
                         ctx, aim_res.ExternalNetwork(
                             tenant_name=ext.tenant_name,
                             l3out_name=ext.l3out_name,
                             name=name_prefix + '_' + 'net_' + net['id']))
+                    return ext_net
+                else:
+                    epg = self.aim_mgr.get(
+                        ctx, aim_res.EndpointGroup.from_dn(
+                            net['apic:distinguished_names']['EndpointGroup']))
+                    return epg
+
+            provider = get_net_group(dst_net, dst_cird)
+            # Verify Flow Classifier mapping
+            contract = self.aim_mgr.get(
+                ctx, aim_res.Contract(tenant_name=apic_tn,
+                                      name=provider.name + '_' + sg.name))
+            self.assertIsNotNone(contract)
+            subject = self.aim_mgr.get(
+                ctx, aim_res.ContractSubject(
+                    tenant_name=apic_tn,
+                    contract_name=contract.name,
+                    name='ptc_' + pc['id']))
+            self.assertIsNotNone(subject)
+            self.assertEqual(['openstack_AnyFilter'], subject.bi_filters)
+            for net, pref, cidr in [(src_net, 'src_', src_cidr),
+                                    (dst_net, 'dst_', dst_cird)]:
+                group = get_net_group(net, cidr)
+                if net['apic:svi']:
+                    ext_net = group
+                    subnets = [cidr]
+                    if cidr in ['0.0.0.0/0', '::/0']:
+                        # use default external EPG
+                        subnets = ['128.0.0.0/1', '0.0.0.0/1', '8000::/1',
+                                   '::/1']
                     for sub in subnets:
                         ext_sub = self.aim_mgr.get(ctx, aim_res.ExternalSubnet(
-                            tenant_name=ext.tenant_name,
-                            l3out_name=ext.l3out_name,
+                            tenant_name=ext_net.tenant_name,
+                            l3out_name=ext_net.l3out_name,
                             external_network_name=ext_net.name, cidr=sub))
                         self.assertIsNotNone(ext_sub)
 
@@ -463,9 +468,7 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                         "%s not in ext net %s" % (contract.name,
                                                   ext_net.__dict__))
                 else:
-                    epg = self.aim_mgr.get(
-                        ctx, aim_res.EndpointGroup.from_dn(
-                            net['apic:distinguished_names']['EndpointGroup']))
+                    epg = group
                     self.assertTrue(
                         contract.name in (epg.consumed_contract_names if
                                           pref == 'src_' else
@@ -1236,7 +1239,7 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                         'l7_parameters']['logical_source_network'],
                     'logical_destination_network': fc[
                         'l7_parameters']['logical_destination_network']},
-                source_ip_prefix='192.168.%s.0/24' % (i + 3),
+                source_ip_prefix='192.198.%s.0/24' % (i + 3),
                 destination_ip_prefix=fc['destination_ip_prefix'],
                 expected_res_status=201)['flow_classifier'])
         # We have four FCs
@@ -1259,13 +1262,15 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
         self._verify_pc_mapping(pc1, multiple=True)
         self._verify_pc_mapping(pc2, multiple=True)
         if self.dst_svi:
-            self.delete_port_chain(pc1['id'])
             dst_net_id = fc['l7_parameters']['logical_destination_network']
             ext_net = self.aim_mgr.find(
                 self._aim_context, aim_res.ExternalNetwork,
                 name=fc['destination_ip_prefix'].replace(
                     '/', '_') + '_' + 'net_' + dst_net_id)[0]
             self.assertEqual(2, len(ext_net.provided_contract_names))
+            self.delete_port_chain(pc1['id'])
+            ext_net = self.aim_mgr.get(self._aim_context, ext_net)
+            self.assertEqual(1, len(ext_net.provided_contract_names))
             self.delete_port_chain(pc2['id'])
             self.assertIsNone(self.aim_mgr.get(self._aim_context, ext_net))
 
