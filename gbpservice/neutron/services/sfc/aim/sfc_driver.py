@@ -459,17 +459,18 @@ class SfcAIMDriver(SfcAIMDriverBase):
         # the number of nodes in the chain.
         p_tenants = set()
         for flc in flowcs:
-            p_tenant = self._get_flowc_provider_group(plugin_context,
-                                                      flc).tenant_name
+            p_group = self._get_flowc_provider_group(plugin_context, flc)
+            p_tenant = p_group.tenant_name
             sg = self._get_pc_service_graph(p_ctx.session, pc, p_tenant)
-            contract = self._get_flc_contract(p_ctx.session, flc, p_tenant)
+            contract = self._get_flc_contract(p_ctx.session, p_group, sg)
             subject = aim_resource.ContractSubject(
                 tenant_name=contract.tenant_name, contract_name=contract.name,
                 name=sg.name, service_graph_name=sg.name,
                 bi_filters=[self.aim_mech._any_filter_name])
-            self.aim.create(aim_ctx, contract)
-            self.aim.create(aim_ctx, subject)
-            self._map_flow_classifier(p_ctx, flc, p_tenant)
+            if not self.aim.get(aim_ctx, contract):
+                self.aim.create(aim_ctx, contract)
+                self.aim.create(aim_ctx, subject)
+            self._map_flow_classifier(p_ctx, flc, pc, p_tenant)
             # Map device clusters for each flow tenant
             if p_tenant not in p_tenants:
                 for ppg in ppgs:
@@ -520,16 +521,16 @@ class SfcAIMDriver(SfcAIMDriverBase):
         aim_ctx = aim_context.AimContext(session)
         deleted_ppgs = set()
         for flc in flowcs:
-            tenant = self._get_flowc_provider_group(plugin_context,
-                                                    flc).tenant_name
+            p_group = self._get_flowc_provider_group(plugin_context, flc)
+            tenant = p_group.tenant_name
             for ppg in ppgs:
                 key = (tenant, ppg['id'])
                 if key not in deleted_ppgs:
                     self._delete_port_pair_group_mapping(p_ctx, ppg, tenant)
                     deleted_ppgs.add(key)
-            self._delete_flow_classifier_mapping(p_ctx, flc, tenant)
-            contract = self._get_flc_contract(p_ctx.session, flc, tenant)
+            self._delete_flow_classifier_mapping(p_ctx, flc, pc, tenant)
             sg = self._get_pc_service_graph(p_ctx.session, pc, tenant)
+            contract = self._get_flc_contract(p_ctx.session, p_group, sg)
             self.aim.delete(aim_ctx, contract, cascade=True)
             self.aim.delete(aim_ctx, sg, cascade=True)
             for ppg_id in pc['port_pair_groups']:
@@ -569,7 +570,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
                                                                net_id)
                     self.aim.update(aim_ctx, epg, sync=True)
 
-    def _map_flow_classifier(self, plugin_context, flowc, tenant):
+    def _map_flow_classifier(self, plugin_context, flowc, pc, tenant):
         """Map flowclassifier to AIM model
 
         If source/destination ports are plugged to external networks, create
@@ -580,10 +581,11 @@ class SfcAIMDriver(SfcAIMDriverBase):
         :return:
         """
         aim_ctx = aim_context.AimContext(plugin_context.session)
-        cons_group = self._get_flowc_consumer_group(plugin_context, flowc)
-        prov_group = self._get_flowc_provider_group(plugin_context, flowc)
-        contract = self._get_flc_contract(plugin_context.session, flowc,
-                                          tenant)
+        cons_group = self._map_flowc_consumer_group(plugin_context, flowc)
+        prov_group = self._map_flowc_provider_group(plugin_context, flowc)
+        sg = self._get_pc_service_graph(plugin_context.session, pc, tenant)
+        contract = self._get_flc_contract(plugin_context.session, prov_group,
+                                          sg)
         # TODO(ivar): if provider/consumer are in different tenants, export
         # the contract
         cons_group.consumed_contract_names.append(contract.name)
@@ -621,23 +623,21 @@ class SfcAIMDriver(SfcAIMDriverBase):
             return self.aim_mech._get_epg_by_network_id(plugin_context.session,
                                                         net['id'])
 
-    def _delete_flow_classifier_mapping(self, plugin_context, flowc, tenant):
+    def _delete_flow_classifier_mapping(self, plugin_context, flowc, pc,
+                                        tenant):
         source_net = self._get_flowc_src_network(plugin_context, flowc)
         dest_net = self._get_flowc_dst_network(plugin_context, flowc)
         self._delete_flowc_network_group_mapping(
-            plugin_context, source_net, flowc, tenant,
-            flowc['source_ip_prefix'], FLOWC_SRC)
+            plugin_context, source_net, flowc, pc, tenant, FLOWC_SRC)
         self._delete_flowc_network_group_mapping(
-            plugin_context, dest_net, flowc, tenant,
-            flowc['destination_ip_prefix'], FLOWC_DST)
+            plugin_context, dest_net, flowc, pc, tenant, FLOWC_DST)
 
     def _delete_flowc_network_group_mapping(self, plugin_context, net, flowc,
-                                            tenant, cidr, prefix=''):
+                                            pc, tenant, prefix=''):
         flc_aid = self._get_external_group_aim_name(plugin_context, flowc,
                                                     prefix)
         aim_ctx = aim_context.AimContext(plugin_context.session)
         l3out = self.aim_mech._get_svi_net_l3out(net)
-        cidr = netaddr.IPNetwork(cidr)
         ext_net = None
         if l3out:
             ext_net = aim_resource.ExternalNetwork(
@@ -648,8 +648,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
             epg = self.aim.get(aim_ctx, self.aim_mech._get_epg_by_network_id(
                 plugin_context.session, net['id']))
         if epg:
-            contract = self._get_flc_contract(plugin_context.session, flowc,
-                                              tenant)
+            p_group = self._get_flowc_provider_group(plugin_context, flowc)
+            sg = self._get_pc_service_graph(plugin_context.session, pc, tenant)
+            contract = self._get_flc_contract(plugin_context.session, p_group,
+                                              sg)
             try:
                 if prefix == FLOWC_SRC:
                     epg.consumed_contract_names.remove(contract.name)
@@ -658,11 +660,12 @@ class SfcAIMDriver(SfcAIMDriverBase):
             except ValueError:
                 LOG.warning("Contract %s not present in EPG %s" %
                             (contract.name, epg))
-            self.aim.create(aim_ctx, epg, overwrite=True)
+            else:
+                epg = self.aim.create(aim_ctx, epg, overwrite=True)
             if (ext_net and not epg.consumed_contract_names and not
                     epg.provided_contract_names):
                 # Only remove external network if completely empty
-                self.aim.delete(aim_ctx, ext_net, cascade=True)
+                self.aim.delete(aim_ctx, epg, cascade=True)
 
     def _get_chains_by_classifier_id(self, plugin_context, flowc_id):
         context = plugin_context
@@ -768,12 +771,14 @@ class SfcAIMDriver(SfcAIMDriverBase):
         return aim_sg.ServiceGraph(tenant_name=tenant_aid, name=pc_aid,
                                    display_name=pc_aname)
 
-    def _get_flc_contract(self, session, flc, tenant):
-        tenant_id = tenant
-        flc_aid = self.name_mapper.flow_classifier(session, flc['id'])
-        flc_aname = aim_utils.sanitize_display_name(flc['name'])
-        return aim_resource.Contract(tenant_name=tenant_id, name=flc_aid,
-                                     display_name=flc_aname)
+    def _get_flc_contract(self, session, provider, graph):
+        tenant_id = provider.tenant_name
+        return aim_resource.Contract(
+            tenant_name=tenant_id,
+            name=aim_utils.sanitize_display_name(
+                provider.name + '_' + graph.name),
+            display_name=aim_utils.sanitize_display_name(
+                provider.display_name + '_' + graph.display_name))
 
     def _get_ppg_service_redirect_policy(self, session, ppg, direction,
                                          tenant):
@@ -941,14 +946,39 @@ class SfcAIMDriver(SfcAIMDriverBase):
                     break
         return flowcs, ppgs
 
+    def _get_flowc_network_group(self, plugin_context, flowc, net, prefix):
+        flc_aid = self._get_external_group_aim_name(plugin_context, flowc,
+                                                    prefix)
+        l3out = self.aim_mech._get_svi_net_l3out(net)
+        if l3out:
+            # Create ExternalNetwork and ExternalSubnet on the proper
+            # L3Out. Return the External network
+            ext_net = aim_resource.ExternalNetwork(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                name=flc_aid)
+            return ext_net
+        else:
+            return self.aim_mech._get_epg_by_network_id(plugin_context.session,
+                                                        net['id'])
+
     def _get_flowc_provider_group(self, plugin_context, flowc):
+        net = self._get_flowc_dst_network(plugin_context, flowc)
+        return self._get_flowc_network_group(plugin_context, flowc, net,
+                                             FLOWC_DST)
+
+    def _get_flowc_consumer_group(self, plugin_context, flowc):
+        net = self._get_flowc_src_network(plugin_context, flowc)
+        return self._get_flowc_network_group(plugin_context, flowc, net,
+                                             FLOWC_SRC)
+
+    def _map_flowc_provider_group(self, plugin_context, flowc):
         aim_ctx = aim_context.AimContext(plugin_context.session)
         net = self._get_flowc_dst_network(plugin_context, flowc)
         return self.aim.get(aim_ctx, self._map_flowc_network_group(
             plugin_context, net, flowc['destination_ip_prefix'], flowc,
             FLOWC_DST))
 
-    def _get_flowc_consumer_group(self, plugin_context, flowc):
+    def _map_flowc_consumer_group(self, plugin_context, flowc):
         aim_ctx = aim_context.AimContext(plugin_context.session)
         net = self._get_flowc_src_network(plugin_context, flowc)
         return self.aim.get(aim_ctx, self._map_flowc_network_group(
