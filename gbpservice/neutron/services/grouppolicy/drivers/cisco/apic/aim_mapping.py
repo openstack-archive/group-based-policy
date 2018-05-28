@@ -460,7 +460,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context._plugin).delete_policy_target_group(
                     context._plugin_context, auto_ptg['id'])
         except gpolicy.PolicyTargetGroupNotFound:
-            LOG.info("Auto PTG with ID %(id)s for "
+            LOG.info("Auto PTG with ID %(id)s "
                      "for L2P %(l2p)s not found. If create_auto_ptg "
                      "configuration was not set at the time of the L2P "
                      "creation, you can safely ignore this, else this "
