@@ -465,7 +465,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             p_group = self._get_flowc_provider_group(plugin_context, flc)
             p_tenant = p_group.tenant_name
             sg = self._get_pc_service_graph(p_ctx.session, pc, p_tenant)
-            contract = self._get_flc_contract(p_ctx.session, p_group, sg)
+            contract = self._get_flc_contract(p_group, sg)
             subject = aim_resource.ContractSubject(
                 tenant_name=contract.tenant_name, contract_name=contract.name,
                 name=sg.name, service_graph_name=sg.name,
@@ -533,7 +533,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
                     deleted_ppgs.add(key)
             self._delete_flow_classifier_mapping(p_ctx, flc, pc, tenant)
             sg = self._get_pc_service_graph(p_ctx.session, pc, tenant)
-            contract = self._get_flc_contract(p_ctx.session, p_group, sg)
+            contract = self._get_flc_contract(p_group, sg)
             self.aim.delete(aim_ctx, contract, cascade=True)
             self.aim.delete(aim_ctx, sg, cascade=True)
             for ppg_id in pc['port_pair_groups']:
@@ -587,8 +587,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
         cons_group = self._map_flowc_consumer_group(plugin_context, flowc)
         prov_group = self._map_flowc_provider_group(plugin_context, flowc)
         sg = self._get_pc_service_graph(plugin_context.session, pc, tenant)
-        contract = self._get_flc_contract(plugin_context.session, prov_group,
-                                          sg)
+        contract = self._get_flc_contract(prov_group, sg)
         # TODO(ivar): if provider/consumer are in different tenants, export
         # the contract
         cons_group.consumed_contract_names.append(contract.name)
@@ -653,8 +652,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
         if epg:
             p_group = self._get_flowc_provider_group(plugin_context, flowc)
             sg = self._get_pc_service_graph(plugin_context.session, pc, tenant)
-            contract = self._get_flc_contract(plugin_context.session, p_group,
-                                              sg)
+            contract = self._get_flc_contract(p_group, sg)
             try:
                 if prefix == FLOWC_SRC:
                     epg.consumed_contract_names.remove(contract.name)
@@ -774,12 +772,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
         return aim_sg.ServiceGraph(tenant_name=tenant_aid, name=pc_aid,
                                    display_name=pc_aname)
 
-    def _get_flc_contract(self, session, provider, graph):
+    def _get_flc_contract(self, provider, graph):
         tenant_id = provider.tenant_name
-        display_name = ''
-        if provider.display_name or graph.display_name:
-            display_name = aim_utils.sanitize_display_name(
-                provider.display_name + '_' + graph.display_name)
         # NOTE(ivar): For scalability purposes, we want to limit the number
         # of contracts by creating one per provider/graph pair.
         # In order to keep the contract name unique, hashing the provider and
@@ -791,7 +785,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
         return aim_resource.Contract(
             tenant_name=tenant_id,
             name=self._generate_contract_name(provider.name, graph.name),
-            display_name=display_name)
+            display_name=graph.display_name)
 
     def _generate_contract_name(self, prov_name, graph_name):
         return hashlib.sha256(prov_name + graph_name).hexdigest()
