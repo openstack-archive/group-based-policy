@@ -350,7 +350,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # Test AIM resources.
         self._test_network_resources(net_resp)
 
-    def test_external_network(self):
+    def _test_external_network(self):
         # Create AIM HostDomainMappingV2.
         hd_mapping = aim_infra.HostDomainMappingV2(
             host_name='*', domain_name='vm2', domain_type='OpenStack')
@@ -412,6 +412,32 @@ class TestNeutronMapping(AimValidationTestCase):
         entry = aim_resource.FilterEntry(
             tenant_name='common', filter_name='openstack_EXT-l1', name='Any')
         self._test_aim_resource(entry)
+
+    def test_external_network(self):
+        self._test_external_network()
+
+    def test_preexisting_external_network(self):
+        # Create pre-existing AIM VRF.
+        vrf = aim_resource.VRF(tenant_name='common', name='v1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, vrf)
+
+        # Create pre-existing AIM L3Outside.
+        l3out = aim_resource.L3Outside(
+            tenant_name='common', name='l1', vrf_name='v1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, l3out)
+
+        # Create pre-existing AIM ExternalNetwork.
+        ext_net = aim_resource.ExternalNetwork(
+            tenant_name='common', l3out_name='l1', name='n1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, ext_net)
+
+        # Create pre-existing AIM ExternalSubnet.
+        ext_sn = aim_resource.ExternalSubnet(
+            tenant_name='common', l3out_name='l1', external_network_name='n1',
+            cidr='0.0.0.0/0', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, ext_sn)
+
+        self._test_external_network()
 
     def test_svi_network(self):
         # REVISIT: Test validation of actual mapping once implemented.
