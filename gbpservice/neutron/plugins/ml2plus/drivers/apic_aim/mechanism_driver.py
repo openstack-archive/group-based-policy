@@ -4372,15 +4372,40 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not ext_net:
             return None, None, None
 
-        # REVISIT: Avoid peicemeal queries against the actual DB
+        # REVISIT: Avoid piecemeal queries against the actual DB
         # throughout this code.
 
-        # REVISIT: We probably need to copy the external network's
-        # pre-existing resources, if they are monitored, from the
-        # actual AIM store to the validation AIM store, so that the
-        # NatStrategy behaves as expected during validation. But the
-        # current external connectivity UTs don't actually create
-        # pre-existing ExternalNetwork resources.
+        # Copy the external network's pre-existing resources, if they
+        # are monitored, from the actual AIM store to the validation
+        # AIM store, so that the NatStrategy behaves as expected
+        # during validation. Make sure not to overwrite any
+        # pre-existing resources that have already been copied.
+        actual_l3out = mgr.aim_mgr.get(mgr.actual_aim_ctx, l3out)
+        if actual_l3out and actual_l3out.monitored:
+            if not mgr.aim_mgr.get(mgr.expected_aim_ctx, actual_l3out):
+                mgr.aim_mgr.create(mgr.expected_aim_ctx, actual_l3out)
+            ext_vrf = aim_resource.VRF(
+                tenant_name=actual_l3out.tenant_name,
+                name=actual_l3out.vrf_name)
+            actual_ext_vrf = mgr.aim_mgr.get(mgr.actual_aim_ctx, ext_vrf)
+            if not actual_ext_vrf:
+                ext_vrf.tenant_name = 'common'
+                actual_ext_vrf = mgr.aim_mgr.get(mgr.actual_aim_ctx, ext_vrf)
+            if actual_ext_vrf and actual_ext_vrf.monitored:
+                if not mgr.aim_mgr.get(mgr.expected_aim_ctx, actual_ext_vrf):
+                    mgr.aim_mgr.create(mgr.expected_aim_ctx, actual_ext_vrf)
+        actual_ext_net = mgr.aim_mgr.get(mgr.actual_aim_ctx, ext_net)
+        if actual_ext_net and actual_ext_net.monitored:
+            if not mgr.aim_mgr.get(mgr.expected_aim_ctx, actual_ext_net):
+                mgr.aim_mgr.create(mgr.expected_aim_ctx, actual_ext_net)
+            for actual_ext_sn in mgr.aim_mgr.find(
+                    mgr.actual_aim_ctx, aim_resource.ExternalSubnet,
+                    tenant_name=actual_ext_net.tenant_name,
+                    l3out_name=actual_ext_net.l3out_name,
+                    external_network_name=actual_ext_net.name,
+                    monitored=True):
+                if not mgr.aim_mgr.get(mgr.expected_aim_ctx, actual_ext_sn):
+                    mgr.aim_mgr.create(mgr.expected_aim_ctx, actual_ext_sn)
 
         domains = self._get_vmm_domains(mgr.expected_aim_ctx, ns)
         ns.create_l3outside(

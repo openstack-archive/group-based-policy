@@ -75,7 +75,6 @@ class ProjectNameCache(object):
             self.load_projects()
 
     def load_projects(self):
-        # REVISIT: Does this need locking to prevent concurrent calls?
         if self.keystone is None:
             self._get_keystone_client()
         LOG.debug("Calling project API")
