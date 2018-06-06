@@ -1,0 +1,9 @@
+Code-Review+2: Amit Bose <amitbose@gmail.com>
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Workflow+1: Thomas Bachman <bachman@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Wed, 06 Jun 2018 18:47:34 +0000
+Reviewed-on: https://review.openstack.org/572779
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/pike
