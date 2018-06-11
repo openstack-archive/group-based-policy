@@ -642,6 +642,39 @@ class TestNeutronMapping(AimValidationTestCase):
         self._test_routed_subnet(subnet1_id, '10.0.1.1')
         self._test_unscoped_vrf(router_id)
 
+    def test_security_group(self):
+        # Create security group with a rule.
+        sg = self._make_security_group(
+            self.fmt, 'sg1', 'security group 1')['security_group']
+        rule1 = self._build_security_group_rule(
+            sg['id'], 'ingress', 'tcp', '22', '23')
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        self._validate()
+
+        # Test the AIM SecurityGroup.
+        tenant_name = self.driver.aim_mech_driver.name_mapper.project(
+            None, sg['project_id'])
+        sg_name = sg['id']
+        aim_sg = aim_resource.SecurityGroup(
+            name=sg_name, tenant_name=tenant_name)
+        self._test_aim_resource(aim_sg)
+
+        # Test the AIM SecurityGroupSubject.
+        aim_subject = aim_resource.SecurityGroupSubject(
+            name='default', security_group_name=sg_name,
+            tenant_name=tenant_name)
+        self._test_aim_resource(aim_subject)
+
+        # Test the AIM SecurityGroupRule.
+        aim_rule = aim_resource.SecurityGroupRule(
+            name=sg_rule['id'],
+            security_group_subject_name='default',
+            security_group_name=sg_name,
+            tenant_name=tenant_name)
+        self._test_aim_resource(aim_rule)
+
 
 class TestGbpMapping(AimValidationTestCase):
 
