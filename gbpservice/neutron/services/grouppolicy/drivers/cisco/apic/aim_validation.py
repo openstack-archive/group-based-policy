@@ -134,10 +134,13 @@ class ValidationManager(object):
             print("resource %s already expected" % resource)
             raise InternalValidationError()
         for attr_name, attr_type in resource.other_attributes.items():
-            # REVISIT: May also need to dedup arrays of types other
-            # than string.
-            if (attr_type['type'] == 'array' and
+            attr_type_type = attr_type['type']
+            if attr_type_type == 'string':
+                setattr(resource, attr_name, str(getattr(resource, attr_name)))
+            elif (attr_type_type == 'array' and
                 attr_type['items']['type'] == 'string'):
+                # REVISIT: May also need to dedup arrays of types
+                # other than string.
                 value = list(set(getattr(resource, attr_name)))
                 setattr(resource, attr_name, value)
         expected_resources[key] = resource
