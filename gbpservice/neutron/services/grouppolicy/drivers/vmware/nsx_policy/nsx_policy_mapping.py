@@ -13,6 +13,10 @@
 from oslo_config import cfg
 from oslo_log import log as logging
 
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
+from neutron_lib.callbacks import resources
+
 from vmware_nsx.db import db as nsx_db
 from vmware_nsx.plugins.nsx_v3 import utils as nsx_utils
 
@@ -141,10 +145,14 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         super(NsxPolicyMappingDriver, self).initialize()
         self._gbp_plugin = None
         self.nsx_policy = self.get_nsxpolicy_lib()
+        # reinitialize the cluster upon fork for api workers to ensure each
+        # process has its own keepalive loops + state
+        registry.subscribe(
+            self.nsx_policy.reinitialize_cluster,
+            resources.PROCESS, events.AFTER_INIT)
         self.policy_api = self.nsx_policy.policy_api
 
-        nsx_manager_client = self.get_nsxmanager_client()
-        self.nsx_port = nsx_resources.LogicalPort(nsx_manager_client)
+        self.nsx_port = None
         self._verify_enforcement_point()
 
         # TODO(annak): add validation for core plugin (can only be nsxv3)
@@ -408,6 +416,13 @@ class NsxPolicyMappingDriver(api.ResourceMappingDriver):
         # Translate neutron port id to nsx port id
         _net_id, nsx_port_id = nsx_db.get_nsx_switch_and_port_id(
                  context._plugin_context.session, port_id)
+
+        # To avoid reinitalization of connection cluster,
+        # its preferrable to initialize nsx_port object after neutron fork
+        if not self.nsx_port:
+            nsx_manager_client = self.get_nsxmanager_client()
+            self.nsx_port = nsx_resources.LogicalPort(nsx_manager_client)
+
         self.nsx_port.update(nsx_port_id, None,
                              tags_update=[{'scope': 'gbp',
                                            'tag': tag}])
