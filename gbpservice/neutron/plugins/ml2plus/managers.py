@@ -20,6 +20,7 @@ from gbpservice.neutron.plugins.ml2plus import driver_api
 from neutron.db import api as db_api
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers
+from neutron.quota import resource_registry
 from oslo_log import log
 from oslo_utils import excutils
 
@@ -30,6 +31,20 @@ class MechanismManager(managers.MechanismManager):
 
     def __init__(self):
         super(MechanismManager, self).__init__()
+
+    def _call_on_drivers(self, method_name, context,
+            continue_on_failure=False, raise_db_retriable=False):
+        super(MechanismManager, self)._call_on_drivers(
+                method_name, context, continue_on_failure=False,
+                raise_db_retriable=False)
+        if method_name.endswith('_precommit'):
+            # This does the same thing as:
+            # https://github.com/openstack/neutron/blob/newton-eol/neutron/
+            # api/v2/base.py#L489
+            # but from within the scope of the plugin's transaction, such
+            # that if it fails, everything that happened prior to this in
+            # precommit phase can also be rolled back.
+            resource_registry.set_resources_dirty(context._plugin_context)
 
     def _call_on_extended_drivers(self, method_name, context,
                                   continue_on_failure=False,

@@ -169,10 +169,14 @@ def undecorated(o):
     else:
         return o
 
-
+from neutron.db import api as db_api
 from neutron.db.quota import api as quota_api
+from neutron.db import common_db_mixin as common_db_api
 from neutron.db.quota import driver  # noqa
+from neutron.db.quota import models as quota_models
 from neutron import quota
+from neutron.quota import resource_registry as res_reg
+from oslo_config import cfg
 
 
 f = quota_api.remove_reservation
@@ -184,6 +188,39 @@ def commit_reservation(context, reservation_id):
 
 
 quota.QUOTAS.get_driver().commit_reservation = commit_reservation
+
+
+def patched_set_resources_dirty(context):
+    if not cfg.CONF.QUOTAS.track_quota_usage:
+        return
+
+    for res in res_reg.get_all_resources().values():
+        with context.session.begin(subtransactions=True):
+            if res_reg.is_tracked(res.name) and res and res.dirty:
+                if not res._dirty_tenants:
+                    return
+                dirty_tenants_snap = res._dirty_tenants.copy()
+                for tenant_id in dirty_tenants_snap:
+                    query = common_db_api.model_query(
+                            context, quota_models.QuotaUsage)
+                    query = query.filter_by(resource=res.name).filter_by(
+                            tenant_id=tenant_id)
+                    usage_data = query.first()
+                    # Set dirty if not set already. This effectively
+                    # patches the inner notify method:
+                    # https://github.com/openstack/neutron/blob/newton-eol/
+                    # neutron/api/v2/base.py#L481
+                    # to avoid updating the QuotaUsages table outside
+                    # from that method (which starts a new transaction).
+                    # The dirty marking would have been already done
+                    # in the ml2plus manager at the end of the pre_commit
+                    # stage (and prior to the plugin initiated transaction
+                    # completeing).
+                    if usage_data and not usage_data.dirty:
+                        res.mark_dirty(context)
+
+
+quota.resource_registry.set_resources_dirty = patched_set_resources_dirty
 
 
 from neutron._i18n import _LI
