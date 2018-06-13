@@ -42,6 +42,7 @@ from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
+from neutron.tests.unit.plugins.ml2 import test_tracked_resources as tr_res
 from neutron.tests.unit import testlib_api
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
@@ -238,7 +239,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin,
                       test_securitygroup.SecurityGroupsTestCase):
 
-    def setUp(self, mechanism_drivers=None, tenant_network_types=None):
+    def setUp(self, mechanism_drivers=None, tenant_network_types=None,
+            plugin=None, ext_mgr=None):
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
         # driver apis.
@@ -3059,6 +3061,15 @@ class TestAimMapping(ApicAimTestCase):
 
         setattr(driver_context.PortContext, "host_agents", orig_host_agents)
         dhcp_agt_mock.stop()
+
+
+class TestTrackedResources(tr_res.TestTrackedResources, ApicAimTestCase):
+
+    def setUp(self, **kwargs):
+        super(TestTrackedResources, self).setUp(**kwargs)
+        for patch in mock.mock._patch._active_patches:
+            if patch.attribute == '_ensure_default_security_group':
+                patch.stop()
 
 
 class TestSyncState(ApicAimTestCase):
