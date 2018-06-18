@@ -116,6 +116,11 @@ class ValidationManager(object):
                 print("Rolling back attempted repairs")
             self.actual_session.rollback()
 
+        # Bind unbound ports outside transaction.
+        if self.repair and self.result is not api.VALIDATION_FAILED:
+            print("Binding unbound ports")
+            self.md.bind_unbound_ports(self)
+
         print("Validation result: %s" % self.result)
         return self.result
 
