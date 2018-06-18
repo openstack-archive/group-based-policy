@@ -4067,6 +4067,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._validate_ports(mgr)
         self._validate_subnetpools(mgr)
         self._validate_floatingips(mgr)
+        self._validate_port_bindings(mgr)
 
     def _validate_static_resources(self, mgr):
         self._ensure_common_tenant(mgr.expected_aim_ctx)
@@ -4128,7 +4129,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _validate_networks(self, mgr, router_dbs, ext_net_routers):
         net_dbs = {net_db.id: net_db for net_db in
-                   mgr.actual_session.query(models_v2.Network)}
+                   mgr.actual_session.query(models_v2.Network).options(
+                       orm.joinedload('segments'))}
 
         router_ext_prov, router_ext_cons = self._get_router_ext_contracts(mgr)
         routed_nets = self._get_router_interface_info(mgr)
@@ -4139,6 +4141,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._expect_project(mgr, net_db.project_id)
             for subnet_db in net_db.subnets:
                 self._expect_project(mgr, subnet_db.project_id)
+
+            for segment_db in net_db.segments:
+                # REVISIT: Consider validating that physical_network
+                # and segmentation_id values make sense for the
+                # network_type, and possibly validate that there are
+                # no conflicting segment allocations.
+                if (segment_db.network_type not in
+                    self.plugin.type_manager.drivers):
+                    # REVISIT: For migration from non-APIC backends,
+                    # change type to 'opflex'?
+                    mgr.validation_failed(
+                        "network %(net_id)s segment %(segment_id)s type "
+                        "%(type)s is invalid" % {
+                            'net_id': segment_db.network_id,
+                            'segment_id': segment_db.id,
+                            'type': segment_db.network_type})
 
             bd = None
             epg = None
@@ -4555,6 +4573,45 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 distinct()):
             self._expect_project(mgr, project_id)
 
+    def _validate_port_bindings(self, mgr):
+        # REVISIT: Deal with distributed port bindings? Also, consider
+        # moving this to the ML2Plus plugin or to a base validation
+        # manager, as it is not specific to this mechanism driver.
+
+        for port in (mgr.actual_session.query(models_v2.Port).
+                     options(orm.joinedload('binding_levels'))):
+            binding = port.port_binding
+            levels = port.binding_levels
+            unbind = False
+            # REVISIT: Validate that vif_type and vif_details are
+            # correct when host is empty?
+            for level in levels:
+                if (level.driver not in
+                    self.plugin.mechanism_manager.mech_drivers):
+                    if mgr.should_repair(
+                            "port %(id)s bound with invalid driver "
+                            "%(driver)s" %
+                            {'id': port.id, 'driver': level.driver},
+                            "Unbinding"):
+                        unbind = True
+                elif (level.host != binding.host):
+                    if mgr.should_repair(
+                            "port %(id)s bound with invalid host "
+                            "%(host)s" %
+                            {'id': port.id, 'host': level.host},
+                            "Unbinding"):
+                        unbind = True
+                elif (not level.segment_id):
+                    if mgr.should_repair(
+                            "port %s bound without valid segment" % port.id,
+                            "Unbinding"):
+                        unbind = True
+            if unbind:
+                binding.vif_type = portbindings.VIF_TYPE_UNBOUND
+                binding.vif_details = ''
+                for level in port.binding_levels:
+                    mgr.actual_session.delete(level)
+
     def _expect_project(self, mgr, project_id):
         # REVISIT: Currently called for all Neutron and GBP resources
         # for which plugin create methods call _ensure_tenant. Remove
@@ -4577,3 +4634,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ap.display_name = aim_utils.sanitize_display_name(self.ap_name)
             ap.monitored = False
             mgr.expect_aim_resource(ap)
+
+    def bind_unbound_ports(self, mgr):
+        # REVISIT: Deal with distributed port bindings? Also, consider
+        # moving this to the ML2Plus plugin or to a base validation
+        # manager, as it is not specific to this mechanism driver.
+        plugin_context = nctx.get_admin_context()
+        for port_id, in (mgr.actual_session.query(models.PortBinding.port_id).
+                        filter(models.PortBinding.host != '',
+                               models.PortBinding.vif_type ==
+                               portbindings.VIF_TYPE_UNBOUND)):
+            # REVISIT: Use the more efficient get_bound_port_contexts,
+            # which is not available in stable/newton?
+            pc = self.plugin.get_bound_port_context(plugin_context, port_id)
+            if (pc.vif_type == portbindings.VIF_TYPE_BINDING_FAILED or
+                pc.vif_type == portbindings.VIF_TYPE_UNBOUND):
+                mgr.validation_failed(
+                    "unable to bind port %(port)s on host %(host)s" %
+                    {'port': port_id, 'host': pc.host})
