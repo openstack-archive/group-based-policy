@@ -1358,6 +1358,22 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
         self._verify_pc_mapping(pc)
         self._verify_pc_delete(pc)
 
+    def test_same_provider_subnet(self):
+        fc = self._create_simple_flowc(src_svi=self.src_svi,
+                                       dst_svi=self.dst_svi)
+        fcs = [fc]
+        for i in range(3):
+            fcs.append(self.create_flow_classifier(
+                l7_parameters=fc['l7_parameters'],
+                source_ip_prefix='192.198.%s.0/24' % (i + 3),
+                destination_ip_prefix=fc['destination_ip_prefix'],
+                expected_res_status=201)['flow_classifier'])
+        # We have four FCs
+        ppg1 = self._create_simple_ppg(pairs=1)
+        self.create_port_chain(port_pair_groups=[ppg1['id']],
+                               flow_classifiers=[fc['id'] for fc in fcs],
+                               expected_res_status=201)
+
 
 class TestPortChainSVI(TestPortChain):
 
