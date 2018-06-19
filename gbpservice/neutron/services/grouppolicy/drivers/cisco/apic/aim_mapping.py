@@ -2393,6 +2393,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _get_port_mtu(self, context, port):
         if self.advertise_mtu:
+            for dhcp_opt in port.get('extra_dhcp_opts'):
+                if (dhcp_opt.get('opt_name') == 'interface-mtu' or
+                        dhcp_opt.get('opt_name') == '26'):
+                    return dhcp_opt.get('opt_value')
             network = self._get_network(context, port['network_id'])
             return network.get('mtu')
         return None
