@@ -589,8 +589,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
         contract = self._get_flc_contract(prov_group, sg)
         # TODO(ivar): if provider/consumer are in different tenants, export
         # the contract
-        cons_group.consumed_contract_names.append(contract.name)
-        prov_group.provided_contract_names.append(contract.name)
+        if contract.name not in cons_group.consumed_contract_names:
+            cons_group.consumed_contract_names.append(contract.name)
+        if contract.name not in prov_group.provided_contract_names:
+            prov_group.provided_contract_names.append(contract.name)
         self.aim.create(aim_ctx, cons_group, overwrite=True)
         self.aim.create(aim_ctx, prov_group, overwrite=True)
 
