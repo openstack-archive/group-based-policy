@@ -3113,7 +3113,11 @@ class TestPolicyTarget(AIMBaseTestCase,
         port['security_groups'].append(sg['id'])
         port = self._plugin.update_port(
             self._context, port['id'], {'port': port})
-
+        # Set the bad MTU through extra_dhcp_opts, it should fall back
+        # to the network MTU
+        data = {'port': {'extra_dhcp_opts': [{'opt_name': '26',
+                                              'opt_value': 'garbage'}]}}
+        port = self._update('ports', port['id'], data)['port']
         mapping = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt2['port_id'],
             host='h2')
@@ -3142,6 +3146,14 @@ class TestPolicyTarget(AIMBaseTestCase,
                         'name': self.driver.aim_mech_driver.apic_system_id +
                         '_DefaultSecurityGroup'})
         self.assertEqual(sg_list, mapping['security_group'])
+        # Set the right MTU through extra_dhcp_opts
+        data = {'port': {'extra_dhcp_opts': [{'opt_name': 'interface-mtu',
+                                              'opt_value': '2000'}]}}
+        port = self._update('ports', port['id'], data)['port']
+        mapping = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % pt2['port_id'],
+            host='h2')
+        self.assertEqual(2000, mapping['interface_mtu'])
 
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
                                    pre_vrf=None):
@@ -3250,6 +3262,14 @@ class TestPolicyTarget(AIMBaseTestCase,
                     self.assertFalse(mapping['ip_mapping'])
                     self.assertFalse(mapping['host_snat_ips'])
                 self.assertEqual(1000, mapping['interface_mtu'])
+                # Set the right MTU through extra_dhcp_opts
+                data = {'port': {'extra_dhcp_opts': [{'opt_name': '26',
+                                                      'opt_value': '2100'}]}}
+                port = self._update('ports', port_id, data)['port']
+                mapping = self.driver.get_gbp_details(
+                    self._neutron_admin_context, device='tap%s' % port_id,
+                    host='h1')
+                self.assertEqual(2100, mapping['interface_mtu'])
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
