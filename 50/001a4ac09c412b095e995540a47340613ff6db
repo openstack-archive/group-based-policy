@@ -1,0 +1,9 @@
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Code-Review+2: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Workflow+1: Sumit Naiksatam <sumitnaiksatam@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Wed, 20 Jun 2018 03:59:48 +0000
+Reviewed-on: https://review.openstack.org/576285
+Project: openstack/group-based-policy
+Branch: refs/heads/master
