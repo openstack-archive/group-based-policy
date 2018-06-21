@@ -2415,8 +2415,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return vrfs.values()
 
     # Used by policy driver.
-    def _get_address_scope_ids_for_vrf(self, session, vrf):
-        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+    def _get_address_scope_ids_for_vrf(self, session, vrf, mappings=None):
+        mappings = mappings or self._get_address_scope_mappings_for_vrf(
+            session, vrf)
         return [mapping.scope_id for mapping in mappings]
 
     def _get_network_ids_for_vrf(self, session, vrf):
@@ -2932,8 +2933,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return mapping and self._get_network_epg(mapping)
 
     # Used by policy driver.
-    def get_vrf_for_network(self, session, network):
-        mapping = self._get_network_mapping(session, network['id'])
+    def get_vrf_for_network(self, session, network, mapping=None):
+        mapping = mapping or self._get_network_mapping(session, network['id'])
         return mapping and self._get_network_vrf(mapping)
 
     # Used by policy driver.
