@@ -2622,6 +2622,237 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
         self.dummy.delete_l3_policy_precommit = orig_func
 
 
+class TestGbpDetails(AIMBaseTestCase,
+                     test_securitygroup.SecurityGroupsTestCase):
+
+    def setUp(self, *args, **kwargs):
+        super(TestGbpDetails, self).setUp(*args, **kwargs)
+        cfg.CONF.set_override('path_mtu', 1000, group='ml2')
+        cfg.CONF.set_override('global_physnet_mtu', 1000, None)
+        cfg.CONF.set_override('advertise_mtu', True, group='aim_mapping')
+
+    def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
+                                       expected_epg_name, expected_epg_tenant,
+                                       subnets, default_route=None,
+                                       map_tenant_name=True):
+        self.assertEqual(mapping, req_mapping['gbp_details'])
+        self.assertEqual(port_id, mapping['port_id'])
+        self.assertEqual(expected_epg_name, mapping['endpoint_group_name'])
+        exp_tenant = (self.name_mapper.project(None, expected_epg_tenant)
+                      if map_tenant_name else expected_epg_tenant)
+        self.assertEqual(exp_tenant, mapping['ptg_tenant'])
+        self.assertEqual('someid', mapping['vm-name'])
+        self.assertTrue(mapping['enable_dhcp_optimization'])
+        self.assertFalse(mapping['enable_metadata_optimization'])
+        self.assertEqual(1, len(mapping['subnets']))
+        mapping_cidrs = [subnet['cidr'] for subnet in mapping['subnets']]
+        for subnet in subnets:
+            self.assertIn(subnet['subnet']['cidr'], mapping_cidrs)
+        if default_route:
+            self.assertTrue(
+                {'destination': '0.0.0.0/0', 'nexthop': default_route} in
+                mapping['subnets'][0]['host_routes'],
+                "Default route missing in %s" % mapping['subnets'][0])
+        # Verify Neutron details
+        self.assertEqual(port_id, req_mapping['neutron_details']['port_id'])
+
+    def _verify_vrf_details_assertions(self, vrf_mapping, expected_vrf_name,
+                                       expected_l3p_id, expected_subnets,
+                                       expected_vrf_tenant):
+        self.assertEqual(expected_vrf_name, vrf_mapping['vrf_name'])
+        self.assertEqual(expected_vrf_tenant, vrf_mapping['vrf_tenant'])
+        self.assertEqual(set(expected_subnets),
+                         set(vrf_mapping['vrf_subnets']))
+        self.assertEqual(expected_l3p_id,
+                         vrf_mapping['l3_policy_id'])
+
+    def _verify_fip_details(self, mapping, fip, ext_epg_tenant,
+                            ext_epg_name, ext_epg_app_profile='OpenStack'):
+        self.assertEqual(1, len(mapping['floating_ip']))
+        fip = copy.deepcopy(fip)
+        fip['nat_epg_name'] = ext_epg_name
+        fip['nat_epg_tenant'] = ext_epg_tenant
+        fip['nat_epg_app_profile'] = ext_epg_app_profile
+        self.assertEqual(fip, mapping['floating_ip'][0])
+
+    def _verify_ip_mapping_details(self, mapping, ext_segment_name,
+                                   ext_epg_tenant, ext_epg_name,
+                                   ext_epg_app_profile='OpenStack'):
+        self.assertTrue({'external_segment_name': ext_segment_name,
+                         'nat_epg_name': ext_epg_name,
+                         'nat_epg_app_profile': ext_epg_app_profile,
+                         'nat_epg_tenant': ext_epg_tenant}
+                        in mapping['ip_mapping'])
+
+    def _verify_host_snat_ip_details(self, mapping, ext_segment_name,
+                                     snat_ip, subnet_cidr):
+        gw, prefix = subnet_cidr.split('/')
+        self._check_ip_in_cidr(snat_ip, subnet_cidr)
+        mapping['host_snat_ips'][0].pop('host_snat_ip', None)
+        self.assertEqual({'external_segment_name': ext_segment_name,
+                          'gateway_ip': gw,
+                          'prefixlen': int(prefix)},
+                         mapping['host_snat_ips'][0])
+
+    # TODO(Kent): we should also add the ML2 related UTs for
+    # get_gbp_details(). Its missing completely....
+    def _do_test_get_gbp_details(self, pre_vrf=None):
+        self.driver.aim_mech_driver.apic_optimized_dhcp_lease_time = 100
+        ext_net1, rtr1, ext_net1_sub = self._setup_external_network(
+            'es1', dn='uni/tn-t1/out-l1/instP-n1')
+        ext_net2, rtr2, ext_net2_sub1 = self._setup_external_network(
+            'es2', dn='uni/tn-t1/out-l2/instP-n2')
+        ext_net2_sub2 = self._make_subnet(
+            self.fmt, {'network': {'id': ext_net2_sub1['network_id'],
+                                   'tenant_id': ext_net2_sub1['tenant_id']}},
+            '200.200.0.1', '200.200.0.0/16')['subnet']
+        self._update('subnets', ext_net2_sub2['id'],
+                     {'subnet': {SNAT_HOST_POOL: True}})
+
+        if pre_vrf:
+            as_id = (self._make_address_scope_for_vrf(
+                pre_vrf.dn, name='as1')['address_scope']['id']
+                if pre_vrf else None)
+        else:
+            scope = self._make_address_scope(
+                self.fmt, 4, name='as1')['address_scope']
+            as_id = scope['id']
+
+        pool = self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
+                                     tenant_id=self._tenant_id,
+                                     address_scope_id=as_id,
+                                     default_prefixlen=24)['subnetpool']
+        pool_id = pool['id']
+        network = self._make_network(self.fmt, 'net1', True)
+        net1 = network['network']
+        # Make two subnets on the network
+        gw1_ip = '10.0.1.1'
+        subnet1 = self._make_subnet(
+            self.fmt, network, gw1_ip, cidr='10.0.1.0/24',
+            subnetpool_id=pool_id)['subnet']
+
+        network = self._make_network(self.fmt, 'net2', True)
+        net2 = network['network']
+        gw2_ip = '10.0.2.1'
+        subnet2 = self._make_subnet(
+            self.fmt, network, gw2_ip, cidr='10.0.2.0/24',
+            subnetpool_id=pool_id)['subnet']
+        # Make a DHCP port on each subnet
+        dhcp_subnet1 = [{'subnet_id': subnet1['id']}]
+        dhcp_p1 = self._make_port(self.fmt, net1['id'],
+                                  device_owner='dhcp:',
+                                  fixed_ips=dhcp_subnet1)['port']
+        self._bind_other_port_to_host(dhcp_p1['id'], 'h1')
+        dhcp_subnet2 = [{'subnet_id': subnet2['id']}]
+        dhcp_p2 = self._make_port(self.fmt, net2['id'],
+                                  device_owner='dhcp:',
+                                  fixed_ips=dhcp_subnet2)['port']
+        self._bind_other_port_to_host(dhcp_p2['id'], 'h1')
+        # Make a VM port
+        p1 = self._make_port(self.fmt, net1['id'],
+                             device_owner='compute:')['port']
+        self._bind_port_to_host(p1['id'], 'h1')
+        self._router_interface_action('add', rtr1['id'], subnet1['id'], None)
+        self._router_interface_action('add', rtr2['id'], subnet2['id'], None)
+        fip = self._make_floatingip(self.fmt, ext_net1_sub['network_id'],
+                                    port_id=p1['id'])['floatingip']
+
+        mapping = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        req_mapping = self.driver.request_endpoint_details(
+            nctx.get_admin_context(),
+            request={'device': 'tap%s' % p1['id'],
+                     'timestamp': 0, 'request_id': 'request_id'},
+            host='h1')
+        epg_name = self.name_mapper.network(self._neutron_context.session,
+            net1['id'])
+        epg_tenant = net1['tenant_id']
+        net_db = self._get_object('networks', net1['id'], self.api)['network']
+        subnets = [self._get_object('subnets', subnet_id, self.api)
+                   for subnet_id in net_db['subnets']
+                   if subnet_id == p1['fixed_ips'][0]['subnet_id']]
+
+        self._verify_gbp_details_assertions(
+            mapping, req_mapping, p1['id'], epg_name, epg_tenant, subnets)
+
+        if pre_vrf:
+            vrf_name = pre_vrf.name
+            vrf_tenant = pre_vrf.tenant_name
+        else:
+            vrf_name = self.name_mapper.address_scope(
+                None, as_id)
+            vrf_tenant = self.name_mapper.project(None,
+                                                  self._tenant_id)
+        vrf_id = '%s %s' % (vrf_tenant, vrf_name)
+        subpools = self._get_object('subnetpools', pool_id,
+            self.api)['subnetpool']
+        prefixlist = [prefix.strip() for prefix in subpools['prefixes']]
+        self._verify_vrf_details_assertions(
+            mapping, vrf_name, vrf_id, prefixlist, vrf_tenant)
+
+        self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
+
+        # Create event on a second host to verify that the SNAT
+        # port gets created for this second host
+        p2 = self._make_port(self.fmt, net2['id'],
+                             device_owner='compute:')['port']
+        self._bind_port_to_host(p2['id'], 'h2')
+
+        # As admin, create a SG in a different tenant then associate
+        # with the same port
+        sg = self._make_security_group(
+            self.fmt, 'sg_1', 'test',
+            tenant_id='test-tenant-2')['security_group']
+        port = self._plugin.get_port(self._context, p2['id'])
+        port['security_groups'].append(sg['id'])
+        port = self._plugin.update_port(
+            self._context, port['id'], {'port': port})
+        # Set the bad MTU through extra_dhcp_opts, it should fall back
+        # to the network MTU
+        data = {'port': {'extra_dhcp_opts': [{'opt_name': '26',
+                                              'opt_value': 'garbage'}]}}
+        port = self._update('ports', port['id'], data)['port']
+
+        mapping = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h2')
+        self.assertEqual(p2['id'], mapping['port_id'])
+        self._verify_ip_mapping_details(mapping,
+            'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
+        self._verify_host_snat_ip_details(mapping,
+            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
+        self.assertEqual(1000, mapping['interface_mtu'])
+        self.assertEqual(100, mapping['dhcp_lease_time'])
+        sg_list = []
+        ctx = nctx.get_admin_context()
+        port_sgs = (ctx.session.query(sg_models.SecurityGroup.id,
+                                      sg_models.SecurityGroup.tenant_id).
+                    filter(sg_models.SecurityGroup.id.
+                           in_(port['security_groups'])).
+                    all())
+        for sg_id, tenant_id in port_sgs:
+            sg_tenant = self.name_mapper.project(None, tenant_id)
+            sg_list.append(
+                {'policy-space': sg_tenant,
+                 'name': sg_id})
+        sg_list.append({'policy-space': 'common',
+                        'name': self.driver.aim_mech_driver.apic_system_id +
+                        '_DefaultSecurityGroup'})
+        self.assertEqual(sg_list, mapping['security_group'])
+        # Set the right MTU through extra_dhcp_opts
+        data = {'port': {'extra_dhcp_opts': [{'opt_name': 'interface-mtu',
+                                              'opt_value': '2000'}]}}
+        port = self._update('ports', port['id'], data)['port']
+        mapping = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h2')
+        self.assertEqual(2000, mapping['interface_mtu'])
+
+    def test_get_gbp_details(self):
+        self._do_test_get_gbp_details()
+
+
 class TestPolicyTarget(AIMBaseTestCase,
                        test_securitygroup.SecurityGroupsTestCase):
 
