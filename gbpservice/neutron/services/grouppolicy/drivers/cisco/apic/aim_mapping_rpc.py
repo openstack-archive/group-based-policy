@@ -9,13 +9,13 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as db_api
 
 from neutron.db import db_base_plugin_common
 from neutron.db.models import securitygroup as sg_models
+from neutron.db import models_v2
 from neutron.objects import base as objects_base
 from neutron.objects import trunk as trunk_objects
 from neutron.plugins.ml2 import rpc as ml2_rpc
@@ -23,10 +23,16 @@ from neutron_lib.api.definitions import portbindings
 from opflexagent import rpc as o_rpc
 from oslo_log import log
 
+from gbpservice.neutron.db.grouppolicy import (
+    group_policy_mapping_db as gpmdb)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    db as aim_db)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     port_ha_ipaddress_binding as ha_ip_db)
+
+from sqlalchemy import bindparam
 
 
 LOG = log.getLogger(__name__)
@@ -175,6 +181,9 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # - self._get_dns_domain(context, port)
     @db_api.retry_if_session_inactive()
     def _get_gbp_details(self, context, request, host):
+        return self._get_gbp_details_new(context, request, host)
+
+    def _get_gbp_details_old(self, context, request, host):
         with context.session.begin(subtransactions=True):
             device = request.get('device')
 
@@ -250,6 +259,129 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         LOG.debug("Details for port %s : %s", port['id'], details)
         return details
 
+    def _get_objects_for_cache(self, context, port_id):
+        with context.session.begin(subtransactions=True):
+            # Get the port resource, and all its related resources
+            port_query = self.bakery(lambda session:
+                session.query(models_v2.Port))
+            port_query += lambda q: q.filter(models_v2.Port.id.
+                startswith(bindparam('port_id')))
+            port_db = port_query(context.session).params(port_id=port_id).one()
+            context.port_db = port_db
+
+            # Get the network resource, and all it's related reources
+            network_id = port_db.network_id
+            net_query = self.bakery(lambda session:
+                session.query(models_v2.Network))
+            net_query += lambda q: q.filter(models_v2.Network.id ==
+                bindparam('network_id'))
+            network_db = net_query(context.session).params(
+                network_id=network_id).one()
+            context.network_db = network_db
+
+            mapping_query = self.bakery(lambda session:
+            # Get the NetworkMapping resource
+                session.query(aim_db.NetworkMapping))
+            mapping_query += lambda q: q.filter(
+                aim_db.NetworkMapping.network_id == bindparam('network_id'))
+            network_mapping_db = mapping_query(context.session).params(
+                network_id=network_id).one_or_none()
+            context.network_mapping_db = network_mapping_db
+
+            # Get the PTG resource.
+            pt_query = self.bakery(lambda session:
+                session.query(gpmdb.PolicyTargetMapping,
+                gpmdb.PolicyTargetMapping.port_id == models_v2.Port.id))
+            pt_query += lambda q: q.outerjoin(gpmdb.PolicyTargetGroupMapping)
+            pt_query += lambda q: q.outerjoin(gpmdb.L2PolicyMapping)
+            pt_query += lambda q: q.outerjoin(gpmdb.L3PolicyMapping)
+            pt_query += lambda q: q.filter(
+                gpmdb.PolicyTargetMapping.port_id == bindparam('port_id'))
+            pt_db = pt_query(context.session).params(port_id=port_id).first()
+            if pt_db:
+                pt_db = pt_db[0]
+                context.pt_db = pt_db
+                ptg_db = pt_db.policy_target_group
+                context.ptg_db = ptg_db
+                if ptg_db:
+                    l2p_db = ptg_db.l2_policy
+                    context.l2p_db = l2p_db
+                    if l2p_db:
+                        l3p_db = l2p_db.l3_policy
+                        context.l3p_db = l3p_db
+
+    def _get_gbp_details_new(self, context, request, host):
+        with context.session.begin(subtransactions=True):
+            device = request.get('device')
+
+            core_plugin = self._core_plugin
+            port_id = core_plugin._device_to_port_id(context, device)
+            self._get_objects_for_cache(context, port_id)
+            port = context.port_db
+            if not port:
+                LOG.warning("Device %(device)s requested by agent "
+                            "%(agent_id)s not found in database",
+                            {'device': port_id,
+                             'agent_id': request.get('agent_id')})
+                return {'device': request.get('device')}
+
+            epg = self._get_port_epg_cached(context, port_id)
+
+            details = {'device': request.get('device'),
+                       'enable_dhcp_optimization': self._is_dhcp_optimized(
+                           context, port),
+                       'enable_metadata_optimization': (
+                           self._is_metadata_optimized(context, port)),
+                       'port_id': port_id,
+                       'mac_address': port['mac_address'],
+                       'app_profile_name': epg.app_profile_name,
+                       'tenant_id': port['tenant_id'],
+                       'host': port.port_binding.host,
+                       # TODO(ivar): scope names, possibly through AIM or the
+                       # name mapper
+                       'ptg_tenant': epg.tenant_name,
+                       'endpoint_group_name': epg.name,
+                       'promiscuous_mode': self._is_port_promiscuous(context,
+                                                                     port),
+                       'extra_ips': [],
+                       'floating_ip': [],
+                       'ip_mapping': [],
+                       # Put per mac-address extra info
+                       'extra_details': {}}
+
+            # Set VM name if needed.
+            if port['device_owner'].startswith(
+                    'compute:') and port['device_id']:
+                vm = nclient.NovaClient().get_server(port['device_id'])
+                details['vm-name'] = vm.name if vm else port['device_id']
+            mtu = self._get_port_mtu(context, port)
+            if mtu:
+                details['interface_mtu'] = mtu
+            details['dns_domain'] = self._get_dns_domain(context, port)
+
+            if port.get('security_groups'):
+                self._add_security_group_details(context, port, details)
+
+            # NOTE(ivar): having these methods cleanly separated actually makes
+            # things less efficient by requiring lots of calls duplication.
+            # we could alleviate this by passing down a cache that stores
+            # commonly requested objects (like EPGs). 'details' itself could
+            # be used for such caching.
+            details['_cache'] = {}
+            vrf = self._get_port_vrf(context, port, details)
+            details['l3_policy_id'] = '%s %s' % (vrf.tenant_name, vrf.name)
+            self._add_subnet_details(context, port, details)
+            self._add_allowed_address_pairs_details(context, port, details)
+            self._add_vrf_details(context, details['l3_policy_id'], details)
+            self._add_nat_details(context, port, host, details)
+            self._add_extra_details(context, port, details)
+            self._add_segmentation_label_details(context, port, details)
+            self._set_dhcp_lease_time(details)
+            details.pop('_cache', None)
+
+        LOG.debug("Details for port %s : %s", port['id'], details)
+        return details
+
     def _get_owned_addresses(self, plugin_context, port_id):
         return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
 
@@ -263,10 +395,20 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return
         details['security_group'] = []
 
-        port_sgs = (context.session.query(sg_models.SecurityGroup.id,
-                                          sg_models.SecurityGroup.tenant_id).
-                    filter(sg_models.SecurityGroup.id.
-                           in_(port['security_groups'])).
+        if hasattr(context, 'port_db'):
+            # REVISIT: This should use baked queries
+            sgs_db = context.port_db.security_groups
+            sg_ids = [sg.security_group_id for sg in sgs_db]
+            port_sgs = (context.session.query(sg_models.SecurityGroup.id,
+                            sg_models.SecurityGroup.tenant_id).
+                        filter(sg_models.SecurityGroup.id.
+                               in_(sg_ids)).
+                    all())
+        else:
+            port_sgs = (context.session.query(sg_models.SecurityGroup.id,
+                            sg_models.SecurityGroup.tenant_id).
+                        filter(sg_models.SecurityGroup.id.
+                               in_(port['security_groups'])).
                     all())
         for sg_id, tenant_id in port_sgs:
             tenant_aname = self.aim_mech_driver.name_mapper.project(
