@@ -59,6 +59,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
+from sqlalchemy.ext import baked
+
+
 LOG = logging.getLogger(__name__)
 FORWARD = 'Forward'
 REVERSE = 'Reverse'
@@ -163,6 +166,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._apic_segmentation_label_driver = None
         self._apic_allowed_vm_name_driver = None
         self._aim = None
+        self._bakery = None
         self._name_mapper = None
         self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
         if self.create_auto_ptg:
@@ -231,6 +235,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if not self._apic_allowed_vm_name_driver:
             self._apic_allowed_vm_name_driver = False
         return self._apic_allowed_vm_name_driver
+
+    @property
+    def bakery(self):
+        if not self._bakery:
+            self._bakery = baked.bakery()
+        return self._bakery
 
     @log.log_method_call
     def ensure_tenant(self, plugin_context, tenant_id):
@@ -1094,7 +1104,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             raise SharedAttributeUpdateNotSupported(type=type)
 
     def _aim_tenant_name(self, session, tenant_id, aim_resource_class=None,
-                         gbp_resource=None, gbp_obj=None):
+                         gbp_resource=None, gbp_obj=None,
+                         cached_objects=None):
         if aim_resource_class and (
             aim_resource_class.__name__ in COMMON_TENANT_AIM_RESOURCES):
             # COMMON_TENANT_AIM_RESOURCES will always be created in the
@@ -1108,7 +1119,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 aim_resource.EndpointGroup.__name__):
                 # the gbp_obj here should be a ptg
                 l2p_id = gbp_obj['l2_policy_id']
-                if l2p_id:
+                if cached_objects and cached_objects.l3p_db:
+                    l3p_id = cached_objects.l3p_db.id
+                elif l2p_id:
                     l2p_db = session.query(
                         gpmdb.L2PolicyMapping).filter_by(id=l2p_id).first()
                     l3p_id = l2p_db['l3_policy_id']
@@ -1117,8 +1130,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 # the gbp_obj here should be a l2p
                 l3p_id = gbp_obj['l3_policy_id']
             if l3p_id:
-                l3p_db = session.query(
-                    gpmdb.L3PolicyMapping).filter_by(id=l3p_id).first()
+                if cached_objects and cached_objects.l3p_db:
+                    l3p_db = cached_objects.l3p_db
+                else:
+                    l3p_db = session.query(
+                        gpmdb.L3PolicyMapping).filter_by(id=l3p_id).first()
                 tenant_id = l3p_db['tenant_id']
             tenant_name = self.name_mapper.project(session, tenant_id)
         LOG.debug("Mapped tenant_id %(id)s to %(apic_name)s",
@@ -1212,19 +1228,20 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                             bd_tenant_name=None,
                             provided_contracts=None,
                             consumed_contracts=None,
-                            policy_enforcement_pref=UNENFORCED):
+                            policy_enforcement_pref=UNENFORCED,
+                            cached_objects=None):
         # This returns a new AIM EPG resource
         tenant_id = ptg['tenant_id']
         tenant_name = self._aim_tenant_name(
             session, tenant_id, aim_resource_class=aim_resource.EndpointGroup,
-            gbp_obj=ptg)
+            gbp_obj=ptg, cached_objects=cached_objects)
         id = ptg['id']
         name = ptg['name']
         display_name = self.aim_display_name(ptg['name'])
         ap_name = self.apic_ap_name_for_application_policy_group(
             session, ptg['application_policy_group_id'])
         epg_name = self.apic_epg_name_for_policy_target_group(
-            session, id, name)
+            session, id, name, cached_objects=cached_objects)
         LOG.debug("Using application_profile %(ap_name)s "
                   "for epg %(epg_name)s",
                   {'ap_name': ap_name, 'epg_name': epg_name})
@@ -1249,9 +1266,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         epg = aim_resource.EndpointGroup(**kwargs)
         return epg
 
-    def _get_aim_endpoint_group(self, session, ptg):
+    def _get_aim_endpoint_group(self, session, ptg, cached_objects=None):
         # This gets an EPG from the AIM DB
-        epg = self._aim_endpoint_group(session, ptg)
+        epg = self._aim_endpoint_group(session, ptg,
+                                       cached_objects=cached_objects)
         aim_ctx = aim_context.AimContext(session)
         epg_fetched = self.aim.get(aim_ctx, epg)
         if not epg_fetched:
@@ -1485,6 +1503,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _delete_aim_contract_subject(self, aim_context, aim_contract):
         aim_contract_subject = self._aim_contract_subject(aim_contract)
         self.aim.delete(aim_context, aim_contract_subject)
+
+    def _get_aim_default_endpoint_group_cached(self, context):
+        mapping = context.network_mapping_db
+        return mapping and self.aim_mech_driver._get_network_epg(mapping)
 
     def _get_aim_default_endpoint_group(self, session, network):
         return self.aim_mech_driver.get_epg_for_network(session, network)
@@ -1778,9 +1800,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return aim_context.AimContext(session)
 
     def _is_port_promiscuous(self, plugin_context, port):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
+        if hasattr(plugin_context, 'pt_db'):
+            pt = plugin_context.pt_db
+        else:
+            pt = self._port_id_to_pt(plugin_context, port['id'])
         if (pt and pt.get('cluster_id') and
                 pt.get('cluster_id') != pt['id']):
+            # REVISIT: Should we add this as a baked query?
             master = self._get_policy_target(plugin_context, pt['cluster_id'])
             if master.get('group_default_gateway'):
                 return True
@@ -1788,7 +1814,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 port['name'].endswith(PROMISCUOUS_SUFFIX) or
                 (pt and pt.get('group_default_gateway'))):
             return True
-        if not port.get('port_security_enabled', True):
+        if hasattr(plugin_context, 'port_db'):
+            security = port.port_security
+        else:
+            security = port
+        if not security.get('port_security_enabled', True):
             return True
         return False
 
@@ -1802,6 +1832,19 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if self.aim_mech_driver.apic_optimized_dhcp_lease_time > 0:
             details['dhcp_lease_time'] = (
                 self.aim_mech_driver.apic_optimized_dhcp_lease_time)
+
+    def _get_port_epg_cached(self, plugin_context, port):
+        if hasattr(plugin_context, 'ptg_db'):
+            return self._get_aim_endpoint_group(plugin_context.session,
+                plugin_context.ptg_db, cached_objects=plugin_context)
+        else:
+            epg = self._get_aim_default_endpoint_group_cached(plugin_context)
+            if not epg:
+                # Something is wrong, default EPG doesn't exist.
+                # TODO(ivar): should rise an exception
+                LOG.error("Default EPG doesn't exist for "
+                          "port %s", port['id'])
+            return epg
 
     def _get_port_epg(self, plugin_context, port):
         ptg, pt = self._port_id_to_ptg(plugin_context, port['id'])
@@ -1890,7 +1933,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.aim_mech_driver._notify_port_update(plugin_context, port)
 
     def _get_aap_details(self, plugin_context, port, details):
-        aaps = port['allowed_address_pairs']
+        if hasattr(plugin_context, 'port_db'):
+            all_pairs = port.allowed_address_pairs
+            aaps = [{'mac_address': a_pair['mac_address'],
+                     'ip_address': a_pair['ip_address']}
+                    for a_pair in port.allowed_address_pairs]
+        else:
+            aaps = port['allowed_address_pairs']
         # Set the correct address ownership for this port
         owned_addresses = self._get_owned_addresses(
             plugin_context, port['id'])
@@ -1902,6 +1951,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return aaps
 
     def _get_port_vrf(self, plugin_context, port, details):
+        if hasattr(plugin_context, 'network_mapping_db'):
+            mapping = plugin_context.network_mapping_db
+            return mapping and self.aim_mech_driver._get_network_vrf(mapping)
         net_db = self._core_plugin._get_network(plugin_context,
                                                 port['network_id'])
         return self.aim_mech_driver.get_vrf_for_network(
@@ -2319,7 +2371,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return default_epg_name
 
     def apic_epg_name_for_policy_target_group(self, session, ptg_id,
-                                              name=None, context=None):
+                                              name=None, context=None,
+                                              cached_objects=None):
+        # Avoid DB queries if we already have the info
+        if cached_objects and cached_objects.ptg_db:
+            ptg_db = cached_objects.ptg_db
+            if ptg_db and self._is_auto_ptg(ptg_db):
+                net = cached_objects.network_db
+                admin_context = n_context.get_admin_context()
+                default_epg_dn = net[cisco_apic.DIST_NAMES][cisco_apic.EPG]
+                default_epg_name = self._get_epg_name_from_dn(
+                    admin_context, default_epg_dn)
+                return default_epg_name
+            else:
+                return ptg_id
+
         if not context:
             context = gbp_utils.get_current_context()
         # get_network can do a DB write, hence we use a writer
@@ -2393,7 +2459,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _get_port_mtu(self, context, port):
         if self.advertise_mtu:
-            for dhcp_opt in port.get('extra_dhcp_opts'):
+            if hasattr(context, 'port_db'):
+                dhcp_opts = port.dhcp_opts
+            else:
+                dhcp_opts = port.get('extra_dhcp_opts')
+            for dhcp_opt in dhcp_opts:
                 if (dhcp_opt.get('opt_name') == 'interface-mtu' or
                         dhcp_opt.get('opt_name') == '26'):
                     if dhcp_opt.get('opt_value'):
