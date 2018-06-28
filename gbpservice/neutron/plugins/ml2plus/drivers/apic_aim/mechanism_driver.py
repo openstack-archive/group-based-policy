@@ -1558,6 +1558,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._manage_external_connectivity(context, router, None, net,
                                                    vrf)
 
+            aim_l3out, _, ns = self._get_aim_nat_strategy(net)
+            if aim_l3out and ns:
+                ns.set_bd_l3out(aim_ctx, bd, aim_l3out)
+
             # SNAT information of ports on the subnet will change because
             # of router interface addition. Send a port update so that it may
             # be recalculated.
@@ -1704,6 +1708,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                    None, old_vrf)
                 self._manage_external_connectivity(context, router_db, None,
                                                    net, router_vrf)
+
+            # If network is no longer connected to this router
+            if router_id not in router_ids:
+                aim_l3out, _, ns = self._get_aim_nat_strategy(net)
+                if aim_l3out and ns:
+                    ns.unset_bd_l3out(aim_ctx, bd, aim_l3out)
 
             # SNAT information of ports on the subnet will change because
             # of router interface removal. Send a port update so that it may
