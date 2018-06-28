@@ -4870,8 +4870,15 @@ class TestExternalConnectivityBase(object):
         self._delete('subnets', subnet['id'])
         self.mock_ns.delete_subnet.assert_not_called()
 
+    # This will be invoked for non-NoNat strategies
+    def _check_bd_l3out(self, aim_ctx, bridge_domain, l3out_name):
+        bridge_domain = self.aim_mgr.get(aim_ctx, bridge_domain)
+        self.assertEqual([], bridge_domain.l3out_names)
+
     def _do_test_router_interface(self, use_addr_scope=False,
                                   single_tenant=False):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
         cv = self.mock_ns.connect_vrf
         dv = self.mock_ns.disconnect_vrf
 
@@ -4958,6 +4965,13 @@ class TestExternalConnectivityBase(object):
                         cv.assert_called_once_with(mock.ANY, a_ext_net, a_vrf)
                     else:
                         cv.assert_not_called()
+
+                    aname = self.name_mapper.network(
+                        None, subnets[idx]['network_id'])
+                    aim_bd = aim_resource.BridgeDomain(
+                        tenant_name=tenant_aname, name=aname)
+                    self._check_bd_l3out(aim_ctx, aim_bd, 'l1')
+
                     self._validate()
             vrf_objs[tenant] = a_ext_net
 
@@ -4985,6 +4999,11 @@ class TestExternalConnectivityBase(object):
                     self.mock_ns.reset_mock()
                     self._router_interface_action('remove', router['id'],
                                                   subnets[idx]['id'], None)
+                    aname = self.name_mapper.network(
+                        None, subnets[idx]['network_id'])
+                    aim_bd = aim_resource.BridgeDomain(
+                        tenant_name=tenant_aname, name=aname)
+                    # Last subnet being dis-connected from the router
                     if idx == len(subnets) - 1:
                         num_router -= 1
                         if num_router:
@@ -4993,9 +5012,13 @@ class TestExternalConnectivityBase(object):
                         else:
                             dv.assert_called_once_with(mock.ANY, a_ext_net,
                                                        a_vrf)
+                        aim_bd = self.aim_mgr.get(aim_ctx, aim_bd)
+                        self.assertEqual([], aim_bd.l3out_names)
                     else:
                         cv.assert_not_called()
                         dv.assert_not_called()
+                        self._check_bd_l3out(aim_ctx, aim_bd, 'l1')
+
                     self._validate()
 
         self.mock_ns.reset_mock()
@@ -5119,6 +5142,15 @@ class TestExternalConnectivityBase(object):
 
         self._router_interface_action('add', router['id'], sub1['id'], None)
         self.mock_ns.connect_vrf.assert_not_called()
+
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        tenant_aname = self.name_mapper.project(None, net['tenant_id'])
+        aname = self.name_mapper.network(None, net['id'])
+        aim_bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
+                                           name=aname)
+        aim_bd = self.aim_mgr.get(aim_ctx, aim_bd)
+        self.assertEqual([], aim_bd.l3out_names)
 
         self._router_interface_action('remove', router['id'], sub1['id'], None)
         self.mock_ns.disconnect_vrf.assert_not_called()
@@ -5749,6 +5781,10 @@ class TestExternalNoNat(TestExternalConnectivityBase,
     def test_router_interface(self):
         self._do_test_router_interface(use_addr_scope=False,
                                        single_tenant=True)
+
+    def _check_bd_l3out(self, aim_ctx, bridge_domain, l3out_name):
+        bridge_domain = self.aim_mgr.get(aim_ctx, bridge_domain)
+        self.assertEqual([l3out_name], bridge_domain.l3out_names)
 
 
 class TestSnatIpAllocation(ApicAimTestCase):
