@@ -4874,6 +4874,8 @@ class TestExternalConnectivityBase(object):
 
     def _do_test_router_interface(self, use_addr_scope=False,
                                   single_tenant=False):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
         cv = self.mock_ns.connect_vrf
         dv = self.mock_ns.disconnect_vrf
 
@@ -4960,6 +4962,18 @@ class TestExternalConnectivityBase(object):
                         cv.assert_called_once_with(mock.ANY, a_ext_net, a_vrf)
                     else:
                         cv.assert_not_called()
+
+                    # TBD
+                    aname = self.name_mapper.network(
+                        None, subnets[idx]['network_id'])
+                    aim_bd = aim_resource.BridgeDomain(
+                        tenant_name=tenant_aname, name=aname)
+                    aim_bd = self.aim_mgr.get(aim_ctx, aim_bd)
+                    if self.nat_type == '':
+                        self.assertEqual(['l1'], aim_bd.l3out_names)
+                    else:
+                        self.assertEqual([], aim_bd.l3out_names)
+
                     self._validate()
             vrf_objs[tenant] = a_ext_net
 
@@ -4998,6 +5012,14 @@ class TestExternalConnectivityBase(object):
                     else:
                         cv.assert_not_called()
                         dv.assert_not_called()
+
+                    aname = self.name_mapper.network(
+                        None, subnets[idx]['network_id'])
+                    aim_bd = aim_resource.BridgeDomain(
+                        tenant_name=tenant_aname, name=aname)
+                    aim_bd = self.aim_mgr.get(aim_ctx, aim_bd)
+                    self.assertEqual([], aim_bd.l3out_names)
+
                     self._validate()
 
         self.mock_ns.reset_mock()
@@ -5121,6 +5143,16 @@ class TestExternalConnectivityBase(object):
 
         self._router_interface_action('add', router['id'], sub1['id'], None)
         self.mock_ns.connect_vrf.assert_not_called()
+
+        # TBD
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        tenant_aname = self.name_mapper.project(None, net['tenant_id'])
+        aname = self.name_mapper.network(None, net['id'])
+        aim_bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
+                                           name=aname)
+        aim_bd = self.aim_mgr.get(aim_ctx, aim_bd)
+        self.assertEqual([], aim_bd.l3out_names)
 
         self._router_interface_action('remove', router['id'], sub1['id'], None)
         self.mock_ns.disconnect_vrf.assert_not_called()
