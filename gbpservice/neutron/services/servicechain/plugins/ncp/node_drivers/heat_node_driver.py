@@ -15,8 +15,8 @@ import time
 from heatclient import exc as heat_exc
 from neutron.db import api as db_api
 from neutron.db import models_v2 as ndb
-from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
+from neutron_lib.plugins import constants as pconst
 from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import helpers as log
