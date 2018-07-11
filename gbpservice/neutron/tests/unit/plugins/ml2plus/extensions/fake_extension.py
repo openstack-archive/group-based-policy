@@ -13,7 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.extensions import address_scope as as_ext
+from neutron_lib.api.definitions import address_scope as as_def
 from neutron_lib.api.definitions import subnetpool as subnetpool_def
 from neutron_lib.api import extensions
 from neutron_lib import constants
@@ -29,7 +29,7 @@ EXTENDED_ATTRIBUTES_2_0 = {
                                  'is_visible': True,
                                  'enforce_policy': True},
     },
-    as_ext.ADDRESS_SCOPES: {
+    as_def.COLLETION_NAME: {
         'address_scope_extension': {'allow_post': True,
                                     'allow_put': True,
                                     'default': constants.ATTR_NOT_SPECIFIED,
