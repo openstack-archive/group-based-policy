@@ -14,8 +14,8 @@
 import six
 import webob.exc
 
-from neutron.plugins.common import constants
 from neutron_lib import context
+from neutron_lib.plugins import constants
 from oslo_config import cfg
 from oslo_utils import uuidutils
 
