@@ -14,10 +14,11 @@
 #    under the License.
 
 from neutron.extensions import address_scope
+from neutron_lib.api.definitions import address_scope as apidef
 
 
 class Patched_address_scope(address_scope.Address_scope):
     def update_attributes_map(self, attributes):
         super(Patched_address_scope, self).update_attributes_map(
             attributes,
-            extension_attrs_map=address_scope.RESOURCE_ATTRIBUTE_MAP)
+            extension_attrs_map=apidef.RESOURCE_ATTRIBUTE_MAP)

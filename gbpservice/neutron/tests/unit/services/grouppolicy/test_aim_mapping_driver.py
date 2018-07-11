@@ -303,7 +303,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def _show_subnet(self, id):
         req = self.new_show_request('subnets', id, fmt=self.fmt)
         return self.deserialize(self.fmt,
-                                req.get_response(self.api))['subnet']
+                                req.get_response(self.ext_api))['subnet']
 
     def _show_port(self, id):
         req = self.new_show_request('ports', id, fmt=self.fmt)
@@ -807,7 +807,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.delete_l2_policy(l2p_id, expected_res_status=204)
         self.show_l2_policy(l2p_id, expected_res_status=404)
         req = self.new_show_request('networks', network_id, fmt=self.fmt)
-        res = req.get_response(self.api)
+        res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
         l2ps = self._gbp_plugin.get_l2_policies(
             self._neutron_context)
@@ -2043,7 +2043,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
 
         subnet_id = ptg['subnets'][0]
         req = self.new_show_request('subnets', subnet_id)
-        subnet = self.deserialize(self.fmt, req.get_response(self.api))
+        subnet = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
         with self.port(subnet=subnet) as port:
             port_id = port['port']['id']
@@ -4706,7 +4706,7 @@ class TestNatPool(AIMBaseTestCase):
         sub_id = nat_pool['subnet_id']
         self.delete_nat_pool(
             nat_pool['id'], expected_res_status=webob.exc.HTTPNoContent.code)
-        self._get_object('subnets', sub_id, self.api,
+        self._get_object('subnets', sub_id, self.ext_api,
                          expected_res_status=404 if owned else 200)
 
         # Subnet deleted on 'update'
@@ -4729,7 +4729,7 @@ class TestNatPool(AIMBaseTestCase):
         self.assertIsNotNone(nat_pool['subnet_id'])
 
         # Verify subnet deleted
-        self._get_object('subnets', sub_id, self.api,
+        self._get_object('subnets', sub_id, self.ext_api,
                          expected_res_status=404 if owned else 200)
 
     def test_owned_subnet_deleted(self):

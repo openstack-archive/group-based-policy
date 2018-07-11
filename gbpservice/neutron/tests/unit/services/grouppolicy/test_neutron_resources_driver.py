@@ -12,9 +12,9 @@
 # limitations under the License.
 
 import mock
-from neutron.plugins.common import constants as pconst
 from neutron_lib import constants
 from neutron_lib import context as nctx
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 import webob.exc
 
@@ -87,7 +87,7 @@ class TestL2Policy(CommonNeutronBaseTestCase):
         self.delete_l2_policy(l2p_id, expected_res_status=204)
         self.show_l2_policy(l2p_id, expected_res_status=404)
         req = self.new_show_request('networks', network_id, fmt=self.fmt)
-        res = req.get_response(self.api)
+        res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
         self.show_l3_policy(l3p_id, expected_res_status=404)
 
