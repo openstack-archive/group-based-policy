@@ -4402,7 +4402,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertFalse(extn.get_network_extn_db(session, net2['id']))
 
     def test_network_with_nested_domain_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
         vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
                      'vlan_ranges': [{'start': '6', 'end': '9'},
