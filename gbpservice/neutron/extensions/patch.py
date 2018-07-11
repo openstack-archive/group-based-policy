@@ -10,17 +10,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron.api import extensions
 from neutron.db import address_scope_db
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
-from neutron.extensions import address_scope as ext_address_scope
 from neutron.objects import subnetpool as subnetpool_obj
 from neutron.plugins.ml2 import db as ml2_db
+from neutron_lib.api import attributes
 from neutron_lib.api import validators
-from neutron_lib import exceptions as n_exc
+from neutron_lib import exceptions
+from neutron_lib.exceptions import address_scope as api_err
 from oslo_log import log
 from oslo_utils import excutils
 from sqlalchemy import event
@@ -185,7 +187,7 @@ def _get_tenant_id_for_create(self, context, resource):
     elif ('tenant_id' in resource and
           resource['tenant_id'] != context.project_id):
         reason = _('Cannot create resource for another tenant')
-        raise n_exc.AdminRequired(reason=reason)
+        raise exceptions.AdminRequired(reason=reason)
     else:
         tenant_id = context.project_id
 
@@ -207,12 +209,136 @@ def _delete_address_scope(self, context, id):
     with context.session.begin(subtransactions=True):
         if subnetpool_obj.SubnetPool.get_objects(context,
                                                  address_scope_id=id):
-            raise ext_address_scope.AddressScopeInUse(address_scope_id=id)
+            raise api_err.AddressScopeInUse(address_scope_id=id)
         address_scope = self._get_address_scope(context, id)
         address_scope.delete()
 
 address_scope_db.AddressScopeDbMixin.delete_address_scope = (
     _delete_address_scope)
+
+
+def extend_resources(self, version, attr_map):
+        """Extend resources with additional resources or attributes.
+
+        :param attr_map: the existing mapping from resource name to
+        attrs definition.
+
+        After this function, we will extend the attr_map if an extension
+        wants to extend this map.
+        """
+        processed_exts = {}
+        exts_to_process = self.extensions.copy()
+        check_optionals = True
+        # Iterate until there are unprocessed extensions or if no progress
+        # is made in a whole iteration
+        while exts_to_process:
+            processed_ext_count = len(processed_exts)
+            for ext_name, ext in list(exts_to_process.items()):
+                # Process extension only if all required extensions
+                # have been processed already
+                required_exts_set = set(ext.get_required_extensions())
+                if required_exts_set - set(processed_exts):
+                    continue
+                optional_exts_set = set(ext.get_optional_extensions())
+                if check_optionals and optional_exts_set - set(processed_exts):
+                    continue
+                extended_attrs = ext.get_extended_resources(version)
+                for res, resource_attrs in extended_attrs.items():
+                    res_to_update = attr_map.setdefault(res, {})
+                    if self._is_sub_resource(res_to_update):
+                        # kentwu: service_profiles defined in servicechain
+                        # plugin has a name conflict with service_profiles
+                        # sub-resource defined in flavor plugin. The attr_map
+                        # can only have one service_profiles so here we make
+                        # this very same service_profiles to have the
+                        # attributes from both plugins. This behavior is now
+                        # consistent with Pike.
+                        if (ext_name == 'servicechain' and
+                                res == 'service_profiles'):
+                            res_to_update.update(resource_attrs)
+                        # in the case of an existing sub-resource, we need to
+                        # update the parameters content rather than overwrite
+                        # it, and also keep the description of the parent
+                        # resource unmodified
+                        else:
+                            res_to_update['parameters'].update(
+                                resource_attrs['parameters'])
+                    else:
+                        res_to_update.update(resource_attrs)
+                processed_exts[ext_name] = ext
+                del exts_to_process[ext_name]
+            if len(processed_exts) == processed_ext_count:
+                # if we hit here, it means there are unsatisfied
+                # dependencies. try again without optionals since optionals
+                # are only necessary to set order if they are present.
+                if check_optionals:
+                    check_optionals = False
+                    continue
+                # Exit loop as no progress was made
+                break
+        if exts_to_process:
+            unloadable_extensions = set(exts_to_process.keys())
+            LOG.error("Unable to process extensions (%s) because "
+                      "the configured plugins do not satisfy "
+                      "their requirements. Some features will not "
+                      "work as expected.",
+                      ', '.join(unloadable_extensions))
+            self._check_faulty_extensions(unloadable_extensions)
+        # Extending extensions' attributes map.
+        for ext in processed_exts.values():
+            ext.update_attributes_map(attr_map)
+
+extensions.ExtensionManager.extend_resources = extend_resources
+
+
+def fill_post_defaults(
+        self, res_dict,
+        exc_cls=lambda m: exceptions.InvalidInput(error_message=m),
+        check_allow_post=True):
+    """Fill in default values for attributes in a POST request.
+
+    When a POST request is made, the attributes with default values do not
+    need to be specified by the user. This function fills in the values of
+    any unspecified attributes if they have a default value.
+
+    If an attribute is not specified and it does not have a default value,
+    an exception is raised.
+
+    If an attribute is specified and it is not allowed in POST requests, an
+    exception is raised. The caller can override this behavior by setting
+    check_allow_post=False (used by some internal admin operations).
+
+    :param res_dict: The resource attributes from the request.
+    :param exc_cls: Exception to be raised on error that must take
+        a single error message as it's only constructor arg.
+    :param check_allow_post: Raises an exception if a non-POST-able
+        attribute is specified.
+    :raises: exc_cls If check_allow_post is True and this instance of
+        ResourceAttributes doesn't support POST.
+    """
+    for attr, attr_vals in self.attributes.items():
+        # kentwu: Patch needed for our GBP service_profiles attribute. Since
+        # parent and parameters are both sub-resource's attributes picked up
+        # from flavor plugin so we can just ignore those. These 2 attributes
+        # don't have allow_post defined so it will just fail without this
+        # patch.
+        if attr == 'parent' or attr == 'parameters':
+            if 'allow_post' not in attr_vals:
+                continue
+        if attr_vals['allow_post']:
+            if 'default' not in attr_vals and attr not in res_dict:
+                msg = _("Failed to parse request. Required "
+                        "attribute '%s' not specified") % attr
+                raise exc_cls(msg)
+            res_dict[attr] = res_dict.get(attr,
+                                          attr_vals.get('default'))
+        elif check_allow_post:
+            if attr in res_dict:
+                msg = _("Attribute '%s' not allowed in POST") % attr
+                raise exc_cls(msg)
+
+attributes.AttributeInfo.fill_post_defaults = fill_post_defaults
+
 
 # TODO(ivar): while this block would be better place in the patch_neutron
 # module, it seems like being part of an "extension" package is the only

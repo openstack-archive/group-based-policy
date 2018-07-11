@@ -14,11 +14,11 @@ import netaddr
 import six
 
 from neutron.db import api as db_api
-from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants
 from neutron_lib import context as n_ctx
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 from oslo_log import log as logging
