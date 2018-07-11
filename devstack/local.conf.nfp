@@ -43,10 +43,10 @@ if [[ $ENABLE_NFP = True ]]; then
         # Make sure that your public interface is not attached to any bridge.
         PUBLIC_INTERFACE=
 
-        enable_plugin neutron-fwaas http://git.openstack.org/openstack/neutron-fwaas stable/pike
-        enable_plugin neutron-lbaas https://git.openstack.org/openstack/neutron-lbaas stable/pike
-        enable_plugin neutron https://github.com/openstack/neutron.git stable/pike
-        enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/pike
+        enable_plugin neutron-fwaas http://git.openstack.org/openstack/neutron-fwaas stable/queens
+        enable_plugin neutron-lbaas https://git.openstack.org/openstack/neutron-lbaas stable/queens
+        enable_plugin neutron https://github.com/openstack/neutron.git stable/queens
+        enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/queens
         enable_plugin octavia https://git.openstack.org/openstack/octavia
         #enable_plugin barbican https://git.openstack.org/openstack/barbican master
         #enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git master
