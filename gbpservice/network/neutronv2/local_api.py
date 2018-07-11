@@ -12,14 +12,14 @@
 # limitations under the License.
 
 from neutron.extensions import address_scope
-from neutron.extensions import l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
-from neutron.plugins.common import constants as pconst
 from neutron import quota
+from neutron_lib.api.definitions import l3
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as nl_const
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
 from oslo_utils import excutils
