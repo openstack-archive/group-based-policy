@@ -13,9 +13,9 @@
 import copy
 
 import mock
-from neutron.plugins.common import constants
 from neutron.tests.unit.api.v2 import test_base
 from neutron.tests.unit.extensions import base as test_extensions_base
+from neutron_lib.plugins import constants
 from oslo_utils import uuidutils
 from webob import exc
 
@@ -32,7 +32,7 @@ SERVICECHAIN_URI = 'servicechain'
 SERVICECHAIN_NODES_URI = SERVICECHAIN_URI + '/' + 'servicechain_nodes'
 SERVICECHAIN_SPECS_URI = SERVICECHAIN_URI + '/' + 'servicechain_specs'
 SERVICECHAIN_INSTANCES_URI = SERVICECHAIN_URI + '/' + 'servicechain_instances'
-SERVICE_PROFILE_URI = SERVICECHAIN_URI + '/' + 'service_profiles'
+SERVICE_PROFILE_URI = SERVICECHAIN_URI + '/' + 'gbp_service_profiles'
 
 
 class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):

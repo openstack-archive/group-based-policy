@@ -144,7 +144,7 @@ class BaseTestGroupPolicyPluginGroupResources(
             expected_res_status=201)
 
         data = {'service_profile': {'shared': False}}
-        req = self.new_update_request('service_profiles', data,
+        req = self.new_update_request('gbp_service_profiles', data,
                                       prof['id'])
         res = req.get_response(self.ext_api)
         self.assertEqual(400, res.status_int)
@@ -159,7 +159,7 @@ class BaseTestGroupPolicyPluginGroupResources(
             expected_res_status=201)
 
         data = {'service_profile': {'shared': True}}
-        req = self.new_update_request('service_profiles', data,
+        req = self.new_update_request('gbp_service_profiles', data,
                                       prof['id'])
         res = req.get_response(self.ext_api)
         self.assertEqual(200, res.status_int)
