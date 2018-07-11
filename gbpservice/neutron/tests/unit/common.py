@@ -561,7 +561,9 @@ def get_create_servicechain_instance_default_attrs_and_prj_id():
 
 
 def get_resource_plural(resource):
-    if resource.endswith('y'):
+    if resource == 'service_profile':
+        resource_plural = 'gbp_service_profiles'
+    elif resource.endswith('y'):
         resource_plural = resource.replace('y', 'ies')
     else:
         resource_plural = resource + 's'

@@ -11,15 +11,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from neutron.extensions import address_scope
-from neutron.extensions import l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
-from neutron.plugins.common import constants as pconst
 from neutron import quota
+from neutron_lib.api.definitions import l3
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as nl_const
 from neutron_lib import exceptions as n_exc
+from neutron_lib.exceptions import address_scope as api_err
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
 from oslo_utils import excutils
@@ -578,7 +578,7 @@ class LocalAPI(object):
         try:
             self._delete_resource(self._core_plugin, plugin_context,
                                   'address_scope', address_scope_id)
-        except address_scope.AddressScopeNotFound:
+        except api_err.AddressScopeNotFound:
             LOG.warning('Address Scope %s already deleted',
                         address_scope_id)
 

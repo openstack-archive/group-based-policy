@@ -16,11 +16,11 @@ from neutron.db import common_db_mixin
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
-from neutron.extensions import address_scope as ext_address_scope
 from neutron.objects import subnetpool as subnetpool_obj
 from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib.api import validators
 from neutron_lib import exceptions as n_exc
+from neutron_lib.exceptions import address_scope as api_err
 from oslo_log import log
 from oslo_utils import excutils
 from sqlalchemy import event
@@ -91,7 +91,7 @@ if not hasattr(quota_resource, 'GBP_PATCHED'):
         request = gbp_utils.get_obj_from_stack(neutron_resource.Request)
         orig_plugins = directory._get_plugin_directory()._plugins
         if request and request.environ['PATH_INFO'] == (
-                '/servicechain/service_profiles.json'):
+                '/servicechain/gbp_service_profiles.json'):
             new_plugins = copy.copy(directory._get_plugin_directory()._plugins)
             # The service_profile resource is supported by the FLAVORS
             # plugin as well as the SERVICECHAIN plugin. At this point
@@ -207,7 +207,7 @@ def _delete_address_scope(self, context, id):
     with context.session.begin(subtransactions=True):
         if subnetpool_obj.SubnetPool.get_objects(context,
                                                  address_scope_id=id):
-            raise ext_address_scope.AddressScopeInUse(address_scope_id=id)
+            raise api_err.AddressScopeInUse(address_scope_id=id)
         address_scope = self._get_address_scope(context, id)
         address_scope.delete()
 
