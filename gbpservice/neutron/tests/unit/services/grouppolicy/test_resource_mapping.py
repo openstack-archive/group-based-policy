@@ -21,7 +21,6 @@ import netaddr
 from neutron.db.qos import models as qos_models
 from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
-from neutron.plugins.common import constants as pconst
 from neutron.services.qos.drivers.openvswitch import driver as qos_ovs_driver
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
@@ -29,6 +28,7 @@ from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
 from neutron_lib import constants as cst
 from neutron_lib import context as nctx
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_utils import uuidutils
 import unittest2

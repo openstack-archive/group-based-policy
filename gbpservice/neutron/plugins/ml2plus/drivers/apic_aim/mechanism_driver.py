@@ -31,9 +31,6 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
-from neutron.callbacks import events
-from neutron.callbacks import registry
-from neutron.callbacks import resources
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import api as db_api
@@ -47,18 +44,21 @@ from neutron.db import provisioning_blocks
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
 from neutron.extensions import external_net
-from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import db as n_db
-from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import driver_context as ml2_context
 from neutron.plugins.ml2.drivers.openvswitch.agent.common import (
     constants as a_const)
 from neutron.plugins.ml2 import models
 from neutron_lib.api.definitions import portbindings
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
+from neutron_lib.callbacks import resources
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
+from neutron_lib.plugins.ml2 import api
 from opflexagent import constants as ofcst
 from opflexagent import host_agent_rpc as arpc
 from opflexagent import rpc as ofrpc
