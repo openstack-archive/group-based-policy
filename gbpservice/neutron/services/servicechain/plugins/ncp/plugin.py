@@ -11,8 +11,8 @@
 #    under the License.
 
 from neutron.db import api as db_api
-from neutron.plugins.common import constants as pconst
 from neutron.quota import resource_registry
+from neutron_lib.plugins import constants as pconst
 from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
