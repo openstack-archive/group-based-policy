@@ -18,13 +18,13 @@ from keystoneclient.v2_0 import client as k_client
 from neutron.common import exceptions as neutron_exc
 from neutron.db import api as db_api
 from neutron.db import models_v2
-from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron_lib.api.definitions import port as port_def
 from neutron_lib import constants as n_const
 from neutron_lib import context as n_context
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
+from neutron_lib.exceptions import l3 as ext_l3
 from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_db import exception as oslo_db_excp
@@ -1727,15 +1727,15 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         group_id = context.current['policy_target_group_id']
         if context.current.get('proxy_gateway'):
             pts = context._plugin.get_policy_targets(
-                context._plugin_context, {'policy_target_group_id': group_id,
-                                          'proxy_gateway': True})
+                context._plugin_context, {'policy_target_group_id': [group_id],
+                                          'proxy_gateway': [True]})
             pts = [x['id'] for x in pts if x['id'] != context.current['id']]
             if pts:
                 exc.OnlyOneProxyGatewayAllowed(group_id=group_id)
         if context.current.get('group_default_gateway'):
             pts = context._plugin.get_policy_targets(
-                context._plugin_context, {'policy_target_group_id': group_id,
-                                          'group_default_gateway': True})
+                context._plugin_context, {'policy_target_group_id': [group_id],
+                                          'group_default_gateway': [True]})
             pts = [x['id'] for x in pts if x['id'] != context.current['id']]
             if pts:
                 exc.OnlyOneGroupDefaultGatewayAllowed(group_id=group_id)
@@ -3071,7 +3071,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         # Get all the EP for this tenant
         ep_list = context._plugin.get_external_policies(
             context._plugin_context,
-            filters={'tenant_id': context.current['tenant_id']})
+            filters={'tenant_id': [context.current['tenant_id']]})
         for ep in ep_list:
             # Remove rules before the new ip_pool came
             ip_pool_list = gbp_utils.convert_ip_pool_string_to_list(ip_pool)
@@ -3087,7 +3087,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
         # Get all the EP for this tenant
         ep_list = context._plugin.get_external_policies(
             context._plugin_context,
-            filters={'tenant_id': context.current['tenant_id']})
+            filters={'tenant_id': [context.current['tenant_id']]})
         for ep in ep_list:
             # Cidrs before the ip_pool removal
             ip_pool_list = gbp_utils.convert_ip_pool_string_to_list(ip_pool)
