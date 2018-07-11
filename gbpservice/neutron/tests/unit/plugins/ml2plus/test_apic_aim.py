@@ -1114,7 +1114,11 @@ class TestAimMapping(ApicAimTestCase):
         self._check_network(net)
 
         # updating SVI flag is not allowed
-        self._update('networks', net['id'], {SVI: 'False'}, 400)
+        data = {'network': {SVI: False}}
+        req = self.new_update_request('networks', data, net['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_code, 400)
+
         self.assertEqual(True, net[SVI])
         self._check_network(net)
 
@@ -4505,7 +4509,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertFalse(extn.get_network_extn_db(session, net2['id']))
 
     def test_network_with_nested_domain_lifecycle(self):
-        session = db_api.get_session()
+        session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
         vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
                      'vlan_ranges': [{'start': '6', 'end': '9'},
@@ -4665,11 +4669,16 @@ class TestExtensionAttributes(ApicAimTestCase):
                                       dn=self.dn_t1_l1_n1,
                                       nat_type='edge')
 
-        self._update('networks', net1['id'],
-            {'network':
-             {DN: {'ExternalNetwork': 'uni/tn-t1/out-l1/instP-n2'}}},
-            400)
-        self._update('networks', net1['id'], {'apic:nat_type': ''}, 400)
+        data = {'network': {DN:
+                            {'ExternalNetwork': 'uni/tn-t1/out-l1/instP-n2'}}}
+        req = self.new_update_request('networks', data, net1['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_code, 400)
+
+        data = {'network': {'apic:nat_type': ''}}
+        req = self.new_update_request('networks', data, net1['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_code, 400)
 
     def test_external_subnet_lifecycle(self):
         session = db_api.get_reader_session()

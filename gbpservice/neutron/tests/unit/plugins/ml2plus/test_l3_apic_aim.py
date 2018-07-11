@@ -85,7 +85,7 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
                            'name': ROUTER}}
         router = self.plugin.create_router(self.context, attr)
 
-        with mock.patch('neutron.callbacks.registry.notify'):
+        with mock.patch('neutron_lib.callbacks.registry.notify'):
             info = self.plugin.add_router_interface(self.context,
                                                     router['id'],
                                                     interface_info)

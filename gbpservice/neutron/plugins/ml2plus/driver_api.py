@@ -16,7 +16,7 @@
 import abc
 import six
 
-from neutron.plugins.ml2 import driver_api
+from neutron_lib.plugins.ml2 import api as driver_api
 
 BULK_EXTENDED = 'ml2plus:_bulk_extended'
 
