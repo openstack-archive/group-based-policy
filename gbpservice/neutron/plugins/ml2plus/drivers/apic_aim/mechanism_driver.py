@@ -31,9 +31,6 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
-from neutron.callbacks import events
-from neutron.callbacks import registry
-from neutron.callbacks import resources
 from neutron.common import rpc as n_rpc
 from neutron.common import topics as n_topics
 from neutron.db import api as db_api
@@ -46,19 +43,21 @@ from neutron.db import models_v2
 from neutron.db import provisioning_blocks
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
-from neutron.extensions import external_net
-from neutron.plugins.common import constants as pconst
 from neutron.plugins.ml2 import db as n_db
-from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import driver_context as ml2_context
 from neutron.plugins.ml2.drivers.openvswitch.agent.common import (
     constants as a_const)
 from neutron.plugins.ml2 import models
+from neutron_lib.api.definitions import external_net
 from neutron_lib.api.definitions import portbindings
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
+from neutron_lib.callbacks import resources
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import directory
+from neutron_lib.plugins.ml2 import api
 from opflexagent import constants as ofcst
 from opflexagent import host_agent_rpc as arpc
 from opflexagent import rpc as ofrpc
@@ -2236,7 +2235,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # TODO(amitbose) Consider providing configuration options
                 # for picking network-type and physical-network name
                 # for the dynamic segment
-                seg_args = {api.NETWORK_TYPE: pconst.TYPE_VLAN,
+                seg_args = {api.NETWORK_TYPE: n_constants.TYPE_VLAN,
                             api.PHYSICAL_NETWORK:
                             segment[api.PHYSICAL_NETWORK]}
                 dyn_seg = context.allocate_dynamic_segment(seg_args)
@@ -3335,7 +3334,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return net_type == ofcst.TYPE_OPFLEX
 
     def _is_supported_non_opflex_type(self, net_type):
-        return net_type in [pconst.TYPE_VLAN]
+        return net_type in [n_constants.TYPE_VLAN]
 
     def _use_static_path(self, bound_segment):
         return (bound_segment and
@@ -3345,7 +3344,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _convert_segment(self, segment):
         seg = None
         if segment:
-            if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
+            if segment.get(api.NETWORK_TYPE) in [n_constants.TYPE_VLAN]:
                 seg = 'vlan-%s' % segment[api.SEGMENTATION_ID]
             else:
                 LOG.debug('Unsupported segmentation type for static path '
