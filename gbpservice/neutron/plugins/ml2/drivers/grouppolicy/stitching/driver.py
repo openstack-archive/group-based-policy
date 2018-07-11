@@ -10,10 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2.drivers.openvswitch.mech_driver import (
         mech_openvswitch as base)
 from neutron_lib.api.definitions import portbindings
+from neutron_lib.plugins.ml2 import api
 
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
 

@@ -17,6 +17,8 @@ import mock
 import testtools
 
 from neutron.api import extensions
+from neutron.conf.plugins.ml2 import config  # noqa
+from neutron.conf.plugins.ml2.drivers import driver_type
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
@@ -29,6 +31,9 @@ from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (
     mechanism_logger as mech_logger)
 
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
+
+config.register_ml2_plugin_opts()
+driver_type.register_ml2_drivers_vlan_opts()
 
 
 # This is just a quick sanity test that basic ML2 plugin functionality
