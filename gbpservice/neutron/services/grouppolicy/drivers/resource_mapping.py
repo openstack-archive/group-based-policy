@@ -18,13 +18,13 @@ from keystoneclient.v2_0 import client as k_client
 from neutron.common import exceptions as neutron_exc
 from neutron.db import api as db_api
 from neutron.db import models_v2
-from neutron.extensions import l3 as ext_l3
 from neutron.extensions import securitygroup as ext_sg
 from neutron_lib.api.definitions import port as port_def
 from neutron_lib import constants as n_const
 from neutron_lib import context as n_context
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
+from neutron_lib.exceptions import l3 as ext_l3
 from neutron_lib.plugins import directory
 from oslo_config import cfg
 from oslo_db import exception as oslo_db_excp
