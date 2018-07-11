@@ -21,9 +21,9 @@ from networking_sfc.services.flowclassifier.common import config as flc_cfg
 from networking_sfc.services.flowclassifier import driver_manager as fc_driverm
 from networking_sfc.services.sfc.common import config as sfc_cfg
 from networking_sfc.services.sfc import driver_manager as sfc_driverm
-from neutron.callbacks import exceptions as c_exc
 from neutron.db import api as db_api
 from neutron.db.models import l3 as l3_db
+from neutron_lib.callbacks import exceptions as c_exc
 from neutron_lib import context
 from neutron_lib.plugins import directory
 from oslo_log import log as logging

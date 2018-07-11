@@ -19,16 +19,16 @@ from keystonemiddleware import auth_token  # noqa
 import mock
 import netaddr
 from neutron.db.qos import models as qos_models
-from neutron.extensions import external_net as external_net
 from neutron.extensions import securitygroup as ext_sg
-from neutron.plugins.common import constants as pconst
 from neutron.services.qos.drivers.openvswitch import driver as qos_ovs_driver
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_plugin as n_test_plugin
+from neutron_lib.api.definitions import external_net
 from neutron_lib import constants as cst
 from neutron_lib import context as nctx
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_utils import uuidutils
 import unittest2
@@ -206,7 +206,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def _show_subnet(self, id):
         req = self.new_show_request('subnets', id, fmt=self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
+        return self.deserialize(self.fmt, req.get_response(self.ext_api))
 
     def _get_sg_rule(self, **filters):
         plugin = directory.get_plugin()
@@ -289,7 +289,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         cidrs = set()
         for sid in subnet_ids:
             req = self.new_show_request('subnets', sid, fmt=self.fmt)
-            res = self.deserialize(self.fmt, req.get_response(self.api))
+            res = self.deserialize(self.fmt, req.get_response(self.ext_api))
             cidrs.add(res['subnet']['cidr'])
         return cidrs
 
@@ -1035,7 +1035,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         req = self.new_show_request('subnets', subnet_id, fmt=self.fmt)
-        res = req.get_response(self.api)
+        res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
         # TODO(rkukura): Verify implicit subnet was removed as router
@@ -5185,7 +5185,7 @@ class TestNatPool(ResourceMappingTestCase):
                     nat_pool['id'],
                     expected_res_status=webob.exc.HTTPNoContent.code)
                 self._get_object(
-                    'subnets', sub_id, self.api,
+                    'subnets', sub_id, self.ext_api,
                     expected_res_status=404 if owned else 200)
 
                 # Subnet deleted on 'update'
@@ -5212,7 +5212,7 @@ class TestNatPool(ResourceMappingTestCase):
 
                         # Verify subnet deleted
                         self._get_object(
-                            'subnets', sub_id, self.api,
+                            'subnets', sub_id, self.ext_api,
                             expected_res_status=404 if owned else 200)
 
     def test_owned_subnet_deleted(self):
