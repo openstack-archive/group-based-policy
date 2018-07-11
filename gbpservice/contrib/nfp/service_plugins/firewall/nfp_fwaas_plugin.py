@@ -23,10 +23,10 @@ from neutron.db.l3_db import DEVICE_OWNER_ROUTER_INTF
 from neutron.db.l3_db import EXTERNAL_GW_INFO
 from neutron.db.models.l3 import RouterPort
 from neutron.db import models_v2
-from neutron.extensions import l3
-from neutron.plugins.common import constants as n_const
+from neutron_lib.api.definitions import l3
 from neutron_lib import constants as nlib_const
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import constants as n_const
 
 import neutron_fwaas.extensions
 from neutron_fwaas.services.firewall import fwaas_plugin as ref_fw_plugin

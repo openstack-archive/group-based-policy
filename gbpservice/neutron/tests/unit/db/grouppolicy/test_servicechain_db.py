@@ -14,8 +14,8 @@
 import six
 import webob.exc
 
-from neutron.plugins.common import constants
 from neutron_lib import context
+from neutron_lib.plugins import constants
 from oslo_config import cfg
 from oslo_utils import uuidutils
 
@@ -507,7 +507,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
 
         data = {'service_profile': {'name': name,
                                     'description': description}}
-        req = self.new_update_request('service_profiles', data,
+        req = self.new_update_request('gbp_service_profiles', data,
                                       scn['service_profile']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
@@ -535,7 +535,7 @@ class TestServiceChainResources(ServiceChainDbTestCase):
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
         # After deleting the Service Chain Spec, node delete should succeed
-        req = self.new_delete_request('service_profiles', sp_id)
+        req = self.new_delete_request('gbp_service_profiles', sp_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         self.assertRaises(service_chain.ServiceProfileNotFound,

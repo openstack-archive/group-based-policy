@@ -150,7 +150,7 @@
     "shared_nsp": "field:network_service_policies:shared=True",
     "shared_scn": "field:servicechain_nodes:shared=True",
     "shared_scs": "field:servicechain_specs:shared=True",
-    "shared_sp": "field:service_profiles:shared=True",
+    "shared_sp": "field:gbp_service_profiles:shared=True",
 
     "create_policy_target_group": "",
     "create_policy_target_group:shared": "rule:admin_only",

@@ -210,7 +210,7 @@
     "shared_nsp": "field:network_service_policies:shared=True",
     "shared_scn": "field:servicechain_nodes:shared=True",
     "shared_scs": "field:servicechain_specs:shared=True",
-    "shared_sp": "field:service_profiles:shared=True",
+    "shared_sp": "field:gbp_service_profiles:shared=True",
 
     "auto_ptg": "field:policy_target_groups:is_auto_ptg=True",
     "non_auto_ptg_shared": "rule:admin_or_owner or rule:shared_ptg",

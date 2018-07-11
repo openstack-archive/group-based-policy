@@ -19,13 +19,13 @@ import webob.exc
 import mock
 from neutron.api import extensions
 from neutron.api.rpc.callbacks.producer import registry
-from neutron.plugins.common import constants
 from neutron import policy
 from neutron.services.trunk.rpc import server as trunk_server
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from neutron_lib import constants as nl_constants
 from neutron_lib import context
+from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory
 from oslo_utils import importutils
 from oslo_utils import uuidutils
@@ -292,6 +292,8 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         return resource_plural
 
     def _get_resource_singular(self, resource_plural):
+        if resource_plural == 'gbp_service_profiles':
+            return 'service_profile'
         if resource_plural.endswith('ies'):
             return resource_plural.replace('ies', 'y')
         else:
