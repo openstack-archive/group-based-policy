@@ -27,7 +27,6 @@ from neutron.db import api as db_api
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.db import provisioning_blocks
-from neutron.extensions import address_scope as as_ext
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
@@ -296,7 +295,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                'tenant_id': address_scope['tenant_id'],
                'shared': address_scope['shared'],
                'ip_version': address_scope['ip_version']}
-        self._apply_dict_extend_functions(as_ext.ADDRESS_SCOPES, res,
+        self._apply_dict_extend_functions(as_def.COLLECTION_NAME, res,
                                           address_scope)
         return self._fields(res, fields)
 
@@ -481,12 +480,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     @gbp_extensions.disable_transaction_guard
     def create_address_scope(self, context, address_scope):
-        self._ensure_tenant(context, address_scope[as_ext.ADDRESS_SCOPE])
+        self._ensure_tenant(context, address_scope[as_def.ADDRESS_SCOPE])
         with db_api.context_manager.writer.using(context):
             result = super(Ml2PlusPlugin, self).create_address_scope(
                 context, address_scope)
             self.extension_manager.process_create_address_scope(
-                context, address_scope[as_ext.ADDRESS_SCOPE], result)
+                context, address_scope[as_def.ADDRESS_SCOPE], result)
             mech_context = driver_context.AddressScopeContext(
                 self, context, result)
             self.mechanism_manager.create_address_scope_precommit(
@@ -514,7 +513,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                           self).update_address_scope(
                                               context, id, address_scope)
             self.extension_manager.process_update_address_scope(
-                context, address_scope[as_ext.ADDRESS_SCOPE],
+                context, address_scope[as_def.ADDRESS_SCOPE],
                 updated_address_scope)
             mech_context = driver_context.AddressScopeContext(
                 self, context, updated_address_scope,
