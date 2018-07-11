@@ -12,7 +12,7 @@
 # limitations under the License.
 
 import mock
-from neutron.plugins.common import constants
+from neutron_lib.plugins import constants
 from oslo_serialization import jsonutils
 import webob
 

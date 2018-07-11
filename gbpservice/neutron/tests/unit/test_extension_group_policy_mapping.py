@@ -13,8 +13,8 @@
 import copy
 import six
 
-from neutron.plugins.common import constants
 from neutron_lib import constants as n_constants
+from neutron_lib.plugins import constants
 
 from gbpservice.neutron.extensions import group_policy as gp
 from gbpservice.neutron.extensions import group_policy_mapping as gpm

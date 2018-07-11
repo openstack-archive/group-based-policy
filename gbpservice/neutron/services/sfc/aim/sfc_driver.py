@@ -24,10 +24,10 @@ from networking_sfc.extensions import flowclassifier as flowc_ext
 from networking_sfc.extensions import sfc as sfc_ext
 from networking_sfc.services.sfc.common import context as sfc_ctx
 from networking_sfc.services.sfc.drivers import base
-from neutron.callbacks import events
-from neutron.callbacks import registry
 from neutron.db import api as db_api
 from neutron.db import models_v2
+from neutron_lib.callbacks import events
+from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
