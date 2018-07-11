@@ -14,9 +14,9 @@ import ast
 
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
-from neutron.plugins.common import constants as pconst
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 from oslo_log import log as logging

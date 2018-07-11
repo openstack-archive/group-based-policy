@@ -14,11 +14,11 @@ import copy
 import re
 
 import mock
-from neutron.plugins.common import constants
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base
 from neutron.tests.unit.extensions import base as test_extensions_base
 from neutron_lib import constants as n_consts
+from neutron_lib.plugins import constants
 from oslo_utils import uuidutils
 from webob import exc
 
