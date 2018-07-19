@@ -1,0 +1,9 @@
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Code-Review+2: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Workflow+1: Ivar Lazzaro <ivarlazzaro@gmail.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 19 Jul 2018 19:46:55 +0000
+Reviewed-on: https://review.openstack.org/580461
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/pike
