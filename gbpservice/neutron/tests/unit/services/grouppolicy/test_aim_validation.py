@@ -19,6 +19,8 @@ from aim.aim_lib.db import model as aim_lib_model
 from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim import context as aim_context
+from neutron.db.models import segment
+from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib import context as n_context
 
@@ -492,7 +494,6 @@ class TestNeutronMapping(AimValidationTestCase):
             subnetpool_id=pool_id, tenant_id='tenant_2')
 
         # Create external network.
-        #
         kwargs = {'router:external': True,
                   'apic:distinguished_names':
                   {'ExternalNetwork': 'uni/tn-common/out-l1/instP-n1'}}
@@ -501,7 +502,6 @@ class TestNeutronMapping(AimValidationTestCase):
             **kwargs)['network']
 
         # Create extra external network to test CloneL3Out record below.
-        #
         kwargs = {'router:external': True,
                   'apic:distinguished_names':
                   {'ExternalNetwork': 'uni/tn-common/out-l2/instP-n2'}}
@@ -674,6 +674,62 @@ class TestNeutronMapping(AimValidationTestCase):
             security_group_name=sg_name,
             tenant_name=tenant_name)
         self._test_aim_resource(aim_rule)
+
+    def test_network_segment(self):
+        # REVISIT: Test repair when migration from other types to
+        # 'opflex' is supported.
+
+        # Create network.
+        net = self._make_network(self.fmt, 'net1', True)['network']
+
+        # Change network's segment to an unknown type.
+        self.db_session.query(segment.NetworkSegment).filter_by(
+            network_id=net['id']).update({'network_type': 'xxx'})
+
+        # Test that validation fails.
+        self._validate_unrepairable()
+
+    def test_port_binding(self):
+        # Create network, subnet, and bound port.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+        subnet = self._make_subnet(
+            self.fmt, net_resp, None, '10.0.0.0/24')['subnet']
+        fixed_ips = [{'subnet_id': subnet['id'], 'ip_address': '10.0.0.100'}]
+        port = self._make_port(
+            self.fmt, net['id'], fixed_ips=fixed_ips)['port']
+        port = self._bind_port_to_host(port['id'], 'host1')['port']
+        self._validate()
+
+        # Change port binding level to unknown mechanism driver and
+        # test.
+        self.db_session.query(ml2_models.PortBindingLevel).filter_by(
+            port_id=port['id'], level=0).update({'driver': 'xxx'})
+        self._validate_repair_validate()
+
+        # Change port binding level to incorrect host and test.
+        self.db_session.query(ml2_models.PortBindingLevel).filter_by(
+            port_id=port['id'], level=0).update({'host': 'yyy'})
+        self._validate_repair_validate()
+
+        # Change port binding level to null segment ID and test.
+        self.db_session.query(ml2_models.PortBindingLevel).filter_by(
+            port_id=port['id'], level=0).update({'segment_id': None})
+        self._validate_repair_validate()
+
+        # Change port binding level to unknown mechanism driver, set
+        # bad host, and test that repair fails.
+        #
+        # REVISIT: The apic_aim MD currently tries to allocate a
+        # dynamic segment whenever there is no agent on the port's
+        # host, which is probably wrong, but it does fail to bind, so
+        # this test succeeds.
+        self.db_session.query(ml2_models.PortBindingLevel).filter_by(
+            port_id=port['id'], level=0).update({'driver': 'xxx',
+                                                 'host': 'yyy'})
+        self.db_session.query(ml2_models.PortBinding).filter_by(
+            port_id=port['id']).update({'host': 'yyy'})
+        self._validate_unrepairable()
 
 
 class TestGbpMapping(AimValidationTestCase):
