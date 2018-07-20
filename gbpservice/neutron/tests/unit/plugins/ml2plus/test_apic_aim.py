@@ -3069,30 +3069,64 @@ class TestSyncState(ApicAimTestCase):
     @staticmethod
     def _get_synced_status(self, context, resource, **kwargs):
         status = aim_status.AciStatus.SYNCED
-        return aim_status.AciStatus(resource_root=resource.root,
-                                    sync_status=status)
+
+        aim_ctx = context
+        aim_mgr = aim_manager.AimManager()
+        res_type, res_id = aim_mgr._get_status_params(aim_ctx, resource)
+        if not res_type:
+            return None
+        return aim_mgr.create(
+            aim_ctx, aim_status.AciStatus(
+                resource_root=resource.root, sync_status=status,
+                resource_type=res_type,
+                resource_dn=resource.dn,
+                resource_id=res_id), overwrite=True)
 
     @staticmethod
-    def _get_pending_status_for_type(resource, type, **kwargs):
+    def _get_pending_status_for_type(context, resource, type, **kwargs):
         status = (isinstance(resource, type) and
                   aim_status.AciStatus.SYNC_PENDING or
                   aim_status.AciStatus.SYNCED)
-        return aim_status.AciStatus(resource_root=resource.root,
-                                    sync_status=status)
+
+        aim_ctx = context
+        aim_mgr = aim_manager.AimManager()
+        res_type, res_id = aim_mgr._get_status_params(aim_ctx, resource)
+        if not res_type:
+            return None
+        return aim_mgr.create(
+            aim_ctx, aim_status.AciStatus(
+                resource_root=resource.root, sync_status=status,
+                resource_type=res_type,
+                resource_dn=resource.dn,
+                resource_id=res_id), overwrite=True)
 
     @staticmethod
-    def _get_failed_status_for_type(resource, type, **kwargs):
+    def _get_failed_status_for_type(context, resource, type, **kwargs):
         status = (isinstance(resource, type) and
                   aim_status.AciStatus.SYNC_FAILED or
                   aim_status.AciStatus.SYNC_PENDING)
-        return aim_status.AciStatus(resource_root=resource.root,
-                                    sync_status=status)
+
+        aim_ctx = context
+        aim_mgr = aim_manager.AimManager()
+        res_type, res_id = aim_mgr._get_status_params(aim_ctx, resource)
+        if not res_type:
+            return None
+        return aim_mgr.create(
+            aim_ctx, aim_status.AciStatus(
+                resource_root=resource.root, sync_status=status,
+                resource_type=res_type,
+                resource_dn=resource.dn,
+                resource_id=res_id), overwrite=True)
 
     def _test_network(self, expected_state):
         net = self._make_network(self.fmt, 'net1', True)['network']
         self.assertEqual(expected_state, net['apic:synchronization_state'])
 
         net = self._show('networks', net['id'])['network']
+        self.assertEqual(expected_state, net['apic:synchronization_state'])
+
+        net = self._list(
+            'networks', query_params=('id=%s' % net['id']))['networks'][0]
         self.assertEqual(expected_state, net['apic:synchronization_state'])
 
     def test_network_synced(self):
@@ -3103,7 +3137,7 @@ class TestSyncState(ApicAimTestCase):
     def test_network_bd_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.BridgeDomain)
+                context, resource, aim_resource.BridgeDomain)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_network('build')
@@ -3111,7 +3145,7 @@ class TestSyncState(ApicAimTestCase):
     def test_network_bd_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.BridgeDomain)
+                context, resource, aim_resource.BridgeDomain)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_network('error')
@@ -3119,7 +3153,7 @@ class TestSyncState(ApicAimTestCase):
     def test_network_epg_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.EndpointGroup)
+                context, resource, aim_resource.EndpointGroup)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_network('build')
@@ -3127,7 +3161,7 @@ class TestSyncState(ApicAimTestCase):
     def test_network_epg_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.EndpointGroup)
+                context, resource, aim_resource.EndpointGroup)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_network('error')
@@ -3135,7 +3169,7 @@ class TestSyncState(ApicAimTestCase):
     def test_network_vrf_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.VRF)
+                context, resource, aim_resource.VRF)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_network('build')
@@ -3143,7 +3177,7 @@ class TestSyncState(ApicAimTestCase):
     def test_network_vrf_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.VRF)
+                context, resource, aim_resource.VRF)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_network('error')
@@ -3156,6 +3190,11 @@ class TestSyncState(ApicAimTestCase):
         scope = self._show('address-scopes', scope['id'])['address_scope']
         self.assertEqual(expected_state, scope['apic:synchronization_state'])
 
+        scope = self._list(
+            'address-scopes',
+            query_params=('id=%s' % scope['id']))['address_scopes'][0]
+        self.assertEqual(expected_state, scope['apic:synchronization_state'])
+
     def test_address_scope_synced(self):
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
@@ -3164,7 +3203,7 @@ class TestSyncState(ApicAimTestCase):
     def test_address_scope_vrf_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.VRF)
+                context, resource, aim_resource.VRF)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_address_scope('build')
@@ -3172,7 +3211,7 @@ class TestSyncState(ApicAimTestCase):
     def test_address_scope_vrf_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.VRF)
+                context, resource, aim_resource.VRF)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_address_scope('error')
@@ -3185,6 +3224,11 @@ class TestSyncState(ApicAimTestCase):
         router = self._show('routers', router['id'])['router']
         self.assertEqual(expected_state, router['apic:synchronization_state'])
 
+        router = self._list(
+            'routers',
+            query_params=('id=%s' % router['id']))['routers'][0]
+        self.assertEqual(expected_state, router['apic:synchronization_state'])
+
     def test_router_synced(self):
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
@@ -3193,7 +3237,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_contract_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.Contract)
+                context, resource, aim_resource.Contract)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router('build')
@@ -3201,7 +3245,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_contract_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.Contract)
+                context, resource, aim_resource.Contract)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router('error')
@@ -3209,7 +3253,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_subject_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.ContractSubject)
+                context, resource, aim_resource.ContractSubject)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router('build')
@@ -3217,7 +3261,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_subject_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.ContractSubject)
+                context, resource, aim_resource.ContractSubject)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router('error')
@@ -3235,6 +3279,11 @@ class TestSyncState(ApicAimTestCase):
         router = self._show('routers', router['id'])['router']
         self.assertEqual(expected_state, router['apic:synchronization_state'])
 
+        router = self._list(
+            'routers',
+            query_params=('id=%s' % router['id']))['routers'][0]
+        self.assertEqual(expected_state, router['apic:synchronization_state'])
+
     def test_router_interface_vrf_synced(self):
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
@@ -3243,7 +3292,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_interface_vrf_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.VRF)
+                context, resource, aim_resource.VRF)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router_interface_vrf('build')
@@ -3251,7 +3300,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_interface_vrf_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.VRF)
+                context, resource, aim_resource.VRF)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router_interface_vrf('error')
@@ -3270,7 +3319,16 @@ class TestSyncState(ApicAimTestCase):
         self.assertEqual(expected_state,
                          router['apic:synchronization_state'])
 
+        router = self._list(
+            'routers',
+            query_params=('id=%s' % router['id']))['routers'][0]
+        self.assertEqual(expected_state, router['apic:synchronization_state'])
+
         subnet = self._show('subnets', subnet['id'])['subnet']
+        self.assertEqual(expected_state, subnet['apic:synchronization_state'])
+
+        subnet = self._list(
+            'subnets', query_params=('id=%s' % subnet['id']))['subnets'][0]
         self.assertEqual(expected_state, subnet['apic:synchronization_state'])
 
     def test_router_interface_subnet_synced(self):
@@ -3281,7 +3339,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_interface_subnet_build(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_pending_status_for_type(
-                resource, aim_resource.Subnet)
+                context, resource, aim_resource.Subnet)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router_interface_subnet('build')
@@ -3289,7 +3347,7 @@ class TestSyncState(ApicAimTestCase):
     def test_router_interface_subnet_error(self):
         def get_status(self, context, resource, create_if_absent=True):
             return TestSyncState._get_failed_status_for_type(
-                resource, aim_resource.Subnet)
+                context, resource, aim_resource.Subnet)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router_interface_subnet('error')
@@ -3302,7 +3360,16 @@ class TestSyncState(ApicAimTestCase):
         self.assertEqual(expected_state, net['apic:synchronization_state'],
                          msg)
 
+        net = self._list(
+            'networks', query_params=('id=%s' % net['id']))['networks'][0]
+        self.assertEqual(expected_state, net['apic:synchronization_state'])
+
     def test_external_network(self):
+        ext_net = aim_resource.ExternalNetwork.from_dn(self.dn_t1_l1_n1)
+        ext_net.monitored = True
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx, ext_net)
+
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
             self._test_external_network('synced',
@@ -3316,7 +3383,7 @@ class TestSyncState(ApicAimTestCase):
                           aim_resource.BridgeDomain,
                           aim_resource.VRF]:
                 def get_status(self, context, resource, create_if_absent=True):
-                    return status_func(resource, a_res)
+                    return status_func(context, resource, a_res)
                 with mock.patch('aim.aim_manager.AimManager.get_status',
                                 get_status):
                     self._test_external_network(expected_status,
@@ -3333,9 +3400,19 @@ class TestSyncState(ApicAimTestCase):
 
         subnet = self._show('subnets', subnet['id'])['subnet']
         self.assertEqual(expected_state, subnet['apic:synchronization_state'])
+
+        subnet = self._list(
+            'subnets', query_params=('id=%s' % subnet['id']))['subnets'][0]
+        self.assertEqual(expected_state, subnet['apic:synchronization_state'])
+
         self._delete("subnets", subnet['id'])
 
     def test_external_subnet(self):
+        ext_net = aim_resource.ExternalNetwork.from_dn(self.dn_t1_l1_n1)
+        ext_net.monitored = True
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx, ext_net)
+
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
             self._test_external_subnet('synced',
@@ -3345,7 +3422,7 @@ class TestSyncState(ApicAimTestCase):
                 ('build', TestSyncState._get_pending_status_for_type),
                 ('error', TestSyncState._get_failed_status_for_type)]:
             def get_status(self, context, resource, **kwargs):
-                return status_func(resource, aim_resource.Subnet)
+                return status_func(context, resource, aim_resource.Subnet)
             with mock.patch('aim.aim_manager.AimManager.get_status',
                             get_status):
                 self._test_external_subnet(expected_status,
@@ -4407,10 +4484,24 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual('', net1['apic:nat_type'])
         self.assertEqual(['0.0.0.0/0'], net1[CIDR])
 
+        net1 = self._list(
+            'networks', query_params=('id=%s' % net1['id']))['networks'][0]
+        self.assertEqual(self.dn_t1_l1_n1,
+                         net1[DN]['ExternalNetwork'])
+        self.assertEqual('', net1['apic:nat_type'])
+        self.assertEqual(['0.0.0.0/0'], net1[CIDR])
+
+
         # create with nat_type set to default, and CIDR specified
         net2 = self._make_ext_network('net2',
                                       dn=self.dn_t1_l2_n2,
                                       cidrs=['5.5.5.0/24', '10.20.0.0/16'])
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['10.20.0.0/16', '5.5.5.0/24'],
+                         sorted(net2[CIDR]))
+
+        net2 = self._list(
+            'networks', query_params=('id=%s' % net2['id']))['networks'][0]
         self.assertEqual('distributed', net2['apic:nat_type'])
         self.assertEqual(['10.20.0.0/16', '5.5.5.0/24'],
                          sorted(net2[CIDR]))
@@ -4421,8 +4512,17 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual('distributed', net2['apic:nat_type'])
         self.assertEqual(['20.20.30.0/24'], net2[CIDR])
 
+        net2 = self._list(
+            'networks', query_params=('id=%s' % net2['id']))['networks'][0]
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['20.20.30.0/24'], net2[CIDR])
+
         net2 = self._update('networks', net2['id'],
             {'network': {CIDR: []}})['network']
+        self.assertEqual([], net2[CIDR])
+
+        net2 = self._list(
+            'networks', query_params=('id=%s' % net2['id']))['networks'][0]
         self.assertEqual([], net2[CIDR])
 
         # create without APIC DN -> this is an unmanaged network
@@ -4431,9 +4531,21 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertFalse('apic:nat_type' in net3)
         self.assertFalse(CIDR in net3)
 
+        net3 = self._list(
+            'networks', query_params=('id=%s' % net3['id']))['networks'][0]
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
         # updating CIDR of unmanaged network is no-op
         net3 = self._update('networks', net3['id'],
             {'network': {CIDR: ['30.30.20.0/24']}})['network']
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
+        net3 = self._list(
+            'networks', query_params=('id=%s' % net3['id']))['networks'][0]
         self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
         self.assertFalse('apic:nat_type' in net3)
         self.assertFalse(CIDR in net3)
@@ -4483,6 +4595,10 @@ class TestExtensionAttributes(ApicAimTestCase):
         subnet = self._show('subnets', subnet['id'])['subnet']
         self.assertFalse(subnet[SNAT_POOL])
 
+        subnet = self._list(
+            'subnets', query_params=('id=%s' % subnet['id']))['subnets'][0]
+        self.assertFalse(subnet[SNAT_POOL])
+
         # Update something other than snat_host_pool
         subnet = self._update('subnets', subnet['id'],
                               {'subnet': {'name': 'foo'}})['subnet']
@@ -4493,8 +4609,16 @@ class TestExtensionAttributes(ApicAimTestCase):
             {'subnet': {SNAT_POOL: True}})['subnet']
         self.assertTrue(subnet[SNAT_POOL])
 
+        subnet = self._list(
+            'subnets', query_params=('id=%s' % subnet['id']))['subnets'][0]
+        self.assertTrue(subnet[SNAT_POOL])
+
         subnet = self._update('subnets', subnet['id'],
             {'subnet': {SNAT_POOL: False}})['subnet']
+        self.assertFalse(subnet[SNAT_POOL])
+
+        subnet = self._list(
+            'subnets', query_params=('id=%s' % subnet['id']))['subnets'][0]
         self.assertFalse(subnet[SNAT_POOL])
 
         # delete subnet
@@ -4517,6 +4641,10 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         subnet2 = self._update('subnets', subnet2['id'],
             {'subnet': {SNAT_POOL: True}})['subnet']
+        self.assertTrue(subnet2[SNAT_POOL])
+
+        subnet2 = self._list(
+            'subnets', query_params=('id=%s' % subnet2['id']))['subnets'][0]
         self.assertTrue(subnet2[SNAT_POOL])
 
     def test_router_lifecycle(self):
@@ -4544,9 +4672,19 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual([], rtr1[PROV])
         self.assertEqual(['k'], rtr1[CONS])
 
+        rtr1 = self._list(
+            'routers', query_params=('id=%s' % rtr1['id']))['routers'][0]
+        self.assertEqual([], rtr1[PROV])
+        self.assertEqual(['k'], rtr1[CONS])
+
         self._update('routers', rtr1['id'],
                      {'router': {PROV: ['p1', 'p2']}})
         rtr1 = self._show('routers', rtr1['id'])['router']
+        self.assertEqual(['p1', 'p2'], sorted(rtr1[PROV]))
+        self.assertEqual(['k'], rtr1[CONS])
+
+        rtr1 = self._list(
+            'routers', query_params=('id=%s' % rtr1['id']))['routers'][0]
         self.assertEqual(['p1', 'p2'], sorted(rtr1[PROV]))
         self.assertEqual(['k'], rtr1[CONS])
 
@@ -4564,8 +4702,19 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual([], rtr2[PROV])
         self.assertEqual([], rtr2[CONS])
 
+        rtr2 = self._list(
+            'routers', query_params=('id=%s' % rtr2['id']))['routers'][0]
+        self.assertEqual([], rtr2[PROV])
+        self.assertEqual([], rtr2[CONS])
+
+
         rtr2 = self._update('routers', rtr2['id'],
                             {'router': {PROV: ['p1', 'p2']}})['router']
+        self.assertEqual(['p1', 'p2'], sorted(rtr2[PROV]))
+        self.assertEqual([], rtr2[CONS])
+
+        rtr2 = self._list(
+            'routers', query_params=('id=%s' % rtr2['id']))['routers'][0]
         self.assertEqual(['p1', 'p2'], sorted(rtr2[PROV]))
         self.assertEqual([], rtr2[CONS])
 
