@@ -53,6 +53,10 @@ class NetworkExtensionCidrDb(model_base.BASEV2):
         sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"),
         primary_key=True)
     cidr = sa.Column(sa.String(64), primary_key=True)
+    network = orm.relationship(models_v2.Network,
+                               backref=orm.backref(
+                                   'aim_extension_cidr_mapping', lazy='joined',
+                                   uselist=True, cascade='delete'))
 
 
 class SubnetExtensionDb(model_base.BASEV2):
@@ -83,24 +87,40 @@ class ExtensionDbMixin(object):
             res_dict[res_attr] = db_attr
 
     def get_network_extn_db(self, session, network_id):
-        db_obj = (session.query(NetworkExtensionDb).filter_by(
-                  network_id=network_id).first())
-        db_cidrs = (session.query(NetworkExtensionCidrDb).filter_by(
-                    network_id=network_id).all())
-        result = {}
-        if db_obj:
-            self._set_if_not_none(result, cisco_apic.EXTERNAL_NETWORK,
-                                  db_obj['external_network_dn'])
-            self._set_if_not_none(result, cisco_apic.NAT_TYPE,
-                                  db_obj['nat_type'])
-            self._set_if_not_none(result, cisco_apic.SVI, db_obj['svi'])
-            result[cisco_apic.BGP] = db_obj['bgp_enable']
-            result[cisco_apic.BGP_TYPE] = db_obj['bgp_type']
-            result[cisco_apic.BGP_ASN] = db_obj['bgp_asn']
-        if result.get(cisco_apic.EXTERNAL_NETWORK):
-            result[cisco_apic.EXTERNAL_CIDRS] = [c['cidr'] for c in db_cidrs]
+        return self.get_network_extn_db_bulk(session, [network_id]).get(
+            network_id, {})
 
+    def get_network_extn_db_bulk(self, session, network_ids):
+        db_objs = (session.query(NetworkExtensionDb).filter(
+            NetworkExtensionDb.network_id.in_(network_ids)).all())
+        db_cidrs = (session.query(NetworkExtensionCidrDb).filter(
+            NetworkExtensionCidrDb.network_id.in_(network_ids)).all())
+        cidrs_by_net_id = {}
+        for db_cidr in db_cidrs:
+            cidrs_by_net_id.setdefault(db_cidr.network_id, []).append(
+                db_cidr)
+        result = {}
+        for db_obj in db_objs:
+            net_id = db_obj.network_id
+            result.setdefault(net_id, self.make_network_extn_db_conf_dict(
+                db_obj, cidrs_by_net_id.get(net_id, [])))
         return result
+
+    def make_network_extn_db_conf_dict(self, ext_db, db_cidrs):
+        net_res = {}
+        db_obj = ext_db
+        if db_obj:
+            self._set_if_not_none(net_res, cisco_apic.EXTERNAL_NETWORK,
+                                  db_obj['external_network_dn'])
+            self._set_if_not_none(net_res, cisco_apic.NAT_TYPE,
+                                  db_obj['nat_type'])
+            self._set_if_not_none(net_res, cisco_apic.SVI, db_obj['svi'])
+            net_res[cisco_apic.BGP] = db_obj['bgp_enable']
+            net_res[cisco_apic.BGP_TYPE] = db_obj['bgp_type']
+            net_res[cisco_apic.BGP_ASN] = db_obj['bgp_asn']
+        if net_res.get(cisco_apic.EXTERNAL_NETWORK):
+            net_res[cisco_apic.EXTERNAL_CIDRS] = [c.cidr for c in db_cidrs]
+        return net_res
 
     def set_network_extn_db(self, session, network_id, res_dict):
         with session.begin(subtransactions=True):
