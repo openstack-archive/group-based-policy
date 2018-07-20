@@ -20,7 +20,9 @@ from gbpservice.neutron import extensions as gbp_extensions
 from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
+from neutron.common import constants as n_const
 from neutron.db import _resource_extend as resource_extend
+from neutron.db import _utils as db_utils
 from neutron.db import api as db_api
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
@@ -44,6 +46,7 @@ from oslo_log import log
 from oslo_utils import excutils
 
 from gbpservice.neutron.db import implicitsubnetpool_db
+from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus import driver_context
 from gbpservice.neutron.plugins.ml2plus import managers
 
@@ -193,6 +196,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     session, netdb, result)
 
     @staticmethod
+    @resource_extend.extends([net_def.COLLECTION_NAME + '_BULK'])
+    def _ml2_md_extend_network_dict_bulk(results, _):
+        plugin = directory.get_plugin()
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            plugin.extension_manager.extend_network_dict_bulk(session, results)
+
+    @staticmethod
     @resource_extend.extends([port_def.COLLECTION_NAME])
     def _ml2_md_extend_port_dict(result, portdb):
         plugin = directory.get_plugin()
@@ -204,6 +215,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_port_dict(
                     session, portdb, result)
+
+    @staticmethod
+    @resource_extend.extends([port_def.COLLECTION_NAME + '_BULK'])
+    def _ml2_md_extend_port_dict_bulk(results, _):
+        plugin = directory.get_plugin()
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            plugin.extension_manager.extend_port_dict_bulk(session, results)
 
     @staticmethod
     @resource_extend.extends([subnet_def.COLLECTION_NAME])
@@ -219,6 +238,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     session, subnetdb, result)
 
     @staticmethod
+    @resource_extend.extends([subnet_def.COLLECTION_NAME + '_BULK'])
+    def _ml2_md_extend_subnet_dict_bulk(results, _):
+        plugin = directory.get_plugin()
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            plugin.extension_manager.extend_subnet_dict_bulk(session, results)
+
+    @staticmethod
     @resource_extend.extends([subnetpool_def.COLLECTION_NAME])
     def _ml2_md_extend_subnetpool_dict(result, subnetpooldb):
         plugin = directory.get_plugin()
@@ -232,6 +259,15 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     session, subnetpooldb, result)
 
     @staticmethod
+    @resource_extend.extends([subnetpool_def.COLLECTION_NAME + '_BULK'])
+    def _ml2_md_extend_subnetpool_dict_bulk(results, _):
+        plugin = directory.get_plugin()
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            plugin.extension_manager.extend_subnetpool_dict_bulk(session,
+                                                                 results)
+
+    @staticmethod
     @resource_extend.extends([as_def.COLLECTION_NAME])
     def _ml2_md_extend_address_scope_dict(result, address_scope):
         plugin = directory.get_plugin()
@@ -243,6 +279,15 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_address_scope_dict(
                     session, address_scope, result)
+
+    @staticmethod
+    @resource_extend.extends([as_def.COLLECTION_NAME + '_BULK'])
+    def _ml2_md_extend_address_scope_dict_bulk(results, _):
+        plugin = directory.get_plugin()
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            plugin.extension_manager.extend_address_scope_dict_bulk(session,
+                                                                    results)
 
     # Base version does not call _apply_dict_extend_functions()
     def _make_address_scope_dict(self, address_scope, fields=None):
@@ -510,3 +555,50 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                             ip_version=ip_version) or
             self.get_implicit_subnetpool_id(context, tenant=None,
                                             ip_version=ip_version))
+
+    # REVISIT(ivar): patching bulk gets for extension performance
+
+    def _make_networks_dict(self, networks, context):
+        nets = []
+        for network in networks:
+            if network.mtu is None:
+                # TODO(ivar): also refactor this to run for bulk networks
+                network.mtu = self._get_network_mtu(network, validate=False)
+            res = {'id': network['id'],
+                   'name': network['name'],
+                   'tenant_id': network['tenant_id'],
+                   'admin_state_up': network['admin_state_up'],
+                   'mtu': network.get('mtu', n_const.DEFAULT_NETWORK_MTU),
+                   'status': network['status'],
+                   'subnets': [subnet['id']
+                               for subnet in network['subnets']]}
+            res['shared'] = self._is_network_shared(context,
+                                                    network.rbac_entries)
+            nets.append((res, network))
+
+        # Bulk extend first
+        resource_extend.apply_funcs(net_def.COLLECTION_NAME + '_BULK', nets,
+                                    None)
+
+        result = []
+        for res, network in nets:
+            res[api_plus.BULK_EXTENDED] = True
+            resource_extend.apply_funcs(net_def.COLLECTION_NAME, res, network)
+            res.pop(api_plus.BULK_EXTENDED, None)
+            result.append(db_utils.resource_fields(res, []))
+        return result
+
+    @db_api.retry_if_session_inactive()
+    def get_networks(self, context, filters=None, fields=None,
+                     sorts=None, limit=None, marker=None, page_reverse=False):
+        with db_api.context_manager.writer.using(context):
+            nets_db = super(Ml2PlusPlugin, self)._get_networks(
+                context, filters, None, sorts, limit, marker, page_reverse)
+
+            net_data = self._make_networks_dict(nets_db, context)
+
+            self.type_manager.extend_networks_dict_provider(context, net_data)
+            nets = self._filter_nets_provider(context, net_data, filters)
+        return [db_utils.resource_fields(net, fields) for net in nets]
+
+
