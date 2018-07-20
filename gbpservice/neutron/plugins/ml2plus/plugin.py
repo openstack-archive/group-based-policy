@@ -27,6 +27,8 @@ from neutron.api.v2 import attributes
 from neutron.callbacks import events
 from neutron.callbacks import registry
 from neutron.callbacks import resources
+from neutron.common import constants as n_const
+from neutron.db import _utils as db_utils
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2
 from neutron.db.models import securitygroup as securitygroups_db
@@ -34,6 +36,7 @@ from neutron.db import models_v2
 from neutron.db import provisioning_blocks
 from neutron.extensions import address_scope as as_ext
 from neutron.plugins.ml2.common import exceptions as ml2_exc
+from neutron.plugins.ml2 import driver_api as api
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
@@ -43,6 +46,7 @@ from oslo_log import log
 from oslo_utils import excutils
 
 from gbpservice.neutron.db import implicitsubnetpool_db
+from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus import driver_context
 from gbpservice.neutron.plugins.ml2plus import managers
 
@@ -211,6 +215,26 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
                as_ext.ADDRESS_SCOPES, ['_ml2_md_extend_address_scope_dict'])
 
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+               attributes.NETWORKS + '_BULK',
+        ['_ml2_md_extend_network_dict_bulk'])
+
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+               attributes.SUBNETS + '_BULK',
+        ['_ml2_md_extend_subnet_dict_bulk'])
+
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+               attributes.SUBNETPOOLS + '_BULK',
+        ['_ml2_md_extend_subnetpool_dict_bulk'])
+
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+               as_ext.ADDRESS_SCOPES + '_BULK',
+        ['_ml2_md_extend_address_scope_dict_bulk'])
+
+    db_base_plugin_v2.NeutronDbPluginV2.register_dict_extend_funcs(
+               attributes.PORTS + '_BULK',
+        ['_ml2_md_extend_port_dict_bulk'])
+
     def _handle_security_group_change(self, resource, event, trigger,
                                       **kwargs):
         context = kwargs.get('context')
@@ -267,12 +291,28 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 session.refresh(netdb)
             self.extension_manager.extend_network_dict(session, netdb, result)
 
+    def _ml2_md_extend_network_dict_bulk(self, results, _):
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            if self.refresh_network_db_obj:
+                for _, netdb in results:
+                    session.refresh(netdb)
+            self.extension_manager.extend_network_dict_bulk(session, results)
+
     def _ml2_md_extend_port_dict(self, result, portdb):
         session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             if self.refresh_port_db_obj:
                 session.refresh(portdb)
             self.extension_manager.extend_port_dict(session, portdb, result)
+
+    def _ml2_md_extend_port_dict_bulk(self, results, _):
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            if self.refresh_port_db_obj:
+                for _, portdb in results:
+                    session.refresh(portdb)
+            self.extension_manager.extend_port_dict_bulk(session, results)
 
     def _ml2_md_extend_subnet_dict(self, result, subnetdb):
         session = patch_neutron.get_current_session()
@@ -282,6 +322,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.extension_manager.extend_subnet_dict(
                 session, subnetdb, result)
 
+    def _ml2_md_extend_subnet_dict_bulk(self, results, _):
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            if self.refresh_subnet_db_obj:
+                for _, subnetdb in results:
+                    session.refresh(subnetdb)
+            self.extension_manager.extend_subnet_dict_bulk(session, results)
+
     def _ml2_md_extend_subnetpool_dict(self, result, subnetpooldb):
         session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
@@ -290,6 +338,15 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.extension_manager.extend_subnetpool_dict(
                 session, subnetpooldb, result)
 
+    def _ml2_md_extend_subnetpool_dict_bulk(self, results, _):
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            if self.refresh_subnetpool_db_obj:
+                for _, subnetpooldb in results:
+                    session.refresh(subnetpooldb)
+            self.extension_manager.extend_subnetpool_dict_bulk(session,
+                                                               results)
+
     def _ml2_md_extend_address_scope_dict(self, result, address_scope):
         session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
@@ -297,6 +354,15 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                 session.refresh(address_scope)
             self.extension_manager.extend_address_scope_dict(
                 session, address_scope, result)
+
+    def _ml2_md_extend_address_scope_dict_bulk(self, results, _):
+        session = patch_neutron.get_current_session()
+        with session.begin(subtransactions=True):
+            if self.refresh_address_scope_db_obj:
+                for _, address_scope in results:
+                    session.refresh(address_scope)
+            self.extension_manager.extend_address_scope_dict_bulk(
+                session, results)
 
     # Base version does not call _apply_dict_extend_functions()
     def _make_address_scope_dict(self, address_scope, fields=None):
@@ -552,3 +618,57 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                             ip_version=ip_version) or
             self.get_implicit_subnetpool_id(context, tenant=None,
                                             ip_version=ip_version))
+
+    # REVISIT(ivar): patching bulk gets for extension performance
+    def _make_networks_dict(self, networks, context):
+        nets = []
+        for network in networks:
+            res = {'id': network['id'],
+                   'name': network['name'],
+                   'tenant_id': network['tenant_id'],
+                   'admin_state_up': network['admin_state_up'],
+                   'mtu': network.get('mtu', n_const.DEFAULT_NETWORK_MTU),
+                   'status': network['status'],
+                   'subnets': [subnet['id']
+                               for subnet in network['subnets']]}
+            res['shared'] = self._is_network_shared(context,
+                                                    network.rbac_entries)
+            nets.append((res, network))
+
+        # Bulk extend first
+        self._apply_dict_extend_functions(attributes.NETWORKS + '_BULK', nets,
+                                          None)
+
+        result = []
+        for res, network in nets:
+            res[api_plus.BULK_EXTENDED] = True
+            self._apply_dict_extend_functions(attributes.NETWORKS, res,
+                                              network)
+            res.pop(api_plus.BULK_EXTENDED, None)
+            result.append(db_utils.resource_fields(res, []))
+        return result
+
+    @db_api.retry_if_session_inactive()
+    def get_networks(self, context, filters=None, fields=None,
+                     sorts=None, limit=None, marker=None, page_reverse=False):
+        session = context.session
+        with session.begin(subtransactions=True):
+            marker_obj = self._get_marker_obj(context, 'network', limit,
+                                              marker)
+            query = self._get_collection_query(context, models_v2.Network,
+                                               filters=filters,
+                                               sorts=sorts,
+                                               limit=limit,
+                                               marker_obj=marker_obj,
+                                               page_reverse=page_reverse)
+
+            net_data = self._make_networks_dict(query, context)
+            nets = [attributes.populate_project_info(net) for net in net_data]
+            if limit and page_reverse:
+                nets.reverse()
+            self.type_manager.extend_networks_dict_provider(context, nets)
+            for net in nets:
+                net[api.MTU] = self._get_network_mtu(net)
+            nets = self._filter_nets_provider(context, nets, filters)
+
+        return [db_utils.resource_fields(net, fields) for net in nets]
