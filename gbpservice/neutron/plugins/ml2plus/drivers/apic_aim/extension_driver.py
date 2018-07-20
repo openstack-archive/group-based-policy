@@ -76,6 +76,17 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 else:
                     LOG.exception("APIC AIM extend_network_dict failed")
 
+    def extend_network_dict_bulk(self, session, results):
+        try:
+            self._md.extend_network_dict_bulk(session, results)
+        except Exception as e:
+            with excutils.save_and_reraise_exception():
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_network_dict got retriable "
+                              "exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_network_dict failed")
+
     def validate_bgp_params(self, data, result=None):
         if result:
             is_svi = result.get(cisco_apic.SVI)
