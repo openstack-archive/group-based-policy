@@ -815,50 +815,64 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.aim.delete(aim_ctx, epg)
             session.delete(mapping)
 
-    def extend_network_dict(self, session, network_db, result):
-        LOG.debug("APIC AIM MD extending dict for network: %s", result)
-
-        sync_state = cisco_apic.SYNC_NOT_APPLICABLE
-        dist_names = {}
+    def extend_network_dict_bulk(self, session, results):
+        # Gather db objects
         aim_ctx = aim_context.AimContext(session)
+        extn_db = extension_db.ExtensionDbMixin()
+        aim_resources = []
+        res_dict_by_aim_res_dn = {}
 
-        mapping = network_db.aim_mapping
-        if mapping:
-            if mapping.epg_name:
-                bd = self._get_network_bd(mapping)
-                dist_names[cisco_apic.BD] = bd.dn
-                sync_state = self._merge_status(aim_ctx, sync_state, bd)
+        for res_dict, net_db in results:
+            res_dict[cisco_apic.SYNC_STATE] = cisco_apic.SYNC_NOT_APPLICABLE
+            res_dict[cisco_apic.DIST_NAMES] = {}
+            mapping = net_db.aim_mapping
+            dist_names = res_dict.setdefault(cisco_apic.DIST_NAMES, {})
+            if mapping:
+                if mapping.epg_name:
+                    bd = self._get_network_bd(mapping)
+                    dist_names[cisco_apic.BD] = bd.dn
+                    epg = self._get_network_epg(mapping)
+                    dist_names[cisco_apic.EPG] = epg.dn
+                    aim_resources.extend([bd, epg])
+                    res_dict_by_aim_res_dn[epg.dn] = res_dict
+                    res_dict_by_aim_res_dn[bd.dn] = res_dict
+                elif mapping.l3out_name:
+                    l3out_ext_net = self._get_network_l3out_ext_net(mapping)
+                    dist_names[cisco_apic.EXTERNAL_NETWORK] = l3out_ext_net.dn
+                    aim_resources.append(l3out_ext_net)
+                    res_dict_by_aim_res_dn[l3out_ext_net.dn] = res_dict
 
-                epg = self._get_network_epg(mapping)
-                dist_names[cisco_apic.EPG] = epg.dn
-                sync_state = self._merge_status(aim_ctx, sync_state, epg)
-            # SVI network with auto l3out.
-            elif mapping.l3out_name:
-                l3out_ext_net = self._get_network_l3out_ext_net(mapping)
-                dist_names[cisco_apic.EXTERNAL_NETWORK] = l3out_ext_net.dn
-                sync_state = self._merge_status(aim_ctx, sync_state,
-                                                l3out_ext_net)
+                vrf = self._get_network_vrf(mapping)
+                dist_names[cisco_apic.VRF] = vrf.dn
+                aim_resources.append(vrf)
+                res_dict_by_aim_res_dn[vrf.dn] = res_dict
+            ext_dict = extn_db.make_network_extn_db_conf_dict(
+                net_db.aim_extension_mapping,
+                net_db.aim_extension_cidr_mapping)
+            if cisco_apic.EXTERNAL_NETWORK in ext_dict:
+                dn = ext_dict.pop(cisco_apic.EXTERNAL_NETWORK)
+                a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
+                res_dict.setdefault(cisco_apic.DIST_NAMES, {})[
+                    cisco_apic.EXTERNAL_NETWORK] = dn
+                aim_resources.append(a_ext_net)
+                res_dict_by_aim_res_dn[a_ext_net.dn] = res_dict
 
-            vrf = self._get_network_vrf(mapping)
-            dist_names[cisco_apic.VRF] = vrf.dn
-            sync_state = self._merge_status(aim_ctx, sync_state, vrf)
+            res_dict.update(ext_dict)
 
-        # SVI network with pre-existing l3out.
-        if self._is_preexisting_svi_db(network_db):
-            _, ext_net, _ = self._get_aim_external_objects_db(session,
-                                                              network_db)
-            if ext_net:
-                sync_state = self._merge_status(aim_ctx, sync_state, ext_net)
+        # Merge statuses
+        for status in self.aim.get_statuses(aim_ctx, aim_resources):
+            res_dict = res_dict_by_aim_res_dn.get(status.resource_dn, {})
+            res_dict[cisco_apic.SYNC_STATE] = self._merge_status(
+                aim_ctx,
+                res_dict.get(cisco_apic.SYNC_STATE,
+                             cisco_apic.SYNC_NOT_APPLICABLE),
+                None, status=status)
 
-        # REVISIT: Should the external network be persisted in the
-        # mapping along with the other resources?
-        if network_db.external is not None:
-            _, ext_net, _ = self._get_aim_nat_strategy_db(session, network_db)
-            if ext_net:
-                sync_state = self._merge_status(aim_ctx, sync_state, ext_net)
-
-        result[cisco_apic.DIST_NAMES] = dist_names
-        result[cisco_apic.SYNC_STATE] = sync_state
+    def extend_network_dict(self, session, network_db, result):
+        if result.get(api_plus.BULK_EXTENDED):
+            return
+        LOG.debug("APIC AIM MD extending dict for network: %s", result)
+        self.extend_network_dict_bulk(session, [(result, network_db)])
 
     def create_subnet_precommit(self, context):
         current = context.current
@@ -976,6 +990,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # they are removed from routers.
 
     def extend_subnet_dict(self, session, subnet_db, result):
+        if result.get(api_plus.BULK_EXTENDED):
+            return
         LOG.debug("APIC AIM MD extending dict for subnet: %s", result)
 
         sync_state = cisco_apic.SYNC_NOT_APPLICABLE
@@ -1104,6 +1120,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 session.delete(mapping)
 
     def extend_address_scope_dict(self, session, scope_db, result):
+        if result.get(api_plus.BULK_EXTENDED):
+            return
         LOG.debug("APIC AIM MD extending dict for address scope: %s", result)
 
         # REVISIT: Consider moving to ApicExtensionDriver.
@@ -1251,6 +1269,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim.delete(aim_ctx, contract)
 
     def extend_router_dict(self, session, router_db, result):
+        if result.get(api_plus.BULK_EXTENDED):
+            return
         LOG.debug("APIC AIM MD extending dict for router: %s", result)
 
         # REVISIT(rkukura): Consider optimizing this method by
@@ -2339,8 +2359,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 policy_drivers['aim_mapping'].obj)
         return self._gbp_driver
 
-    def _merge_status(self, aim_ctx, sync_state, resource):
-        status = self.aim.get_status(aim_ctx, resource, create_if_absent=False)
+    def _merge_status(self, aim_ctx, sync_state, resource, status=None):
+        status = status or self.aim.get_status(aim_ctx, resource,
+                                               create_if_absent=False)
         if not status:
             # REVISIT(rkukura): This should only occur if the AIM
             # resource has not yet been created when
