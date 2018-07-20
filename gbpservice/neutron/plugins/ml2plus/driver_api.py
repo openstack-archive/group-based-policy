@@ -18,6 +18,8 @@ import six
 
 from neutron.plugins.ml2 import driver_api
 
+BULK_EXTENDED = 'ml2plus:_bulk_extended'
+
 
 @six.add_metaclass(abc.ABCMeta)
 class SubnetPoolContext(object):
