@@ -120,6 +120,10 @@ class DbMixin(object):
                 filter_by(network_id=network_id).
                 one_or_none())
 
+    def _get_network_mapping_bulk(self, session, network_ids):
+        return session.query(NetworkMapping).filter(
+            NetworkMapping.network_id.in_(network_ids)).all()
+
     def _get_network_mappings_for_vrf(self, session, vrf):
         return (session.query(NetworkMapping).
                 filter_by(vrf_tenant_name=vrf.tenant_name,
