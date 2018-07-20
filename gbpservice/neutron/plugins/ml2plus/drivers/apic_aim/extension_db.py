@@ -98,39 +98,52 @@ class ExtensionDbMixin(object):
             res_dict[res_attr] = db_attr
 
     def get_network_extn_db(self, session, network_id):
-        db_obj = (session.query(NetworkExtensionDb).filter_by(
-                  network_id=network_id).first())
-        db_cidrs = (session.query(NetworkExtensionCidrDb).filter_by(
-                    network_id=network_id).all())
+        return self.get_network_extn_db_bulk(session, [network_id]).get(
+            network_id, {})
+
+    def get_network_extn_db_bulk(self, session, network_ids):
+        db_objs = (session.query(NetworkExtensionDb).filter(
+            NetworkExtensionDb.network_id.in_(network_ids)).all())
+        db_cidrs = (session.query(NetworkExtensionCidrDb).filter(
+            NetworkExtensionDb.network_id.in_(network_ids)).all())
         db_vlans = (session.query(
-            NetworkExtNestedDomainAllowedVlansDb).filter_by(
-                network_id=network_id).all())
+            NetworkExtNestedDomainAllowedVlansDb).filter(
+            NetworkExtensionDb.network_id.in_(network_ids)).all())
+        cidrs_by_net_id = {}
+        vlans_by_net_id = {}
+        for db_cidr in db_cidrs:
+            cidrs_by_net_id.setdefault(db_cidr.network_id, []).append(
+                db_cidr.cidr)
+        for db_vlan in db_vlans:
+            vlans_by_net_id.setdefault(db_vlan.network_id, []).append(
+                db_vlan.vlan)
         result = {}
-        if db_obj:
-            self._set_if_not_none(result, cisco_apic.EXTERNAL_NETWORK,
+        for db_obj in db_objs:
+            net_id = db_obj.network_id
+            net_res = result.setdefault(net_id, {})
+            self._set_if_not_none(net_res, cisco_apic.EXTERNAL_NETWORK,
                                   db_obj['external_network_dn'])
-            self._set_if_not_none(result, cisco_apic.NAT_TYPE,
+            self._set_if_not_none(net_res, cisco_apic.NAT_TYPE,
                                   db_obj['nat_type'])
-            self._set_if_not_none(result, cisco_apic.SVI, db_obj['svi'])
-            result[cisco_apic.BGP] = db_obj['bgp_enable']
-            result[cisco_apic.BGP_TYPE] = db_obj['bgp_type']
-            result[cisco_apic.BGP_ASN] = db_obj['bgp_asn']
-            result[cisco_apic.NESTED_DOMAIN_NAME] = (
+            self._set_if_not_none(net_res, cisco_apic.SVI, db_obj['svi'])
+            net_res[cisco_apic.BGP] = db_obj['bgp_enable']
+            net_res[cisco_apic.BGP_TYPE] = db_obj['bgp_type']
+            net_res[cisco_apic.BGP_ASN] = db_obj['bgp_asn']
+            net_res[cisco_apic.NESTED_DOMAIN_NAME] = (
                     db_obj['nested_domain_name'])
-            result[cisco_apic.NESTED_DOMAIN_TYPE] = (
+            net_res[cisco_apic.NESTED_DOMAIN_TYPE] = (
                     db_obj['nested_domain_type'])
-            result[cisco_apic.NESTED_DOMAIN_INFRA_VLAN] = (
+            net_res[cisco_apic.NESTED_DOMAIN_INFRA_VLAN] = (
                     db_obj['nested_domain_infra_vlan'])
-            result[cisco_apic.NESTED_DOMAIN_SERVICE_VLAN] = (
+            net_res[cisco_apic.NESTED_DOMAIN_SERVICE_VLAN] = (
                     db_obj['nested_domain_service_vlan'])
-            result[cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN] = (
+            net_res[cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN] = (
                     db_obj['nested_domain_node_network_vlan'])
-            result[cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS] = (
-                    [c['vlan'] for c in db_vlans])
-
-        if result.get(cisco_apic.EXTERNAL_NETWORK):
-            result[cisco_apic.EXTERNAL_CIDRS] = [c['cidr'] for c in db_cidrs]
-
+            net_res[cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS] = (
+                vlans_by_net_id.get(net_id, []))
+            if net_res.get(cisco_apic.EXTERNAL_NETWORK):
+                net_res[cisco_apic.EXTERNAL_CIDRS] = cidrs_by_net_id.get(
+                    net_id, [])
         return result
 
     def set_network_extn_db(self, session, network_id, res_dict):

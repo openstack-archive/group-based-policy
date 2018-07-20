@@ -62,12 +62,17 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
     def extend_network_dict(self, session, base_model, result):
         try:
             self._md.extend_network_dict(session, base_model, result)
-            res_dict = self.get_network_extn_db(session, result['id'])
-            if cisco_apic.EXTERNAL_NETWORK in res_dict:
-                result.setdefault(cisco_apic.DIST_NAMES, {})[
-                    cisco_apic.EXTERNAL_NETWORK] = res_dict.pop(
-                        cisco_apic.EXTERNAL_NETWORK)
-            result.update(res_dict)
+        except Exception as e:
+            with excutils.save_and_reraise_exception():
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_network_dict got retriable "
+                              "exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_network_dict failed")
+
+    def extend_network_dict_bulk(self, session, results):
+        try:
+            self._md.extend_network_dict_bulk(session, results)
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
