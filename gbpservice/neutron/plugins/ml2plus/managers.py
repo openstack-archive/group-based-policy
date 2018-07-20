@@ -209,13 +209,23 @@ class ExtensionManager(managers.ExtensionManager):
     # exceptions, as well as to support calling only on extension
     # drivers extended for ML2Plus.
     def _call_on_dict_driver(self, method_name, session, base_model, result,
-                             extended_only=False):
+                             extended_only=False, has_base_model=True):
+
+        # Bulk operations might not be implemented by all drivers
+        def noop(*args, **kwargs):
+            pass
+
         for driver in self.ordered_ext_drivers:
             if not extended_only or isinstance(
                     driver.obj, driver_api.ExtensionDriver):
                 try:
-                    getattr(driver.obj, method_name)(session, base_model,
-                                                     result)
+                    if not has_base_model:
+                        getattr(driver.obj, method_name, noop)(session,
+                                                               result)
+                    else:
+                        getattr(driver.obj, method_name, noop)(session,
+                                                               base_model,
+                                                               result)
                 except Exception as e:
                     if db_api.is_retriable(e):
                         with excutils.save_and_reraise_exception():
@@ -252,3 +262,25 @@ class ExtensionManager(managers.ExtensionManager):
     def extend_address_scope_dict(self, session, base_model, result):
         self._call_on_dict_driver("extend_address_scope_dict",
                                   session, base_model, result, True)
+
+    def extend_subnetpool_dict_bulk(self, session, result):
+        self._call_on_dict_driver("extend_subnetpool_dict_bulk",
+                                  session, None, result, True,
+                                  has_base_model=False)
+
+    def extend_address_scope_dict_bulk(self, session, result):
+        self._call_on_dict_driver("extend_address_scope_dict_bulk",
+                                  session, None, result, True,
+                                  has_base_model=False)
+
+    def extend_network_dict_bulk(self, session, result):
+        self._call_on_dict_driver("extend_network_dict_bulk", session,
+                                  None, result, has_base_model=False)
+
+    def extend_subnet_dict_bulk(self, session, result):
+        self._call_on_dict_driver("extend_subnet_dict_bulk", session,
+                                  None, result, has_base_model=False)
+
+    def extend_port_dict_bulk(self, session, result):
+        self._call_on_dict_driver("extend_port_dict_bulk", session, None,
+                                  result, has_base_model=False)
