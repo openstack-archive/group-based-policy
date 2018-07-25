@@ -47,7 +47,7 @@ class NfpLauncher(ProcessLauncher):
             if name.startswith("SIG") and
             name not in self.signal_handler._ignore_signals)
 
-        super(NfpLauncher, self).__init__(conf)
+        super(NfpLauncher, self).__init__(conf, restart_method='mutate')
 
     def child(self, service, ppipe, cpipe, controller):
         service.parent_pipe = ppipe

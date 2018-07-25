@@ -428,7 +428,8 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             # Launch rpc_service_agent
             # Use threads for launching service
             launcher = oslo_service.launch(
-                self._conf, service, workers=None)
+                self._conf, service, workers=None,
+                restart_method='mutate')
 
             self._rpc_agents[key]['service'] = service
             self._rpc_agents[key]['launcher'] = launcher
