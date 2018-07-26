@@ -58,30 +58,38 @@ class AimValidationTestMixin(object):
             api.VALIDATION_FAILED, self.av_mgr.validate(repair=True))
 
     def _test_aim_resource(self, resource, unexpected_attr_name='name',
-                           unexpected_attr_value='unexpected'):
+                           unexpected_attr_value='unexpected',
+                           test_unexpected_monitored=True):
         resource = copy.copy(resource)
 
-        # Delete the AIM resource and test.
-        self.aim_mgr.delete(self.aim_ctx, resource)
-        self._validate_repair_validate()
+        # Make sure the AIM resource exists.
+        actual_resource = self.aim_mgr.get(self.aim_ctx, resource)
+        self.assertIsNotNone(actual_resource)
 
-        # Modify the AIM resource and test.
-        self.aim_mgr.update(
-            self.aim_ctx, resource, display_name='not what it was')
-        self._validate_repair_validate()
+        # Only test deleting and modifying if not monitored.
+        if not actual_resource.monitored:
+            # Delete the AIM resource and test.
+            self.aim_mgr.delete(self.aim_ctx, resource)
+            self._validate_repair_validate()
+
+            # Modify the AIM resource and test.
+            self.aim_mgr.update(
+                self.aim_ctx, resource, display_name='not what it was')
+            self._validate_repair_validate()
 
         # Add unexpected AIM resource and test.
         setattr(resource, unexpected_attr_name, unexpected_attr_value)
         self.aim_mgr.create(self.aim_ctx, resource)
         self._validate_repair_validate()
 
-        # Add unexpected monitored AIM resource and test.
-        resource.monitored = True
-        self.aim_mgr.create(self.aim_ctx, resource)
-        self._validate()
+        if test_unexpected_monitored:
+            # Add unexpected monitored AIM resource and test.
+            resource.monitored = True
+            self.aim_mgr.create(self.aim_ctx, resource)
+            self._validate()
 
-        # Delete unexpected monitored AIM resource.
-        self.aim_mgr.delete(self.aim_ctx, resource)
+            # Delete unexpected monitored AIM resource.
+            self.aim_mgr.delete(self.aim_ctx, resource)
 
 
 class AimValidationTestCase(test_aim_mapping_driver.AIMBaseTestCase,
@@ -275,6 +283,12 @@ class TestNeutronMapping(AimValidationTestCase):
 
     # REVISIT: Test isomorphic address scopes.
 
+    def _test_network_dns(self, net):
+        self.assertDictEqual(
+            net['apic:distinguished_names'],
+            self._show(
+                'networks', net['id'])['network']['apic:distinguished_names'])
+
     def _test_network_resources(self, net_resp):
         net = net_resp['network']
         net_id = net['id']
@@ -291,6 +305,7 @@ class TestNeutronMapping(AimValidationTestCase):
          filter_by(network_id=net_id).
          delete())
         self._validate_repair_validate()
+        self._test_network_dns(net)
 
         # Corrupt the network's mapping record's BD and test.
         with self.db_session.begin():
@@ -299,6 +314,7 @@ class TestNeutronMapping(AimValidationTestCase):
                        one())
             mapping.bd_tenant_name = 'bad_bd_tenant_name'
         self._validate_repair_validate()
+        self._test_network_dns(net)
 
         # Corrupt the network's mapping record's EPG and test.
         with self.db_session.begin():
@@ -307,6 +323,7 @@ class TestNeutronMapping(AimValidationTestCase):
                        one())
             mapping.epg_app_profile_name = 'bad_epg_app_profilename'
         self._validate_repair_validate()
+        self._test_network_dns(net)
 
         # Corrupt the network's mapping record's VRF and test.
         with self.db_session.begin():
@@ -315,6 +332,7 @@ class TestNeutronMapping(AimValidationTestCase):
                        one())
             mapping.vrf_name = 'bad_vrf_name'
         self._validate_repair_validate()
+        self._test_network_dns(net)
 
         # Test AIM BridgeDomain.
         bd = aim_resource.BridgeDomain.from_dn(bd_dn)
@@ -352,7 +370,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # Test AIM resources.
         self._test_network_resources(net_resp)
 
-    def _test_external_network(self):
+    def _test_external_network(self, vrf_name='openstack_EXT-l1'):
         # Create AIM HostDomainMappingV2.
         hd_mapping = aim_infra.HostDomainMappingV2(
             host_name='*', domain_name='vm2', domain_type='OpenStack')
@@ -365,6 +383,7 @@ class TestNeutronMapping(AimValidationTestCase):
         net_resp = self._make_network(
             self.fmt, 'ext_net', True, arg_list=self.extension_attributes,
             **kwargs)
+        net = net_resp['network']
         self._validate()
 
         # Test standard network AIM resources.
@@ -373,21 +392,27 @@ class TestNeutronMapping(AimValidationTestCase):
         # Test AIM L3Outside.
         l3out = aim_resource.L3Outside(tenant_name='common', name='l1')
         self._test_aim_resource(l3out)
+        self._test_network_dns(net)
 
         # Test AIM ExternalNetwork.
         en = aim_resource.ExternalNetwork(
             tenant_name='common', l3out_name='l1', name='n1')
         self._test_aim_resource(en)
+        self._test_network_dns(net)
 
-        # Test AIM ExternalSubnet.
+        # Test AIM ExternalSubnet. Note that the NAT strategy code
+        # will try to delete unexpected ExternalSubnets even if they
+        # are monitored, so we skip that test.
         esn = aim_resource.ExternalSubnet(
             tenant_name='common', l3out_name='l1', external_network_name='n1',
             cidr='0.0.0.0/0')
-        self._test_aim_resource(esn, 'cidr', '1.2.3.4/0')
+        self._test_aim_resource(esn, 'cidr', '1.2.3.4/0', False)
+        self._test_network_dns(net)
 
         # Test AIM VRF.
-        vrf = aim_resource.VRF(tenant_name='common', name='openstack_EXT-l1')
+        vrf = aim_resource.VRF(tenant_name='common', name=vrf_name)
         self._test_aim_resource(vrf)
+        self._test_network_dns(net)
 
         # Test AIM ApplicationProfile.
         ap = aim_resource.ApplicationProfile(
@@ -439,7 +464,7 @@ class TestNeutronMapping(AimValidationTestCase):
             cidr='0.0.0.0/0', monitored=True)
         self.aim_mgr.create(self.aim_ctx, ext_sn)
 
-        self._test_external_network()
+        self._test_external_network(vrf_name='v1')
 
     def test_svi_network(self):
         # REVISIT: Test validation of actual mapping once implemented.
