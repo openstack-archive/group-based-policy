@@ -5320,6 +5320,25 @@ class TestNestedDomain(AIMBaseTestCase):
                    "{'start': '11', 'end': '14'}]}")
         self._test_get_nested_domain_details(vlan_str)
 
+    def test_no_nested_domain_details_for_regular_network(self):
+        self._register_agent('host1', test_aim_md.AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:')['port']
+        p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        self.assertEqual('', details['nested_domain_name'])
+        self.assertEqual('', details['nested_domain_type'])
+        self.assertIsNone(details['nested_domain_infra_vlan'])
+        self.assertIsNone(details['nested_domain_service_vlan'])
+        self.assertIsNone(details['nested_domain_node_network_vlan'])
+        self.assertItemsEqual([], details['nested_domain_allowed_vlans'])
+        self.assertIsNone(details['nested_host_vlan'])
+
 
 class TestNeutronPortOperation(AIMBaseTestCase):
 
