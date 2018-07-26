@@ -2430,7 +2430,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 network.get('apic:nested_domain_service_vlan'),
                 network.get('apic:nested_domain_node_network_vlan'),
                 network.get('apic:nested_domain_allowed_vlans'),
-                self._nested_host_vlan)
+                self._nested_host_vlan if network.get(
+                    'apic:nested_domain_infra_vlan') else None)
 
     def _create_per_l3p_implicit_contracts(self):
         admin_context = n_context.get_admin_context()
