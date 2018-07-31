@@ -18,7 +18,6 @@ import sys
 from oslo_config import cfg
 from neutron.common import config
 from neutron import manager
-from neutron_lib.plugins import directory
 
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
@@ -43,9 +42,8 @@ def main():
                    " search paths (~/.neutron/, ~/, /etc/neutron/, /etc/) and"
                    " the '--config-file' option!"))
 
-    manager.init()
-
-    gbp_plugin = directory.get_plugin('GROUP_POLICY')
+    gbp_plugin = (manager.NeutronManager.get_service_plugins()
+                  .get("GROUP_POLICY"))
     if not gbp_plugin:
         sys.exit("GBP service plugin not configured.")
 
