@@ -16,6 +16,7 @@
 import sys
 
 from oslo_config import cfg
+from neutron.api.v2 import router
 from neutron.common import config
 from neutron import manager
 
@@ -42,6 +43,7 @@ def main():
                    " search paths (~/.neutron/, ~/, /etc/neutron/, /etc/) and"
                    " the '--config-file' option!"))
 
+    router.APIRouter.factory({})
     gbp_plugin = (manager.NeutronManager.get_service_plugins()
                   .get("GROUP_POLICY"))
     if not gbp_plugin:
