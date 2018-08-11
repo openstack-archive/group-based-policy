@@ -33,8 +33,11 @@ def upgrade():
                             server_default=sa.false(),
                             nullable=False))
     op.add_column('apic_aim_network_extensions',
-                  sa.Column('bgp_type', sa.Enum('default_export', ''),
-                            server_default="default_export", nullable=False))
+                  sa.Column('bgp_type',
+                            sa.Enum('default_export', '',
+                                    name='bgp_type'),
+                  server_default="default_export",
+                  nullable=False))
     op.add_column('apic_aim_network_extensions',
                   sa.Column('bgp_asn', sa.String(64), server_default="0",
                             nullable=False))

@@ -29,17 +29,30 @@ from neutron.db import models_v2
 import sqlalchemy as sa
 from sqlalchemy.orm import lazyload
 
+from sqlalchemy.dialects import postgresql
+
+try:
+    bgp_type = postgresql.ENUM('default_export', '',
+                               name='bgp_type')
+    bgp_type.create(op.get_bind())
+except Exception:
+    # DB other than postgres will not need this declaration
+    # and hence the exception can be ignored
+    pass
 
 NetworkExtensionDb = sa.Table(
     'apic_aim_network_extensions', sa.MetaData(),
     sa.Column('network_id', sa.String(36), nullable=False),
     sa.Column('external_network_dn', sa.String(1024)),
-    sa.Column('nat_type', sa.Enum('distributed', 'edge', '')),
+    sa.Column('nat_type', sa.Enum('distributed', 'edge', '',
+                                  name='nat_type')),
     sa.Column('svi', sa.Boolean),
     sa.Column('bgp_enable', sa.Boolean,
               server_default=sa.false(), nullable=False),
-    sa.Column('bgp_type', sa.Enum('default_export', ''),
-              server_default="default_export", nullable=False),
+    sa.Column('bgp_type', sa.Enum('default_export', '',
+                                  name='bgp_type'),
+              server_default="default_export",
+              nullable=False),
     sa.Column('bgp_asn', sa.String(64),
               server_default="0", nullable=False))
 
