@@ -132,10 +132,13 @@ class ValidationManager(object):
                 for resource in self.aim_mgr.find(
                         self.actual_aim_ctx, resource_class)}
 
-    def expect_aim_resource(self, resource, replace=False):
+    def expect_aim_resource(self, resource, replace=False, remove=False):
         expected_resources = self._expected_aim_resources[resource.__class__]
         key = tuple(resource.identity)
-        if not replace and key in expected_resources:
+        if remove:
+            del expected_resources[key]
+            return
+        elif not replace and key in expected_resources:
             print("resource %s already expected" % resource)
             raise InternalValidationError()
         for attr_name, attr_type in resource.other_attributes.items():
@@ -339,7 +342,7 @@ class ValidationAimStore(aim_store.AimStore):
         self._mgr.expect_aim_resource(db_obj, True)
 
     def delete(self, db_obj):
-        assert(False)
+        self._mgr.expect_aim_resource(db_obj, remove=True)
 
     def query(self, db_obj_type, resource_class, in_=None, notin_=None,
               order_by=None, lock_update=False, **filters):
