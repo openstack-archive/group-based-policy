@@ -87,6 +87,10 @@ class SubnetExtensionDb(model_base.BASEV2):
         sa.String(36), sa.ForeignKey('subnets.id', ondelete="CASCADE"),
         primary_key=True)
     snat_host_pool = sa.Column(sa.Boolean)
+    subnet = orm.relationship(models_v2.Subnet,
+                              backref=orm.backref(
+                                  'aim_extension_mapping', lazy='joined',
+                                  uselist=False, cascade='delete'))
 
 
 class RouterExtensionContractDb(model_base.BASEV2):

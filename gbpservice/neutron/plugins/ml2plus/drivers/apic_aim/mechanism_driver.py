@@ -29,6 +29,7 @@ from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim.common import utils
 from aim import context as aim_context
+from aim import exceptions as aim_exceptions
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
 from neutron.callbacks import events
@@ -183,7 +184,8 @@ class KeystoneNotificationEndpoint(object):
 
 
 class ApicMechanismDriver(api_plus.MechanismDriver,
-                          db.DbMixin):
+                          db.DbMixin,
+                          extension_db.ExtensionDbMixin):
     NIC_NAME_LEN = 14
 
     class TopologyRpcEndpoint(object):
@@ -496,10 +498,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ns.create_external_network(aim_ctx, ext_net)
             # Get external CIDRs for all external networks that share
             # this APIC external network.
-            ext_db = extension_db.ExtensionDbMixin()
             cidrs = sorted(
-                ext_db.get_external_cidrs_by_ext_net_dn(session, ext_net.dn,
-                                                        lock_update=True))
+                self.get_external_cidrs_by_ext_net_dn(
+                    session, ext_net.dn, lock_update=True))
             ns.update_external_cidrs(aim_ctx, ext_net, cidrs)
 
             for resource in ns.get_l3outside_resources(aim_ctx, l3out):
@@ -512,10 +513,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         elif self._is_svi(current):
             l3out, ext_net, _ = self._get_aim_external_objects(current)
             if ext_net:
-                extn_db = extension_db.ExtensionDbMixin()
                 other_nets = set(
-                    extn_db.get_svi_network_ids_by_l3out_dn(session, l3out.dn,
-                                                            lock_update=True))
+                    self.get_svi_network_ids_by_l3out_dn(
+                        session, l3out.dn, lock_update=True))
                 other_nets.discard(current['id'])
                 if other_nets:
                     raise exceptions.PreExistingSVICannotUseSameL3out()
@@ -643,9 +643,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if old != new:
                     # Get external CIDRs for all external networks that share
                     # this APIC external network.
-                    ext_db = extension_db.ExtensionDbMixin()
                     cidrs = sorted(
-                        ext_db.get_external_cidrs_by_ext_net_dn(
+                        self.get_external_cidrs_by_ext_net_dn(
                             session, ext_net.dn, lock_update=True))
                     ns.update_external_cidrs(aim_ctx, ext_net, cidrs)
                 # TODO(amitbose) Propagate name updates to AIM
@@ -768,19 +767,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
                 return  # Unmanaged external network
-            extn_db = extension_db.ExtensionDbMixin()
             # REVISIT: lock_update=True is needed to handle races. Find
             # alternative solutions since Neutron discourages using such
             # queries.
             other_nets = set(
-                extn_db.get_network_ids_by_ext_net_dn(session, ext_net.dn,
-                                                      lock_update=True))
+                self.get_network_ids_by_ext_net_dn(
+                    session, ext_net.dn, lock_update=True))
             other_nets.discard(current['id'])
             if not other_nets:
                 ns.delete_external_network(aim_ctx, ext_net)
             other_nets = set(
-                extn_db.get_network_ids_by_l3out_dn(session, l3out.dn,
-                                                    lock_update=True))
+                self.get_network_ids_by_l3out_dn(
+                    session, l3out.dn, lock_update=True))
             other_nets.discard(current['id'])
             if not other_nets:
                 ns.delete_l3outside(aim_ctx, l3out)
@@ -815,7 +813,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def extend_network_dict_bulk(self, session, results, single=False):
         # Gather db objects
         aim_ctx = aim_context.AimContext(session)
-        extn_db = extension_db.ExtensionDbMixin()
         aim_resources = []
         res_dict_by_aim_res_dn = {}
 
@@ -856,9 +853,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # put the extension call in Pike+ *before* the precommit
                 # calls happen in network creation. I believe this is a but
                 # and should be discussed with the Neutron team.
-                ext_dict = extn_db.get_network_extn_db(session, net_db.id)
+                ext_dict = self.get_network_extn_db(session, net_db.id)
             else:
-                ext_dict = extn_db.make_network_extn_db_conf_dict(
+                ext_dict = self.make_network_extn_db_conf_dict(
                     net_db.aim_extension_mapping,
                     net_db.aim_extension_cidr_mapping,
                     net_db.aim_extension_domain_mapping)
@@ -905,10 +902,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return  # Unmanaged external network
             # Check subnet overlap with subnets from other Neutron
             # external networks that map to the same APIC L3Out
-            ext_db = extension_db.ExtensionDbMixin()
             other_nets = set(
-                ext_db.get_network_ids_by_l3out_dn(session, l3out.dn,
-                                                   lock_update=True))
+                self.get_network_ids_by_l3out_dn(
+                    session, l3out.dn, lock_update=True))
             other_nets.discard(network_id)
             cidrs = (session.query(models_v2.Subnet.cidr).filter(
                 models_v2.Subnet.network_id.in_(other_nets)).all())
@@ -3048,8 +3044,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return self._get_aim_external_objects(network)
 
     def _get_aim_external_objects_db(self, session, network_db):
-        extn_db = extension_db.ExtensionDbMixin()
-        extn_info = extn_db.get_network_extn_db(session, network_db.id)
+        extn_info = self.get_network_extn_db(session, network_db.id)
         if extn_info and cisco_apic.EXTERNAL_NETWORK in extn_info:
             dn = extn_info[cisco_apic.EXTERNAL_NETWORK]
             a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
@@ -3144,7 +3139,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # is mainly required to ease unit-test verification.
         vrf = aim_resource.VRF(tenant_name=vrf.tenant_name, name=vrf.name)
         rtr_dbs = self._get_routers_for_vrf(session, vrf)
-        ext_db = extension_db.ExtensionDbMixin()
 
         prov = set()
         cons = set()
@@ -3154,7 +3148,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             prov.add(contract.name)
             cons.add(contract.name)
 
-            r_info = ext_db.get_router_extn_db(session, router['id'])
+            r_info = self.get_router_extn_db(session, router['id'])
             prov.update(r_info[a_l3.EXTERNAL_PROVIDED_CONTRACTS])
             cons.update(r_info[a_l3.EXTERNAL_CONSUMED_CONTRACTS])
 
@@ -3162,7 +3156,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             _, ext_net, ns = self._get_aim_nat_strategy(old_network)
             if ext_net:
                 # Find Neutron networks that share the APIC external network.
-                eqv_nets = ext_db.get_network_ids_by_ext_net_dn(
+                eqv_nets = self.get_network_ids_by_ext_net_dn(
                     session, ext_net.dn, lock_update=True)
                 rtr_old = [r for r in rtr_dbs
                            if (r.gw_port_id and
@@ -3182,7 +3176,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             _, ext_net, ns = self._get_aim_nat_strategy(new_network)
             if ext_net:
                 # Find Neutron networks that share the APIC external network.
-                eqv_nets = ext_db.get_network_ids_by_ext_net_dn(
+                eqv_nets = self.get_network_ids_by_ext_net_dn(
                     session, ext_net.dn, lock_update=True)
                 rtr_new = [r for r in rtr_dbs
                            if (r.gw_port_id and
@@ -3339,9 +3333,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def check_floatingip_external_address(self, context, floatingip):
         session = context.session
         if floatingip.get('subnet_id'):
-            sn_ext = (extension_db.ExtensionDbMixin()
-                      .get_subnet_extn_db(session,
-                                          floatingip['subnet_id']))
+            sn_ext = self.get_subnet_extn_db(session, floatingip['subnet_id'])
             if sn_ext.get(cisco_apic.SNAT_HOST_POOL, False):
                 raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
         elif floatingip.get('floating_ip_address'):
@@ -4084,6 +4076,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             for resource in mgr.actual_aim_resources(resource_class):
                 mgr.aim_mgr.create(mgr.expected_aim_ctx, resource)
 
+        # Copy pre-existing AIM resources for external networking from
+        # actual to expected AIM stores.
+        for resource_class in [aim_resource.ExternalNetwork,
+                               aim_resource.ExternalSubnet,
+                               aim_resource.L3Outside,
+                               aim_resource.VRF]:
+            for resource in mgr.actual_aim_resources(resource_class):
+                if resource.monitored:
+                    mgr.aim_mgr.create(mgr.expected_aim_ctx, resource)
+
         # Register DB tables to be validated.
         mgr.register_db_instance_class(
             aim_lib_model.CloneL3Out, ['tenant_name', 'name'])
@@ -4177,8 +4179,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             mgr, net_dbs, routed_nets)
 
         for net_db in net_dbs.values():
+            if not net_db.aim_extension_mapping:
+                self._missing_network_extension_mapping(mgr, net_db)
             self._expect_project(mgr, net_db.project_id)
+
             for subnet_db in net_db.subnets:
+                if not subnet_db.aim_extension_mapping:
+                    self._missing_subnet_extension_mapping(mgr, subnet_db)
                 self._expect_project(mgr, subnet_db.project_id)
 
             for segment_db in net_db.segments:
@@ -4377,6 +4384,73 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         return network_vrfs, router_vrfs
 
+    def _missing_network_extension_mapping(self, mgr, net_db):
+        # Note that this is intended primarily to handle migration to
+        # apic_aim, where the previous plugin and/or drivers did not
+        # populate apic_aim's extension data. Migration of external
+        # networks is supported through configuration of ACI
+        # ExternalNetwork DNs, but other apic_aim-specific features
+        # such as SVI do not apply to these migration use cases. After
+        # migration, other attributes can be changed via the REST API
+        # if needed.
+
+        if not mgr.should_repair(
+                "network %s missing extension data" % net_db.id):
+            return
+
+        ext_net_dn = None
+        if net_db.external:
+            ext_net_dn = cfg.CONF.ml2_apic_aim.migrate_ext_net_dns.get(
+                net_db.id)
+            if not ext_net_dn:
+                mgr.validation_failed(
+                    "missing extension data for external network %s and no "
+                    "external network DN configured" % net_db.id)
+            try:
+                ext_net = aim_resource.ExternalNetwork.from_dn(ext_net_dn)
+                ext_net = mgr.aim_mgr.get(mgr.expected_aim_ctx, ext_net)
+                if not ext_net:
+                    mgr.validation_failed(
+                        "missing extension data for external network %(net)s "
+                        "and configured external network DN '%(dn)s' does not "
+                        "exist" % {'net': net_db.id, 'dn': ext_net_dn})
+                    ext_net_dn = None
+            except aim_exceptions.InvalidDNForAciResource:
+                mgr.validation_failed(
+                    "missing extension data for external network %(net)s and "
+                    "configured external network DN '%(dn)s' is invalid" %
+                    {'net': net_db.id, 'dn': ext_net_dn})
+                ext_net_dn = None
+        res_dict = {
+            cisco_apic.EXTERNAL_NETWORK: ext_net_dn,
+            cisco_apic.SVI: False,
+            cisco_apic.BGP: False,
+            cisco_apic.BGP_TYPE: 'default_export',
+            cisco_apic.BGP_ASN: 0,
+            cisco_apic.NESTED_DOMAIN_NAME: '',
+            cisco_apic.NESTED_DOMAIN_TYPE: '',
+            cisco_apic.NESTED_DOMAIN_INFRA_VLAN: None,
+            cisco_apic.NESTED_DOMAIN_SERVICE_VLAN: None,
+            cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN: None,
+        }
+        self.set_network_extn_db(mgr.actual_session, net_db.id, res_dict)
+
+    def _missing_subnet_extension_mapping(self, mgr, subnet_db):
+        # Note that this is intended primarily to handle migration to
+        # apic_aim, where the previous plugin and/or drivers did not
+        # populate apic_aim's extension data. After migration, the
+        # SNAT_HOST_POOL attribute can be changed via the REST API if
+        # needed.
+
+        if not mgr.should_repair(
+                "subnet %s missing extension data" % subnet_db.id):
+            return
+
+        res_dict = {
+            cisco_apic.SNAT_HOST_POOL: False
+        }
+        self.set_subnet_extn_db(mgr.actual_session, subnet_db.id, res_dict)
+
     def _validate_normal_network(self, mgr, net_db, network_vrfs, router_dbs,
                                  routed_nets):
         routed_vrf = network_vrfs.get(net_db.id)
@@ -4481,8 +4555,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # Get external CIDRs for all external networks that share this
         # APIC external network.
-        ext_db = extension_db.ExtensionDbMixin()
-        cidrs = sorted(ext_db.get_external_cidrs_by_ext_net_dn(
+        cidrs = sorted(self.get_external_cidrs_by_ext_net_dn(
             mgr.actual_session, ext_net.dn, lock_update=False))
         ns.update_external_cidrs(mgr.expected_aim_ctx, ext_net, cidrs)
         for resource in ns.get_l3outside_resources(
@@ -4501,7 +4574,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # REVISIT: Process each AIM ExternalNetwork rather than each
         # external Neutron network?
-        eqv_net_ids = ext_db.get_network_ids_by_ext_net_dn(
+        eqv_net_ids = self.get_network_ids_by_ext_net_dn(
             mgr.actual_session, ext_net.dn, lock_update=False)
         router_ids = set()
         for eqv_net_id in eqv_net_ids:
