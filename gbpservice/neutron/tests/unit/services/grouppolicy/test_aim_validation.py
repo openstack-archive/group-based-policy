@@ -23,8 +23,11 @@ from neutron.db.models import segment
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib import context as n_context
+from oslo_config import cfg
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    extension_db as ext_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
@@ -298,6 +301,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # Create unrouted subnet.
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24')['subnet']
+        subnet_id = subnet['id']
         self._validate()
 
         # Delete the network's mapping record and test.
@@ -362,13 +366,28 @@ class TestNeutronMapping(AimValidationTestCase):
                 gw_ip_mask='10.0.2.1/24')
             self._test_aim_resource(sn, 'gw_ip_mask', '10.0.3.1/24')
 
+        # Delete subnet extension data and test migration use case.
+        (self.db_session.query(ext_db.SubnetExtensionDb).
+         filter_by(subnet_id=subnet_id).
+         delete())
+        self._validate_repair_validate()
+
     def test_unrouted_network(self):
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+        net_id = net['id']
         self._validate()
 
         # Test AIM resources.
         self._test_network_resources(net_resp)
+
+        # Delete network extension data and test migration use case.
+        (self.db_session.query(ext_db.NetworkExtensionDb).
+         filter_by(network_id=net_id).
+         delete())
+        self._validate_repair_validate()
+        self._test_network_dns(net)
 
     def _test_external_network(self, vrf_name='openstack_EXT-l1'):
         # Create AIM HostDomainMappingV2.
@@ -440,6 +459,8 @@ class TestNeutronMapping(AimValidationTestCase):
             tenant_name='common', filter_name='openstack_EXT-l1', name='Any')
         self._test_aim_resource(entry)
 
+        return net
+
     def test_external_network(self):
         self._test_external_network()
 
@@ -464,7 +485,35 @@ class TestNeutronMapping(AimValidationTestCase):
             cidr='0.0.0.0/0', monitored=True)
         self.aim_mgr.create(self.aim_ctx, ext_sn)
 
-        self._test_external_network(vrf_name='v1')
+        # Run tests.
+        net = self._test_external_network(vrf_name='v1')
+        net_id = net['id']
+
+        # Delete network extension data to test migration use case.
+        (self.db_session.query(ext_db.NetworkExtensionDb).
+         filter_by(network_id=net_id).
+         delete())
+
+        # Test without DN for migration.
+        self._validate_unrepairable()
+
+        # Configure invalid DN for migration and test.
+        cfg.CONF.set_override(
+            'migrate_ext_net_dns', {net_id: 'abcdef'}, group='ml2_apic_aim')
+        self._validate_unrepairable()
+
+        # Configure non-existent DN for migration and test.
+        cfg.CONF.set_override(
+            'migrate_ext_net_dns', {net_id: 'uni/tn-common/out-l9/instP-n1'},
+            group='ml2_apic_aim')
+        self._validate_unrepairable()
+
+        # Configure correct DN for migration and test.
+        cfg.CONF.set_override(
+            'migrate_ext_net_dns', {net_id: 'uni/tn-common/out-l1/instP-n1'},
+            group='ml2_apic_aim')
+        self._validate_repair_validate()
+        self._test_network_dns(net)
 
     def test_svi_network(self):
         # REVISIT: Test validation of actual mapping once implemented.
