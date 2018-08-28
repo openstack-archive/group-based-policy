@@ -1,0 +1,9 @@
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Code-Review+2: Kent Wu <wu@noironetworks.com>
+Workflow+1: Kent Wu <wu@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Tue, 28 Aug 2018 23:19:07 +0000
+Reviewed-on: https://review.openstack.org/597210
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
