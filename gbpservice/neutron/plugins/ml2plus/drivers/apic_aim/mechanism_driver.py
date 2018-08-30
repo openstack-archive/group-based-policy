@@ -1981,20 +1981,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         aim_ctx = aim_context.AimContext(session)
         sg = context.current
         tenant_aname = self.name_mapper.project(session, sg['tenant_id'])
-        for sg_rule in sg.get('security_group_rules'):
-            sg_rule_aim = aim_resource.SecurityGroupRule(
-                tenant_name=tenant_aname,
-                security_group_name=sg['id'],
-                security_group_subject_name='default',
-                name=sg_rule['id'])
-            self.aim.delete(aim_ctx, sg_rule_aim)
-        sg_subject = aim_resource.SecurityGroupSubject(
-            tenant_name=tenant_aname,
-            security_group_name=sg['id'], name='default')
-        self.aim.delete(aim_ctx, sg_subject)
         sg_aim = aim_resource.SecurityGroup(tenant_name=tenant_aname,
                                             name=sg['id'])
-        self.aim.delete(aim_ctx, sg_aim)
+        self.aim.delete(aim_ctx, sg_aim, cascade=True)
 
     def _get_sg_rule_tenant_id(self, session, sg_rule):
         # There is a bug in Neutron that sometimes the tenant_id contained
