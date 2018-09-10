@@ -87,6 +87,17 @@ class DbMixin(object):
                           vrf_name=vrf.name).
                 all())
 
+    def _get_address_scopes_owning_vrf(self, session, vrf):
+        return (session.query(as_db.AddressScope).
+                join(AddressScopeMapping,
+                     AddressScopeMapping.scope_id == as_db.AddressScope.id).
+                filter(AddressScopeMapping.vrf_tenant_name ==
+                       vrf.tenant_name,
+                       AddressScopeMapping.vrf_name == vrf.name,
+                       AddressScopeMapping.vrf_owned).
+                order_by(as_db.AddressScope.ip_version).
+                all())
+
     def _get_address_scope_vrf(self, mapping):
         return aim_resource.VRF(
             tenant_name=mapping.vrf_tenant_name,
