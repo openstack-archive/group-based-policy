@@ -1091,6 +1091,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mapping = self._get_address_scope_mapping(session, id)
         if mapping:
             vrf = self._get_address_scope_vrf(mapping)
+            self._update_vrf_display_name(session, aim_ctx, vrf)
         else:
             dname = aim_utils.sanitize_display_name(current['name'])
             vrf = self._map_address_scope(session, current)
@@ -1114,9 +1115,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mapping = self._get_address_scope_mapping(session, current['id'])
 
         if current['name'] != original['name'] and mapping.vrf_owned:
-            dname = aim_utils.sanitize_display_name(current['name'])
             vrf = self._get_address_scope_vrf(mapping)
-            self.aim.update(aim_ctx, vrf, display_name=dname)
+            self._update_vrf_display_name(session, aim_ctx, vrf)
 
     def delete_address_scope_precommit(self, context):
         current = context.current
@@ -1128,10 +1128,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         if mapping.vrf_owned:
             vrf = self._get_address_scope_vrf(mapping)
-            mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
-            if len(mappings) == 1:
-                self.aim.delete(aim_ctx, vrf)
-                session.delete(mapping)
+            session.delete(mapping)
+            self._update_vrf_display_name(session, aim_ctx, vrf, True)
 
     def extend_address_scope_dict(self, session, scope, result):
         if result.get(api_plus.BULK_EXTENDED):
@@ -1152,6 +1150,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
+
+    def _update_vrf_display_name(self, session, aim_ctx, vrf, cleanup=False):
+        # Get address scopes that own this VRF, ordered by ip_version.
+        scopes = self._get_address_scopes_owning_vrf(session, vrf)
+        if scopes:
+            if (len(scopes) == 1 or not scopes[1].name or
+                scopes[0].name == scopes[1].name):
+                dname = scopes[0].name
+            elif not scopes[0].name:
+                dname = scopes[1].name
+            else:
+                dname = scopes[0].name + '-' + scopes[1].name
+            dname = aim_utils.sanitize_display_name(dname)
+            self.aim.update(aim_ctx, vrf, display_name=dname)
+        elif cleanup:
+            self.aim.delete(aim_ctx, vrf)
 
     def create_router(self, context, current):
         LOG.debug("APIC AIM MD creating router: %s", current)
@@ -4113,7 +4127,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for scope_db in mgr.actual_session.query(as_db.AddressScope):
             self._expect_project(mgr, scope_db.project_id)
             mapping = scope_db.aim_mapping
-            if mapping and not mapping.vrf_owned:
+            if mapping:
                 mgr.expect_db_instance(mapping)
             else:
                 vrf = self._map_address_scope(mgr.expected_session, scope_db)
@@ -4121,13 +4135,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     mgr.expected_session, scope_db.id, vrf)
             vrf = self._get_address_scope_vrf(mapping)
             vrf.monitored = not mapping.vrf_owned
-            # REVISIT: Need deterministic display_name for isomorphic
-            # address scopes that own VRF.
             vrf.display_name = (
                 aim_utils.sanitize_display_name(scope_db.name)
                 if mapping.vrf_owned else "")
             vrf.policy_enforcement_pref = 'enforced'
-            mgr.expect_aim_resource(vrf)
+            mgr.expect_aim_resource(vrf, replace=True)
+            if scope_db.aim_mapping:
+                # Update display_name in case isomorphic, which is
+                # only possible if actual mapping wasn't missing.
+                self._update_vrf_display_name(
+                    mgr.actual_session, mgr.expected_aim_ctx, vrf)
 
     def _validate_routers(self, mgr):
         router_dbs = {}
