@@ -329,12 +329,19 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         resource = self._find_by_dn(dn, cls)
         self.assertIsNotNone(resource)
 
-    def _check_dn(self, resource, aim_resource, key):
+    def _check_dn(self, resource, aim_resource, key, dname=None):
         dist_names = resource.get('apic:distinguished_names')
         self.assertIsInstance(dist_names, dict)
         dn = dist_names.get(key)
         self.assertIsInstance(dn, six.string_types)
         self.assertEqual(aim_resource.dn, dn)
+        aim_resource = self._find_by_dn(dn, aim_resource.__class__)
+        self.assertIsNotNone(aim_resource)
+        if dname is None:
+            name = resource.get('name')
+            self.assertIsInstance(name, six.string_types)
+            dname = aim_utils.sanitize_display_name(name)
+        self.assertEqual(dname, aim_resource.display_name)
 
     def _check_no_dn(self, resource, key):
         dist_names = resource.get('apic:distinguished_names')
@@ -456,6 +463,7 @@ class TestAimMapping(ApicAimTestCase):
         self.mock_ns = self.call_wrapper.setUp(
             nat_strategy.DistributedNatStrategy)
         self._actual_scopes = {}
+        self._scope_vrf_dnames = {}
         super(TestAimMapping, self).setUp()
 
     def tearDown(self):
@@ -640,7 +648,8 @@ class TestAimMapping(ApicAimTestCase):
             elif scope:
                 scope = self._actual_scopes.get(scope['id'], scope)
                 vrf_aname = self.name_mapper.address_scope(None, scope['id'])
-                vrf_dname = scope['name']
+                vrf_dname = self._scope_vrf_dnames.get(
+                    scope['id'], scope['name'])
                 vrf_project = scope['tenant_id']
                 vrf_tenant_aname = self.name_mapper.project(None, vrf_project)
                 tenant_aname = vrf_tenant_aname
@@ -770,6 +779,8 @@ class TestAimMapping(ApicAimTestCase):
         dns = copy.copy(scope.get(DN))
 
         actual_scope = self._actual_scopes.get(scope['id'], scope)
+        dname = self._scope_vrf_dnames.get(
+            actual_scope['id'], actual_scope['name'])
 
         tenant_aname = self.name_mapper.project(
             None, actual_scope['tenant_id'])
@@ -780,7 +791,7 @@ class TestAimMapping(ApicAimTestCase):
         aim_vrf = self._get_vrf(aname, tenant_aname)
         self.assertEqual(tenant_aname, aim_vrf.tenant_name)
         self.assertEqual(aname, aim_vrf.name)
-        self.assertEqual(actual_scope['name'], aim_vrf.display_name)
+        self.assertEqual(dname, aim_vrf.display_name)
         self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
         self._check_dn_is_resource(dns, 'VRF', aim_vrf)
 
@@ -862,10 +873,12 @@ class TestAimMapping(ApicAimTestCase):
 
             for scope in scopes or []:
                 actual_scope = self._actual_scopes.get(scope['id'], scope)
+                dname = self._scope_vrf_dnames.get(
+                    actual_scope['id'], actual_scope['name'])
                 self._check_router_vrf(
                     self.name_mapper.address_scope(None, actual_scope['id']),
-                    actual_scope['name'], actual_scope['tenant_id'],
-                    dns, 'as_%s-VRF' % scope['id'])
+                    dname, actual_scope['tenant_id'], dns,
+                    'as_%s-VRF' % scope['id'])
 
         # The AIM Subnets are validated in _check_subnet, so just
         # check that their DNs are present and valid.
@@ -1744,6 +1757,8 @@ class TestAimMapping(ApicAimTestCase):
             scope46i_vrf, 4, name='as4i')['address_scope']
         scope4i_id = scope4i['id']
         self._actual_scopes[scope4i_id] = scope6
+        self._scope_vrf_dnames[scope4i_id] = 'as4i-as6'
+        self._scope_vrf_dnames[scope6_id] = 'as4i-as6'
         self._check_address_scope(scope4i)
         pool4i = self._make_subnetpool(
             self.fmt, ['10.1.0.0/16'], name='sp4i', tenant_id=self._tenant_id,
@@ -4777,19 +4792,36 @@ class TestExtensionAttributes(ApicAimTestCase):
     def test_isomorphic_address_scopes_lifecycle(self):
         # Create initial v4 scope.
         scope4 = self._make_address_scope(
-            self.fmt, 4, name='as')['address_scope']
+            self.fmt, 4, name='as4')['address_scope']
         dn = scope4['apic:distinguished_names']['VRF']
+        vrf = self._find_by_dn(dn, aim_resource.VRF)
+        self._check_dn(scope4, vrf, 'VRF', 'as4')
 
         # Create isomorphic v6 scope, using v4 scope's pre-existing
         # DN.
         scope6 = self._make_address_scope_for_vrf(
-            dn, n_constants.IP_VERSION_6)['address_scope']
+            dn, n_constants.IP_VERSION_6, name='as6')['address_scope']
         self.assertEqual(dn, scope6['apic:distinguished_names']['VRF'])
+        self._check_dn(scope6, vrf, 'VRF', 'as4-as6')
+
+        # Update v4 scope name.
+        data = {'address_scope': {'name': ''}}
+        self._update('address-scopes', scope4['id'], data)
+        self._check_dn(scope4, vrf, 'VRF', 'as6')
+
+        # Update v4 scope name again.
+        data = {'address_scope': {'name': 'x4'}}
+        self._update('address-scopes', scope4['id'], data)
+        self._check_dn(scope4, vrf, 'VRF', 'x4-as6')
+
+        # Update v6 scope name.
+        data = {'address_scope': {'name': 'x6'}}
+        self._update('address-scopes', scope6['id'], data)
+        self._check_dn(scope6, vrf, 'VRF', 'x4-x6')
 
         # Delete v4 scope.
         self._delete('address-scopes', scope4['id'])
-        vrf = self._find_by_dn(dn, aim_resource.VRF)
-        self.assertIsNotNone(vrf)
+        self._check_dn(scope6, vrf, 'VRF', 'x6')
 
         # Delete v6 scope.
         self._delete('address-scopes', scope6['id'])
@@ -4800,17 +4832,24 @@ class TestExtensionAttributes(ApicAimTestCase):
         scope4 = self._make_address_scope(
             self.fmt, 4, name='as')['address_scope']
         dn = scope4['apic:distinguished_names']['VRF']
+        vrf = self._find_by_dn(dn, aim_resource.VRF)
+        self._check_dn(scope4, vrf, 'VRF', 'as')
 
         # Create isomorphic v6 scope, using v4 scope's pre-existing
-        # DN.
+        # DN, with same name.
         scope6 = self._make_address_scope_for_vrf(
-            dn, n_constants.IP_VERSION_6)['address_scope']
+            dn, n_constants.IP_VERSION_6, name='as')['address_scope']
         self.assertEqual(dn, scope6['apic:distinguished_names']['VRF'])
+        self._check_dn(scope6, vrf, 'VRF', 'as')
+
+        # Update v4 scope name to not match.
+        data = {'address_scope': {'name': 'as4'}}
+        self._update('address-scopes', scope4['id'], data)
+        self._check_dn(scope4, vrf, 'VRF', 'as4-as')
 
         # Delete v6 scope.
         self._delete('address-scopes', scope6['id'])
-        vrf = self._find_by_dn(dn, aim_resource.VRF)
-        self.assertIsNotNone(vrf)
+        self._check_dn(scope4, vrf, 'VRF', 'as4')
 
         # Delete v4 scope.
         self._delete('address-scopes', scope4['id'])
@@ -4926,14 +4965,14 @@ class TestExternalConnectivityBase(object):
         ext_bd = aim_resource.BridgeDomain(
             tenant_name=self.t1_aname, name='EXT-l1')
         ext_vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='EXT-l1')
-        self._check_dn(net1, ext_epg, 'EndpointGroup')
-        self._check_dn(net1, ext_bd, 'BridgeDomain')
-        self._check_dn(net1, ext_vrf, 'VRF')
+        self._check_dn(net1, ext_epg, 'EndpointGroup', 'EXT-l1')
+        self._check_dn(net1, ext_bd, 'BridgeDomain', 'EXT-l1')
+        self._check_dn(net1, ext_vrf, 'VRF', 'EXT-l1')
 
         net1 = self._show('networks', net1['id'])['network']
-        self._check_dn(net1, ext_epg, 'EndpointGroup')
-        self._check_dn(net1, ext_bd, 'BridgeDomain')
-        self._check_dn(net1, ext_vrf, 'VRF')
+        self._check_dn(net1, ext_epg, 'EndpointGroup', 'EXT-l1')
+        self._check_dn(net1, ext_bd, 'BridgeDomain', 'EXT-l1')
+        self._check_dn(net1, ext_vrf, 'VRF', 'EXT-l1')
         self._validate()
 
         # test no-op CIDR update

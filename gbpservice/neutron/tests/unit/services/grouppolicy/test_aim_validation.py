@@ -23,6 +23,7 @@ from neutron import context as n_context
 from neutron.db import segments_db as segment
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit.extensions import test_securitygroup
+from neutron_lib import constants as n_constants
 from oslo_config import cfg
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
@@ -76,11 +77,17 @@ class AimValidationTestMixin(object):
             # Delete the AIM resource and test.
             self.aim_mgr.delete(self.aim_ctx, resource)
             self._validate_repair_validate()
+            self.assertTrue(
+                actual_resource.user_equal(
+                    self.aim_mgr.get(self.aim_ctx, resource)))
 
             # Modify the AIM resource and test.
             self.aim_mgr.update(
                 self.aim_ctx, resource, display_name='not what it was')
             self._validate_repair_validate()
+            self.assertTrue(
+                actual_resource.user_equal(
+                    self.aim_mgr.get(self.aim_ctx, resource)))
 
         # Add unexpected AIM resource and test.
         setattr(resource, unexpected_attr_name, unexpected_attr_value)
@@ -270,15 +277,15 @@ class TestNeutronMapping(AimValidationTestCase):
 
     def test_address_scope(self):
         # Create address scope.
-        scope = self._make_address_scope(
-            self.fmt, 4, name='as1')['address_scope']
-        scope_id = scope['id']
-        vrf_dn = scope['apic:distinguished_names']['VRF']
+        scope4 = self._make_address_scope(
+            self.fmt, 4, name='as4')['address_scope']
+        scope4_id = scope4['id']
+        vrf_dn = scope4['apic:distinguished_names']['VRF']
         self._validate()
 
         # Delete the address scope's mapping record and test.
         (self.db_session.query(db.AddressScopeMapping).
-         filter_by(scope_id=scope_id).
+         filter_by(scope_id=scope4_id).
          delete())
         self._validate_repair_validate()
 
@@ -286,7 +293,47 @@ class TestNeutronMapping(AimValidationTestCase):
         vrf = aim_resource.VRF.from_dn(vrf_dn)
         self._test_aim_resource(vrf)
 
-    # REVISIT: Test isomorphic address scopes.
+        # Create isomorphic v6 address scope.
+        scope6 = self._make_address_scope_for_vrf(
+            vrf_dn, n_constants.IP_VERSION_6, name='as6')['address_scope']
+        scope6_id = scope6['id']
+        self.assertEqual(vrf_dn, scope6['apic:distinguished_names']['VRF'])
+        self._validate()
+
+        # Test AIM VRF.
+        self._test_aim_resource(vrf)
+
+        # Delete the initial address scope's mapping record and test.
+        (self.db_session.query(db.AddressScopeMapping).
+         filter_by(scope_id=scope4_id).
+         delete())
+        self._validate_repair_validate()
+        scope4 = self._show('address-scopes', scope4_id)['address_scope']
+        self.assertEqual(vrf_dn, scope4['apic:distinguished_names']['VRF'])
+        scope6 = self._show('address-scopes', scope6_id)['address_scope']
+        self.assertEqual(vrf_dn, scope6['apic:distinguished_names']['VRF'])
+
+        # Test AIM VRF.
+        self._test_aim_resource(vrf)
+
+        # Delete the 2nd address scope's mapping record and
+        # test. Without this record, there is no way to know that the
+        # scopes were previously isomorphic, so they no longer will
+        # be isomorphic after repair.
+        (self.db_session.query(db.AddressScopeMapping).
+         filter_by(scope_id=scope6_id).
+         delete())
+        self._validate_repair_validate()
+        scope4 = self._show('address-scopes', scope4_id)['address_scope']
+        self.assertEqual(vrf_dn, scope4['apic:distinguished_names']['VRF'])
+        scope6 = self._show('address-scopes', scope6_id)['address_scope']
+        scope6_vrf_dn = scope6['apic:distinguished_names']['VRF']
+        self.assertNotEqual(vrf_dn, scope6_vrf_dn)
+
+        # Test both AIM VRFs.
+        self._test_aim_resource(vrf)
+        scope6_vrf = aim_resource.VRF.from_dn(scope6_vrf_dn)
+        self._test_aim_resource(scope6_vrf)
 
     def _test_network_attrs(self, original):
         current = self._show('networks', original['id'])['network']
