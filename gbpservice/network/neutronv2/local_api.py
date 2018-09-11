@@ -17,7 +17,7 @@ from neutron import quota
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as nl_const
 from neutron_lib import exceptions as n_exc
-from neutron_lib.exceptions import address_scope as api_err
+from neutron_lib.exceptions import address_scope as as_exc
 from neutron_lib.exceptions import l3
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
@@ -578,7 +578,7 @@ class LocalAPI(object):
         try:
             self._delete_resource(self._core_plugin, plugin_context,
                                   'address_scope', address_scope_id)
-        except api_err.AddressScopeNotFound:
+        except as_exc.AddressScopeNotFound:
             LOG.warning('Address Scope %s already deleted',
                         address_scope_id)
 

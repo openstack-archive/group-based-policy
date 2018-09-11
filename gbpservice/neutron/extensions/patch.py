@@ -22,7 +22,7 @@ from neutron.plugins.ml2 import db as ml2_db
 from neutron_lib.api import attributes
 from neutron_lib.api import validators
 from neutron_lib import exceptions
-from neutron_lib.exceptions import address_scope as api_err
+from neutron_lib.exceptions import address_scope as as_exc
 from oslo_log import log
 from oslo_utils import excutils
 from sqlalchemy import event
@@ -209,7 +209,7 @@ def _delete_address_scope(self, context, id):
     with context.session.begin(subtransactions=True):
         if subnetpool_obj.SubnetPool.get_objects(context,
                                                  address_scope_id=id):
-            raise api_err.AddressScopeInUse(address_scope_id=id)
+            raise as_exc.AddressScopeInUse(address_scope_id=id)
         address_scope = self._get_address_scope(context, id)
         address_scope.delete()
 
