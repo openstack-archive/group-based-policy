@@ -11,7 +11,7 @@
 -e git+https://github.com/openstack/vmware-nsx.git@stable/pike#egg=vmware_nsx
 -e git+https://github.com/openstack/vmware-nsxlib.git@stable/pike#egg=vmware_nsxlib
 
--e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
+-e git+https://git.openstack.org/openstack/python-group-based-policy-client@stable/pike#egg=gbpclient
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/pike#egg=neutron-vpnaas
 -e git+https://git.openstack.org/openstack/neutron-lbaas@stable/pike#egg=neutron-lbaas
 -e git+https://git.openstack.org/openstack/neutron-fwaas@stable/pike#egg=neutron-fwaas
