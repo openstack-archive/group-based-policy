@@ -286,11 +286,9 @@ class TestNeutronMapping(AimValidationTestCase):
 
     # REVISIT: Test isomorphic address scopes.
 
-    def _test_network_dns(self, net):
-        self.assertDictEqual(
-            net['apic:distinguished_names'],
-            self._show(
-                'networks', net['id'])['network']['apic:distinguished_names'])
+    def _test_network_attrs(self, original):
+        current = self._show('networks', original['id'])['network']
+        self.assertDictEqual(original, current)
 
     def _test_network_resources(self, net_resp):
         net = net_resp['network']
@@ -303,13 +301,14 @@ class TestNeutronMapping(AimValidationTestCase):
             self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24')['subnet']
         subnet_id = subnet['id']
         self._validate()
+        net = self._show('networks', net['id'])['network']
 
         # Delete the network's mapping record and test.
         (self.db_session.query(db.NetworkMapping).
          filter_by(network_id=net_id).
          delete())
         self._validate_repair_validate()
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Corrupt the network's mapping record's BD and test.
         with self.db_session.begin():
@@ -318,7 +317,7 @@ class TestNeutronMapping(AimValidationTestCase):
                        one())
             mapping.bd_tenant_name = 'bad_bd_tenant_name'
         self._validate_repair_validate()
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Corrupt the network's mapping record's EPG and test.
         with self.db_session.begin():
@@ -327,7 +326,7 @@ class TestNeutronMapping(AimValidationTestCase):
                        one())
             mapping.epg_app_profile_name = 'bad_epg_app_profilename'
         self._validate_repair_validate()
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Corrupt the network's mapping record's VRF and test.
         with self.db_session.begin():
@@ -336,7 +335,7 @@ class TestNeutronMapping(AimValidationTestCase):
                        one())
             mapping.vrf_name = 'bad_vrf_name'
         self._validate_repair_validate()
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Test AIM BridgeDomain.
         bd = aim_resource.BridgeDomain.from_dn(bd_dn)
@@ -372,6 +371,8 @@ class TestNeutronMapping(AimValidationTestCase):
          delete())
         self._validate_repair_validate()
 
+        return net
+
     def test_unrouted_network(self):
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
@@ -380,14 +381,14 @@ class TestNeutronMapping(AimValidationTestCase):
         self._validate()
 
         # Test AIM resources.
-        self._test_network_resources(net_resp)
+        net = self._test_network_resources(net_resp)
 
         # Delete network extension data and test migration use case.
         (self.db_session.query(ext_db.NetworkExtensionDb).
          filter_by(network_id=net_id).
          delete())
         self._validate_repair_validate()
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
     def _test_external_network(self, vrf_name='openstack_EXT-l1'):
         # Create AIM HostDomainMappingV2.
@@ -406,18 +407,18 @@ class TestNeutronMapping(AimValidationTestCase):
         self._validate()
 
         # Test standard network AIM resources.
-        self._test_network_resources(net_resp)
+        net = self._test_network_resources(net_resp)
 
         # Test AIM L3Outside.
         l3out = aim_resource.L3Outside(tenant_name='common', name='l1')
         self._test_aim_resource(l3out)
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Test AIM ExternalNetwork.
         en = aim_resource.ExternalNetwork(
             tenant_name='common', l3out_name='l1', name='n1')
         self._test_aim_resource(en)
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Test AIM ExternalSubnet. Note that the NAT strategy code
         # will try to delete unexpected ExternalSubnets even if they
@@ -426,12 +427,12 @@ class TestNeutronMapping(AimValidationTestCase):
             tenant_name='common', l3out_name='l1', external_network_name='n1',
             cidr='0.0.0.0/0')
         self._test_aim_resource(esn, 'cidr', '1.2.3.4/0', False)
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Test AIM VRF.
         vrf = aim_resource.VRF(tenant_name='common', name=vrf_name)
         self._test_aim_resource(vrf)
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
         # Test AIM ApplicationProfile.
         ap = aim_resource.ApplicationProfile(
@@ -493,6 +494,9 @@ class TestNeutronMapping(AimValidationTestCase):
         (self.db_session.query(ext_db.NetworkExtensionDb).
          filter_by(network_id=net_id).
          delete())
+        (self.db_session.query(ext_db.NetworkExtensionCidrDb).
+         filter_by(network_id=net_id).
+         delete())
 
         # Test without DN for migration.
         self._validate_unrepairable()
@@ -513,7 +517,7 @@ class TestNeutronMapping(AimValidationTestCase):
             'migrate_ext_net_dns', {net_id: 'uni/tn-common/out-l1/instP-n1'},
             group='ml2_apic_aim')
         self._validate_repair_validate()
-        self._test_network_dns(net)
+        self._test_network_attrs(net)
 
     def test_svi_network(self):
         # REVISIT: Test validation of actual mapping once implemented.
