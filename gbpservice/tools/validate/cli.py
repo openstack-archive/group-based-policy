@@ -36,8 +36,9 @@ def main():
     cfg.CONF.register_cli_opts(cli_opts)
     config.init(sys.argv[1:])
 
-    # REVISIT: Should enable logging but prevent output to stdout.
-    # config.setup_logging()
+    # Enable logging but prevent output to stderr.
+    cfg.CONF.use_stderr = False
+    config.setup_logging()
 
     if not cfg.CONF.config_file:
         sys.exit(_("ERROR: Unable to find configuration file via the default"
