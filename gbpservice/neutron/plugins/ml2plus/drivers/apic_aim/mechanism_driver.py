@@ -4422,6 +4422,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             cisco_apic.NESTED_DOMAIN_SERVICE_VLAN: None,
             cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN: None,
         }
+        if net_db.external:
+            # REVISIT: These are typical values, but the ability to
+            # specify them per-network via config could be useful in
+            # certain migration use cases. The apic:external_cidrs
+            # attribute is mutable, so can be fixed manually after
+            # migration. The apic:nat_type attribute is immutable, so
+            # using other values requires deleting and re-creating the
+            # external network.
+            res_dict[cisco_apic.NAT_TYPE] = 'distributed'
+            res_dict[cisco_apic.EXTERNAL_CIDRS] = ['0.0.0.0/0']
         self.set_network_extn_db(mgr.actual_session, net_db.id, res_dict)
 
     def _missing_subnet_extension_mapping(self, mgr, subnet_db):
