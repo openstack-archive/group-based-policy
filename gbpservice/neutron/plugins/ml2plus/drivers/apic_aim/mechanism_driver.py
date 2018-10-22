@@ -4387,6 +4387,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
 
         ext_net_dn = None
+        nat_type = None
+        ext_cidrs = None
         if net_db.external:
             ext_net_dn = cfg.CONF.ml2_apic_aim.migrate_ext_net_dns.get(
                 net_db.id)
@@ -4409,8 +4411,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     "configured external network DN '%(dn)s' is invalid" %
                     {'net': net_db.id, 'dn': ext_net_dn})
                 ext_net_dn = None
+            # REVISIT: These are typical values, but the ability to
+            # specify them per-network via config could be useful in
+            # certain migration use cases. The apic:external_cidrs
+            # attribute is mutable, so can be fixed manually after
+            # migration. The apic:nat_type attribute is immutable, so
+            # using other values requires deleting and re-creating the
+            # external network.
+            nat_type = 'distributed'
+            ext_cidrs = ['0.0.0.0/0']
         res_dict = {
             cisco_apic.EXTERNAL_NETWORK: ext_net_dn,
+            cisco_apic.NAT_TYPE: nat_type,
+            cisco_apic.EXTERNAL_CIDRS: ext_cidrs,
             cisco_apic.SVI: False,
             cisco_apic.BGP: False,
             cisco_apic.BGP_TYPE: 'default_export',
