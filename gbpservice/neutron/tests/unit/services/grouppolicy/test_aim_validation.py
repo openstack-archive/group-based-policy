@@ -490,13 +490,18 @@ class TestNeutronMapping(AimValidationTestCase):
         net = self._test_external_network(vrf_name='v1')
         net_id = net['id']
 
-        # Delete network extension data to test migration use case.
+        # Delete network extension data and clear ExternalNetwork
+        # contracts to test migration use case.
         (self.db_session.query(ext_db.NetworkExtensionDb).
          filter_by(network_id=net_id).
          delete())
         (self.db_session.query(ext_db.NetworkExtensionCidrDb).
          filter_by(network_id=net_id).
          delete())
+        self.aim_mgr.update(
+            self.aim_ctx, ext_net,
+            provided_contract_names=[],
+            consumed_contract_names=[])
 
         # Test without DN for migration.
         self._validate_unrepairable()
