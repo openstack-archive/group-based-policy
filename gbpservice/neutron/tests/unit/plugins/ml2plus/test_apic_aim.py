@@ -636,7 +636,7 @@ class TestAimMapping(ApicAimTestCase):
                     tenant_aname = vrf.tenant_name
                     vrf_tenant_dname = None
                 else:
-                    vrf_tenant_dname = 'CommonTenant'
+                    vrf_tenant_dname = ''
             elif scope:
                 scope = self._actual_scopes.get(scope['id'], scope)
                 vrf_aname = self.name_mapper.address_scope(None, scope['id'])
@@ -660,7 +660,7 @@ class TestAimMapping(ApicAimTestCase):
                 vrf_aname = self.driver.apic_system_id + '_UnroutedVRF'
                 vrf_dname = 'CommonUnroutedVRF'
                 vrf_tenant_aname = 'common'
-                vrf_tenant_dname = 'CommonTenant'
+                vrf_tenant_dname = ''
 
         if net[SVI]:
             ext_net = aim_resource.ExternalNetwork.from_dn(
@@ -926,7 +926,7 @@ class TestAimMapping(ApicAimTestCase):
         # Check common Tenant.
         tenant = self._get_tenant('common')
         self.assertEqual('common', tenant.name)
-        self.assertEqual('CommonTenant', tenant.display_name)
+        self.assertEqual('', tenant.display_name)
         self.assertEqual('', tenant.descr)
 
         # Check unrouted VRF.
