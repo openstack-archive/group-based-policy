@@ -2875,8 +2875,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _ensure_common_tenant(self, aim_ctx):
         attrs = aim_resource.Tenant(
-            name=COMMON_TENANT_NAME, monitored=True,
-            display_name=aim_utils.sanitize_display_name('CommonTenant'))
+            name=COMMON_TENANT_NAME, monitored=True, display_name='')
         tenant = self.aim.get(aim_ctx, attrs)
         if not tenant:
             LOG.info(_LI("Creating common tenant"))
@@ -4037,6 +4036,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mgr.register_aim_resource_class(aim_resource.Tenant)
         mgr.register_aim_resource_class(aim_resource.VMMDomain)
         mgr.register_aim_resource_class(aim_resource.VRF)
+
+        # Copy common Tenant from actual to expected AIM store.
+        for tenant in mgr.aim_mgr.find(
+            mgr.actual_aim_ctx, aim_resource.Tenant, name=COMMON_TENANT_NAME):
+            mgr.aim_mgr.create(mgr.expected_aim_ctx, tenant)
 
         # Copy AIM resources that are managed via aimctl from actual
         # to expected AIM stores.
