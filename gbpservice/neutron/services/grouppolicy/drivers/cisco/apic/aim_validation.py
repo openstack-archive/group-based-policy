@@ -234,16 +234,13 @@ class ValidationManager(object):
             if not getattr(actual_resource, 'monitored', True):
                 self._handle_unexpected_aim_resource(actual_resource)
         else:
-            # Some infra resources do not have the monitored
-            # attribute, but are treated as if they are monitored.
-            if getattr(expected_resource, 'monitored', True):
-                # REVISIT: Make sure actual resource is monitored, but
-                # ignore other differences.
-                pass
-            else:
-                if not expected_resource.user_equal(actual_resource):
-                    self._handle_incorrect_aim_resource(
-                        expected_resource, actual_resource)
+            # Update both monitored and unmonitored
+            # resources. Monitored resources should have started out
+            # as copies of actual resources, but may have had changes
+            # made, such as additional contracts provided or consumed.
+            if not expected_resource.user_equal(actual_resource):
+                self._handle_incorrect_aim_resource(
+                    expected_resource, actual_resource)
 
     def _handle_unexpected_aim_resource(self, actual_resource):
         if self.should_repair(
