@@ -2450,9 +2450,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         def _aim_tenant_name(self, session, tenant_id, aim_resource_class=None,
                 gbp_resource=None, gbp_obj=None):
-            attrs = aim_resource.Tenant(name=md.COMMON_TENANT_NAME,
-                    display_name=aim_utils.sanitize_display_name(
-                        'CommonTenant'))
+            attrs = aim_resource.Tenant(
+                name=md.COMMON_TENANT_NAME, display_name='')
             tenant = aim_mgr.get(aim_ctx, attrs)
             if not tenant:
                 tenant = aim_mgr.create(aim_ctx, attrs)
