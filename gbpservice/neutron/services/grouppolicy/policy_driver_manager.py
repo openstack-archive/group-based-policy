@@ -480,9 +480,10 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         result = api.VALIDATION_PASSED
         for driver in self.ordered_policy_drivers:
             this_result = driver.obj.validate_state(repair)
-            if this_result == api.VALIDATION_FAILED:
-                result = this_result
-            elif (this_result == api.VALIDATION_REPAIRED and
-                  result != api.VALIDATION_FAILED):
+            if (this_result == api.VALIDATION_FAILED_UNREPAIRABLE or
+                (this_result == api.VALIDATION_FAILED_REPAIRABLE and
+                 result != api.VALIDATION_FAILED_UNREPAIRABLE) or
+                (this_result == api.VALIDATION_REPAIRED and
+                 result == api.VALIDATION_PASSED)):
                 result = this_result
         return result
