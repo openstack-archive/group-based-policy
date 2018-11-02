@@ -46,7 +46,8 @@ class AimValidationTestMixin(object):
 
     def _validate_repair_validate(self):
         # Validate should fail.
-        self.assertEqual(api.VALIDATION_FAILED, self.av_mgr.validate())
+        self.assertEqual(
+            api.VALIDATION_FAILED_REPAIRABLE, self.av_mgr.validate())
 
         # Repair.
         self.assertEqual(
@@ -58,7 +59,8 @@ class AimValidationTestMixin(object):
     def _validate_unrepairable(self):
         # Repair should fail.
         self.assertEqual(
-            api.VALIDATION_FAILED, self.av_mgr.validate(repair=True))
+            api.VALIDATION_FAILED_UNREPAIRABLE,
+            self.av_mgr.validate(repair=True))
 
     def _test_aim_resource(self, resource, unexpected_attr_name='name',
                            unexpected_attr_value='unexpected',

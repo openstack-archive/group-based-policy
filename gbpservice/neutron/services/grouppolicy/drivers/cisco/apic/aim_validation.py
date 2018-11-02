@@ -50,10 +50,7 @@ class ValidationManager(object):
                 self.sfcd = driver.obj
 
     def validate(self, repair=False):
-        # REVISIT: Replace print calls throughout this module with an
-        # output stream that can be sent to stdout/stderr and/or an
-        # output file?
-        print("Validating deployment, repair: %s" % repair)
+        self.output("Validating deployment, repair: %s" % repair)
 
         self.result = api.VALIDATION_PASSED
         self.repair = repair
@@ -109,20 +106,26 @@ class ValidationManager(object):
 
         # Commit or rollback transaction.
         if self.result is api.VALIDATION_REPAIRED:
-            print("Committing repairs")
+            self.output("Committing repairs")
             self.actual_session.commit()
         else:
-            if self.repair and self.result is api.VALIDATION_FAILED:
-                print("Rolling back attempted repairs")
+            if (self.repair and
+                self.result is api.VALIDATION_FAILED_UNREPAIRABLE):
+                self.output("Rolling back attempted repairs")
             self.actual_session.rollback()
 
         # Bind unbound ports outside transaction.
-        if self.repair and self.result is not api.VALIDATION_FAILED:
-            print("Binding unbound ports")
+        if (self.repair and
+            self.result is not api.VALIDATION_FAILED_UNREPAIRABLE):
+            self.output("Binding unbound ports")
             self.md.bind_unbound_ports(self)
 
-        print("Validation result: %s" % self.result)
+        self.output("Validation result: %s" % self.result)
         return self.result
+
+    def output(self, msg):
+        LOG.info(msg)
+        print(msg)
 
     def register_aim_resource_class(self, resource_class):
         if resource_class not in self._expected_aim_resources:
@@ -139,7 +142,7 @@ class ValidationManager(object):
             del expected_resources[key]
             return
         elif not replace and key in expected_resources:
-            print("resource %s already expected" % resource)
+            self.output("resource %s already expected" % resource)
             raise InternalValidationError()
         for attr_name, attr_type in resource.other_attributes.items():
             attr_type_type = attr_type['type']
@@ -199,16 +202,19 @@ class ValidationManager(object):
             return expected_instances.values()
 
     def should_repair(self, problem, action='Repairing'):
-        if self.repair and self.result is not api.VALIDATION_FAILED:
-            self.result = api.VALIDATION_REPAIRED
-            print("%s %s" % (action, problem))
+        if self.result is not api.VALIDATION_FAILED_UNREPAIRABLE:
+            self.output("%s %s" % (action, problem))
+            self.result = (api.VALIDATION_REPAIRED if self.repair
+                           else api.VALIDATION_FAILED_REPAIRABLE)
             return True
-        else:
-            self.validation_failed(problem)
 
     def validation_failed(self, reason):
-        print("Failed due to %s" % reason)
-        self.result = api.VALIDATION_FAILED
+        # REVISIT: Do we need drivers to be able to specify repairable
+        # vs unrepairable? If so, add a keyword arg and make sure
+        # VALIDATION_FAILED_REPAIRABLE does not overwrite
+        # VALIDATION_FAILED_UNREPAIRABLE.
+        self.output("Failed UNREPAIRABLE due to %s" % reason)
+        self.result = api.VALIDATION_FAILED_UNREPAIRABLE
 
     def _validate_aim_resources(self):
         for resource_class in self._expected_aim_resources.keys():
