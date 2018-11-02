@@ -20,7 +20,8 @@ from gbpservice.common import utils
 
 VALIDATION_PASSED = "passed"
 VALIDATION_REPAIRED = "repaired"
-VALIDATION_FAILED = "failed"
+VALIDATION_FAILED_REPAIRABLE = "failed repairable"
+VALIDATION_FAILED_UNREPAIRABLE = "failed unrepairable"
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -1395,9 +1396,11 @@ class PolicyDriver(object):
 
         :param repair: Repair invalid state if True.
 
-        Called from validation tool to validate policy driver's persistent
-        state. Returns VALIDATION_PASSED, VALIDATION_REPAIRED, or
-        VALIDATION_FAILED.
+        Called from validation tool to validate policy driver's
+        persistent state. Returns VALIDATION_PASSED,
+        VALIDATION_REPAIRED (only if repair == True),
+        VALIDATION_FAILED_REPAIRABLE (only if repair == False) or
+        VALIDATION_FAILED_UNREPAIRABLE.
         """
         return VALIDATION_PASSED
 

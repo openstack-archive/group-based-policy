@@ -53,6 +53,7 @@ def main():
         sys.exit("GBP service plugin not configured.")
 
     result = gbp_plugin.validate_state(cfg.CONF.repair)
-    if result == api.VALIDATION_FAILED:
-        sys.exit("Validation failed")
+    if result in [api.VALIDATION_FAILED_REPAIRABLE,
+                  api.VALIDATION_FAILED_UNREPAIRABLE]:
+        sys.exit(result)
     return 0
