@@ -1,0 +1,9 @@
+Code-Review+2: Kent Wu <wu@noironetworks.com>
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Workflow+1: Thomas Bachman <bachman@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Mon, 05 Nov 2018 17:01:28 +0000
+Reviewed-on: https://review.openstack.org/615285
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/queens
