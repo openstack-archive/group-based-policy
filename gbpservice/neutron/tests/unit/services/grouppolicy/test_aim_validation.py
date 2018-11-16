@@ -25,6 +25,7 @@ from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
 from oslo_config import cfg
+import webob.exc
 
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
@@ -862,6 +863,61 @@ class TestNeutronMapping(AimValidationTestCase):
         self.db_session.query(ml2_models.PortBinding).filter_by(
             port_id=port['id']).update({'host': 'yyy'})
         self._validate_unrepairable()
+
+    def test_legacy_cleanup(self):
+        # Create external network.
+        kwargs = {'router:external': True,
+                  'apic:distinguished_names':
+                  {'ExternalNetwork': 'uni/tn-common/out-l1/instP-n1'}}
+        ext_net = self._make_network(
+            self.fmt, 'ext_net', True, tenant_id='tenant_1',
+            arg_list=self.extension_attributes, **kwargs)['network']
+        ext_net_id = ext_net['id']
+
+        # Create legacy plugin's SNAT-related Neutron network.
+        net_resp = self._make_network(
+            self.fmt,
+            'host-snat-network-for-internal-use-' + ext_net_id, False)
+        net = net_resp['network']
+        net_id = net['id']
+
+        # Create legacy plugin's SNAT-related Neutron subnet.
+        subnet = self._make_subnet(
+            self.fmt, net_resp, '66.66.66.1', '66.66.66.0/24',
+            enable_dhcp=False)['subnet']
+        subnet_id = subnet['id']
+        data = {'subnet': {'name': 'host-snat-pool-for-internal-use'}}
+        subnet = self._update('subnets', subnet_id, data)['subnet']
+
+        # Create legacy plugin's SNAT-related Neutron port.
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '66.66.66.5'}]
+        port = self._make_port(
+            self.fmt, net_id, fixed_ips=fixed_ips,
+            name='host-snat-pool-for-internal-use',
+            device_owner='host-snat-pool-port-device-owner-internal-use'
+        )['port']
+        port_id = port['id']
+
+        # Test cleanup of these resources.
+        self._validate_repair_validate()
+        self._show(
+            'ports', port_id, expected_code=webob.exc.HTTPNotFound.code)
+        self._show(
+            'subnets', subnet_id, expected_code=webob.exc.HTTPNotFound.code)
+        self._show(
+            'networks', net_id, expected_code=webob.exc.HTTPNotFound.code)
+
+        # Ensure new SNAT subnet was properly created on actual
+        # external network.
+        ext_subnets = self._show('networks', ext_net_id)['network']['subnets']
+        self.assertEqual(1, len(ext_subnets))
+        ext_subnet = self._show('subnets', ext_subnets[0])['subnet']
+        self.assertEqual(subnet['cidr'], ext_subnet['cidr'])
+        self.assertEqual(subnet['gateway_ip'], ext_subnet['gateway_ip'])
+        self.assertEqual(subnet['enable_dhcp'], ext_subnet['enable_dhcp'])
+        self.assertEqual('SNAT host pool', ext_subnet['name'])
+        self.assertTrue(ext_subnet['apic:snat_host_pool'])
+        self.assertEqual(ext_net['project_id'], ext_subnet['project_id'])
 
 
 class TestGbpMapping(AimValidationTestCase):
