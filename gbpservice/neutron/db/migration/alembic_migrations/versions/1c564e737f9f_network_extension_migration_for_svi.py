@@ -51,6 +51,8 @@ def upgrade():
         net_dbs = (session.query(models_v2.Network)
                    .options(lazyload('*')).all())
         for net_db in net_dbs:
+            if not net_db.get('apic:distinguished_names')
+                continue
             util.msg("Migrating network: %s" % net_db)
             # If this update is successful then it means its an external
             # network with its DN set.
