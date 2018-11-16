@@ -113,6 +113,11 @@ NO_ADDR_SCOPE = object()
 DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
 DEFAULT_HOST_DOMAIN = '*'
 
+LEGACY_SNAT_NET_NAME_PREFIX = 'host-snat-network-for-internal-use-'
+LEGACY_SNAT_SUBNET_NAME = 'host-snat-pool-for-internal-use'
+LEGACY_SNAT_PORT_NAME = 'host-snat-pool-for-internal-use'
+LEGACY_SNAT_PORT_DEVICE_OWNER = 'host-snat-pool-port-device-owner-internal-use'
+
 # TODO(kentwu): Move this to AIM utils maybe to avoid adding too much
 # APIC logic to the mechanism driver
 ACI_CHASSIS_DESCR_STRING = 'topology/pod-%s/node-%s'
@@ -973,10 +978,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                                network_db)
             if not ext_net:
                 return  # Unmanaged external network
-            ns.delete_subnet(aim_ctx, l3out,
-                             self._subnet_to_gw_ip_mask(original))
-            ns.create_subnet(aim_ctx, l3out,
-                             self._subnet_to_gw_ip_mask(current))
+            if original['gateway_ip']:
+                ns.delete_subnet(aim_ctx, l3out,
+                                 self._subnet_to_gw_ip_mask(original))
+            if current['gateway_ip']:
+                ns.create_subnet(aim_ctx, l3out,
+                                 self._subnet_to_gw_ip_mask(current))
 
     def delete_subnet_precommit(self, context):
         current = context.current
@@ -3067,8 +3074,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return None, None, None
 
     def _subnet_to_gw_ip_mask(self, subnet):
+        cidr = subnet['cidr'].split('/')
         return aim_resource.Subnet.to_gw_ip_mask(
-            subnet['gateway_ip'], int(subnet['cidr'].split('/')[1]))
+            subnet['gateway_ip'] or cidr[0], int(cidr[1]))
 
     def _get_router_intf_count(self, session, router, scope_id=None):
         if not scope_id:
@@ -4052,6 +4060,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             network_id=mapping.network_id)
 
     def validate_aim_mapping(self, mgr):
+        # First do any cleanup and/or migration of Neutron resources
+        # used internally by the legacy plugins.
+        self._validate_legacy_resources(mgr)
+
         # Register all AIM resource types used by mapping.
         mgr.register_aim_resource_class(aim_infra.HostDomainMappingV2)
         mgr.register_aim_resource_class(aim_resource.ApplicationProfile)
@@ -4119,6 +4131,90 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._validate_subnetpools(mgr)
         self._validate_floatingips(mgr)
         self._validate_port_bindings(mgr)
+
+    def _validate_legacy_resources(self, mgr):
+        # Delete legacy SNAT ports.
+        for port_id, in (
+                mgr.actual_session.query(models_v2.Port.id).
+                filter_by(
+                    name=LEGACY_SNAT_PORT_NAME,
+                    device_owner=LEGACY_SNAT_PORT_DEVICE_OWNER)):
+            if mgr.should_repair(
+                    "legacy APIC driver SNAT port %s" % port_id, "Deleting"):
+                try:
+                    self.plugin.delete_port(mgr.actual_context, port_id)
+                except n_exceptions.NeutronException as exc:
+                    mgr.validation_failed(
+                        "deleting legacy APIC driver SNAT port %s failed "
+                        "with %s" % (port_id, exc))
+
+        # Delete legacy SNAT subnets.
+        for subnet_id, in (
+                mgr.actual_session.query(models_v2.Subnet.id).
+                filter_by(name=LEGACY_SNAT_SUBNET_NAME)):
+            subnet = self.plugin.get_subnet(mgr.actual_context, subnet_id)
+            net = self.plugin.get_network(
+                mgr.actual_context, subnet['network_id'])
+            net_name = net['name']
+            if net_name and net_name.startswith(LEGACY_SNAT_NET_NAME_PREFIX):
+                ext_net_id = net_name[len(LEGACY_SNAT_NET_NAME_PREFIX):]
+                ext_net = (mgr.actual_session.query(models_v2.Network).
+                           filter_by(id=ext_net_id).
+                           one_or_none())
+                if ext_net and ext_net.external:
+                    if mgr.should_repair(
+                            "legacy APIC driver SNAT subnet %s" %
+                            subnet['cidr'],
+                            "Migrating"):
+                        try:
+                            del subnet['id']
+                            del subnet['project_id']
+                            subnet['tenant_id'] = ext_net.project_id
+                            subnet['network_id'] = ext_net.id
+                            subnet['name'] = 'SNAT host pool'
+                            subnet[cisco_apic.SNAT_HOST_POOL] = True
+                            subnet = self.plugin.create_subnet(
+                                mgr.actual_context, {'subnet': subnet})
+                        except n_exceptions.NeutronException as exc:
+                            mgr.validation_failed(
+                                "Migrating legacy APIC driver SNAT subnet %s "
+                                "failed with %s" % (subnet['cidr'], exc))
+            if mgr.should_repair(
+                    "legacy APIC driver SNAT subnet %s" % subnet_id,
+                    "Deleting"):
+                try:
+                    self.plugin.delete_subnet(mgr.actual_context, subnet_id)
+                except n_exceptions.NeutronException as exc:
+                    mgr.validation_failed(
+                        "deleting legacy APIC driver SNAT subnet %s failed "
+                        "with %s" % (subnet_id, exc))
+
+        # Delete legacy SNAT networks.
+        for net_id, in (
+                mgr.actual_session.query(models_v2.Network.id).
+                filter(models_v2.Network.name.startswith(
+                    LEGACY_SNAT_NET_NAME_PREFIX))):
+            if mgr.should_repair(
+                    "legacy APIC driver SNAT network %s" % net_id,
+                    "Deleting"):
+                try:
+                    self.plugin.delete_network(mgr.actual_context, net_id)
+                except n_exceptions.NeutronException as exc:
+                    mgr.validation_failed(
+                        "deleting legacy APIC driver SNAT network %s failed "
+                        "with %s" % (net_id, exc))
+
+        # REVISIT: Without this expunge_all call, the
+        # test_legacy_cleanup UT intermittently fails with the
+        # subsequent validation steps attempting to repair missing
+        # subnet extension data, changing the apic:snat_host_pool
+        # value of the migrated SNAT subnet from True to False. The
+        # way the extension_db module creates the SubnetExtensionDb
+        # instance during create_subnet is apparently not updating the
+        # relationship from a cached Subnet instance. Until this issue
+        # is understood and resolved, we expunge all instances from
+        # the session before proceeding.
+        mgr.actual_session.expunge_all()
 
     def _validate_static_resources(self, mgr):
         self._ensure_common_tenant(mgr.expected_aim_ctx)
@@ -4595,9 +4691,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 vrf = resource
 
         for subnet_db in net_db.subnets:
-            ns.create_subnet(
-                mgr.expected_aim_ctx, l3out,
-                self._subnet_to_gw_ip_mask(subnet_db))
+            if subnet_db.gateway_ip:
+                ns.create_subnet(
+                    mgr.expected_aim_ctx, l3out,
+                    self._subnet_to_gw_ip_mask(subnet_db))
 
         # REVISIT: Process each AIM ExternalNetwork rather than each
         # external Neutron network?
@@ -4778,14 +4875,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # REVISIT: Deal with distributed port bindings? Also, consider
         # moving this to the ML2Plus plugin or to a base validation
         # manager, as it is not specific to this mechanism driver.
-        plugin_context = nctx.get_admin_context()
         for port_id, in (mgr.actual_session.query(models.PortBinding.port_id).
                         filter(models.PortBinding.host != '',
                                models.PortBinding.vif_type ==
                                portbindings.VIF_TYPE_UNBOUND)):
             # REVISIT: Use the more efficient get_bound_port_contexts,
             # which is not available in stable/newton?
-            pc = self.plugin.get_bound_port_context(plugin_context, port_id)
+            pc = self.plugin.get_bound_port_context(
+                mgr.actual_context, port_id)
             if (pc.vif_type == portbindings.VIF_TYPE_BINDING_FAILED or
                 pc.vif_type == portbindings.VIF_TYPE_UNBOUND):
                 mgr.validation_failed(
