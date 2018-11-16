@@ -51,6 +51,10 @@ def upgrade():
         net_dbs = (session.query(models_v2.Network)
                    .options(lazyload('*')).all())
         for net_db in net_dbs:
+            # Skip applying this update if using a legacy plugin
+            if not hasattr(net_db, 'aim_extension_mapping') or (
+                    net_db.aim_extension_mapping is None):
+                continue
             util.msg("Migrating network: %s" % net_db)
             # If this update is successful then it means its an external
             # network with its DN set.
