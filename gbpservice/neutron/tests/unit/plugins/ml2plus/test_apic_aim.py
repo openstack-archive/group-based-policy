@@ -5055,6 +5055,29 @@ class TestExternalConnectivityBase(object):
         self._check_dn(subnet, ext_sub, 'Subnet')
         self._validate()
 
+        # Update gateway to None
+        self.mock_ns.reset_mock()
+        self._update('subnets', subnet['id'],
+                     {'subnet': {'gateway_ip': None}})
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.mock_ns.delete_subnet.assert_called_once_with(
+            mock.ANY, l3out, '10.0.0.251/24')
+        self.mock_ns.create_subnet.assert_not_called()
+        self._check_no_dn(subnet, 'Subnet')
+        self._validate()
+
+        # Update gateway from None
+        self.mock_ns.reset_mock()
+        ext_sub.gw_ip_mask = '10.0.0.251/24'
+        self._update('subnets', subnet['id'],
+                     {'subnet': {'gateway_ip': '10.0.0.251'}})
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.mock_ns.delete_subnet.assert_not_called()
+        self.mock_ns.create_subnet.assert_called_once_with(
+            mock.ANY, l3out, '10.0.0.251/24')
+        self._check_dn(subnet, ext_sub, 'Subnet')
+        self._validate()
+
         # delete subnet
         self.mock_ns.reset_mock()
         self._delete('subnets', subnet['id'])
