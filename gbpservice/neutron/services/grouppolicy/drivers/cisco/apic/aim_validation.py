@@ -20,6 +20,7 @@ from aim import aim_store
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from neutron.db import api as db_api
+from neutron_lib import context
 from neutron_lib.plugins import directory
 from oslo_log import log
 
@@ -30,6 +31,10 @@ LOG = log.getLogger(__name__)
 
 
 class InternalValidationError(Exception):
+    pass
+
+
+class RollbackTransaction(Exception):
     pass
 
 
@@ -63,56 +68,60 @@ class ValidationManager(object):
         # Start transaction.
         #
         # REVISIT: Set session's isolation level to serializable?
-        self.actual_session = (db_api.get_writer_session() if repair
-                        else db_api.get_reader_session())
-        self.actual_session.begin()
-        self.aim_mgr = self.md.aim
-        self.actual_aim_ctx = aim_context.AimContext(self.actual_session)
-        self.expected_session = ValidationSession(self)
-        self.expected_aim_ctx = aim_context.AimContext(
-            None, ValidationAimStore(self))
+        self.actual_context = context.get_admin_context()
+        try:
+            with db_api.context_manager.writer.using(
+                    self.actual_context) as session:
+                self.actual_session = session
+                self.aim_mgr = self.md.aim
+                self.actual_aim_ctx = aim_context.AimContext(session)
+                self.expected_session = ValidationSession(self)
+                self.expected_aim_ctx = aim_context.AimContext(
+                    None, ValidationAimStore(self))
 
-        # Validate & repair GBP->Neutron mappings.
-        if self.pd:
-            self.pd.validate_neutron_mapping(self)
+                # Validate & repair GBP->Neutron mappings.
+                if self.pd:
+                    self.pd.validate_neutron_mapping(self)
 
-        # Start with no expected or actual AIM resources or DB records.
-        self._expected_aim_resources = {}
-        self._actual_aim_resources = {}
-        self._expected_db_instances = {}
-        self._db_instance_primary_keys = {}
+                # Start with no expected or actual AIM resources or DB
+                # records.
+                self._expected_aim_resources = {}
+                self._actual_aim_resources = {}
+                self._expected_db_instances = {}
+                self._db_instance_primary_keys = {}
 
-        # Validate Neutron->AIM mapping, getting expected AIM
-        # resources and DB records.
-        self.md.validate_aim_mapping(self)
+                # Validate Neutron->AIM mapping, getting expected AIM
+                # resources and DB records.
+                self.md.validate_aim_mapping(self)
 
-        # Validate GBP->AIM mapping, getting expected AIM resources
-        # and DB records.
-        if self.pd:
-            self.pd.validate_aim_mapping(self)
+                # Validate GBP->AIM mapping, getting expected AIM
+                # resources and DB records.
+                if self.pd:
+                    self.pd.validate_aim_mapping(self)
 
-        # Validate SFC->AIM mapping, getting expected AIM resources
-        # and DB records.
-        if self.sfcd:
-            self.sfcd.validate_aim_mapping(self)
+                # Validate SFC->AIM mapping, getting expected AIM
+                # resources and DB records.
+                if self.sfcd:
+                    self.sfcd.validate_aim_mapping(self)
 
-        # Validate that actual AIM resources match expected AIM
-        # resources.
-        self._validate_aim_resources()
+                # Validate that actual AIM resources match expected
+                # AIM resources.
+                self._validate_aim_resources()
 
-        # Validate that actual DB instances match expected DB
-        # instances.
-        self._validate_db_instances()
+                # Validate that actual DB instances match expected DB
+                # instances.
+                self._validate_db_instances()
 
-        # Commit or rollback transaction.
-        if self.result is api.VALIDATION_REPAIRED:
-            self.output("Committing repairs")
-            self.actual_session.commit()
-        else:
-            if (self.repair and
-                self.result is api.VALIDATION_FAILED_UNREPAIRABLE):
-                self.output("Rolling back attempted repairs")
-            self.actual_session.rollback()
+                # Commit or rollback transaction.
+                if self.result is api.VALIDATION_REPAIRED:
+                    self.output("Committing repairs")
+                else:
+                    if (self.repair and
+                        self.result is api.VALIDATION_FAILED_UNREPAIRABLE):
+                        self.output("Rolling back attempted repairs")
+                    raise RollbackTransaction()
+        except RollbackTransaction:
+            pass
 
         # Bind unbound ports outside transaction.
         if (self.repair and
