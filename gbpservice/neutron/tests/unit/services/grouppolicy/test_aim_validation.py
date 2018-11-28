@@ -865,6 +865,20 @@ class TestNeutronMapping(AimValidationTestCase):
         self._validate_unrepairable()
 
     def test_legacy_cleanup(self):
+        # Create pre-existing AIM VRF.
+        vrf = aim_resource.VRF(tenant_name='common', name='v1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, vrf)
+
+        # Create pre-existing AIM L3Outside.
+        l3out = aim_resource.L3Outside(
+            tenant_name='common', name='l1', vrf_name='v1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, l3out)
+
+        # Create pre-existing AIM ExternalNetwork.
+        ext_net = aim_resource.ExternalNetwork(
+            tenant_name='common', l3out_name='l1', name='n1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, ext_net)
+
         # Create external network.
         kwargs = {'router:external': True,
                   'apic:distinguished_names':
@@ -898,8 +912,38 @@ class TestNeutronMapping(AimValidationTestCase):
         )['port']
         port_id = port['id']
 
-        # Test cleanup of these resources.
+        # Delete the external network's mapping and extension records
+        # to simulate migration use case.
+        (self.db_session.query(db.NetworkMapping).
+         filter_by(network_id=ext_net_id).
+         delete())
+        (self.db_session.query(ext_db.NetworkExtensionDb).
+         filter_by(network_id=ext_net_id).
+         delete())
+
+        # Delete the legacy SNAT network's mapping and extension
+        # records to simulate migration use case.
+        (self.db_session.query(db.NetworkMapping).
+         filter_by(network_id=net_id).
+         delete())
+        (self.db_session.query(ext_db.NetworkExtensionDb).
+         filter_by(network_id=net_id).
+         delete())
+
+        # Delete the legacy SNAT subnet's extension record to simulate
+        # migration use case.
+        (self.db_session.query(ext_db.SubnetExtensionDb).
+         filter_by(subnet_id=subnet_id).
+         delete())
+
+        # Test validation simulating migration use case.
+        cfg.CONF.set_override(
+            'migrate_ext_net_dns',
+            {ext_net_id: 'uni/tn-common/out-l1/instP-n1'},
+            group='ml2_apic_aim')
         self._validate_repair_validate()
+
+        # Ensure legacy plugin's SNAT-related resources are gone.
         self._show(
             'ports', port_id, expected_code=webob.exc.HTTPNotFound.code)
         self._show(

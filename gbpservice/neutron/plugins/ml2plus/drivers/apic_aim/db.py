@@ -17,8 +17,13 @@ from aim.api import resource as aim_resource
 from neutron.db.models import address_scope as as_db
 from neutron.db import models_v2
 from neutron_lib.db import model_base
+from oslo_log import log
 import sqlalchemy as sa
 from sqlalchemy import orm
+
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
+
+LOG = log.getLogger(__name__)
 
 
 class AddressScopeMapping(model_base.BASEV2):
@@ -73,6 +78,11 @@ class NetworkMapping(model_base.BASEV2):
 
 
 class DbMixin(object):
+    def _check_mapping(self, mapping):
+        if not mapping:
+            LOG.error("Missing AIM mapping record")
+            raise exceptions.InternalError()
+
     def _add_address_scope_mapping(self, session, scope_id, vrf,
                                    vrf_owned=True):
         mapping = AddressScopeMapping(
@@ -106,6 +116,7 @@ class DbMixin(object):
                 all())
 
     def _get_address_scope_vrf(self, mapping):
+        self._check_mapping(mapping)
         return aim_resource.VRF(
             tenant_name=mapping.vrf_tenant_name,
             name=mapping.vrf_name)
@@ -161,29 +172,32 @@ class DbMixin(object):
                 first() is not None)
 
     def _get_network_bd(self, mapping):
+        self._check_mapping(mapping)
         return aim_resource.BridgeDomain(
             tenant_name=mapping.bd_tenant_name,
             name=mapping.bd_name)
 
     def _get_network_epg(self, mapping):
+        self._check_mapping(mapping)
         return aim_resource.EndpointGroup(
             tenant_name=mapping.epg_tenant_name,
             app_profile_name=mapping.epg_app_profile_name,
             name=mapping.epg_name)
 
     def _get_network_l3out(self, mapping):
-        if not mapping:
-            return None
+        self._check_mapping(mapping)
         return aim_resource.L3Outside(
             tenant_name=mapping.l3out_tenant_name,
             name=mapping.l3out_name)
 
     def _get_network_l3out_ext_net(self, mapping):
+        self._check_mapping(mapping)
         return aim_resource.ExternalNetwork(
             tenant_name=mapping.l3out_tenant_name,
             l3out_name=mapping.l3out_name, name=mapping.l3out_ext_net_name)
 
     def _get_network_l3out_default_ext_subnetv4(self, mapping):
+        self._check_mapping(mapping)
         return aim_resource.ExternalSubnet(
             tenant_name=mapping.l3out_tenant_name,
             l3out_name=mapping.l3out_name,
@@ -191,6 +205,7 @@ class DbMixin(object):
             cidr="0.0.0.0/0")
 
     def _get_network_l3out_default_ext_subnetv6(self, mapping):
+        self._check_mapping(mapping)
         return aim_resource.ExternalSubnet(
             tenant_name=mapping.l3out_tenant_name,
             l3out_name=mapping.l3out_name,
@@ -198,23 +213,28 @@ class DbMixin(object):
             cidr="::/0")
 
     def _get_network_vrf(self, mapping):
+        self._check_mapping(mapping)
         return aim_resource.VRF(
             tenant_name=mapping.vrf_tenant_name,
             name=mapping.vrf_name)
 
     def _set_network_bd(self, mapping, bd):
+        self._check_mapping(mapping)
         mapping.bd_tenant_name = bd.tenant_name
         mapping.bd_name = bd.name
 
     def _set_network_epg(self, mapping, epg):
+        self._check_mapping(mapping)
         mapping.epg_tenant_name = epg.tenant_name
         mapping.epg_app_profile_name = epg.app_profile_name
         mapping.epg_name = epg.name
 
     def _set_network_l3out(self, mapping, l3out):
+        self._check_mapping(mapping)
         mapping.l3out_tenant_name = l3out.tenant_name
         mapping.l3out_name = l3out.name
 
     def _set_network_vrf(self, mapping, vrf):
+        self._check_mapping(mapping)
         mapping.vrf_tenant_name = vrf.tenant_name
         mapping.vrf_name = vrf.name

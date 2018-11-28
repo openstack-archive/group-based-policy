@@ -659,6 +659,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # Check for pre-existing l3out SVI.
             network_db = self.plugin._get_network(context._plugin_context,
                                                   current['id'])
+            self._check_mapping(network_db.aim_extension_mapping)
             if network_db.aim_extension_mapping.external_network_dn:
                 ext_net = aim_resource.ExternalNetwork.from_dn(
                     network_db.aim_extension_mapping.external_network_dn)
@@ -675,6 +676,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aggregate = ""
             # Handle pre-existing SVI where mapping is not present.
             if not network_db.aim_extension_mapping.external_network_dn:
+                self._check_mapping(mapping)
                 tenant_name = mapping.l3out_tenant_name
                 l3out_name = mapping.l3out_name
                 l3out_ext_subnet_v4 = (
@@ -808,6 +810,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._cleanup_default_vrf(aim_ctx, vrf)
         else:
             mapping = self._get_network_mapping(session, current['id'])
+            if not mapping:
+                # No harm if no mapped resources to cleanup.
+                return
             bd = self._get_network_bd(mapping)
             self.aim.delete(aim_ctx, bd)
             epg = self._get_network_epg(mapping)
@@ -1350,6 +1355,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
             ip_address, subnet_db, network_db = intf
 
+            self._check_mapping(network_db.aim_mapping)
             if network_db.aim_mapping.bd_name:
                 bd = self._get_network_bd(network_db.aim_mapping)
                 sn = self._map_subnet(subnet_db, intf.ip_address, bd)
@@ -1400,6 +1406,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # connected to a router at this moment
         if self._is_preexisting_svi_db(network_db):
             raise exceptions.PreExistingSVICannotBeConnectedToRouter()
+
+        self._check_mapping(network_db.aim_mapping)
 
         # Find the address_scope(s) for the new interface.
         #
@@ -1546,9 +1554,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # interfaces.
         if not net_intfs:
             # First interface for network.
-            network_db.aim_mapping = (network_db.aim_mapping or
-                                      self._get_network_mapping(session,
-                                                                network_db.id))
             if network_db.aim_mapping.epg_name:
                 bd, epg = self._associate_network_with_vrf(
                     context, aim_ctx, network_db, vrf, nets_to_notify)
@@ -2679,6 +2684,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # with topology.
 
         for network_db in topology.itervalues():
+            self._check_mapping(network_db.aim_mapping)
             if old_vrf.tenant_name != new_vrf.tenant_name:
                 # New VRF is in different Tenant, so move BD, EPG, and
                 # all Subnets to new VRF's Tenant and set BD's VRF.
@@ -3556,6 +3562,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.aim.create(aim_ctx, aim_l3out_if, overwrite=True)
             network_db = self.plugin._get_network(plugin_context,
                                                   network['id'])
+            self._check_mapping(network_db.aim_extension_mapping)
             if (network_db.aim_extension_mapping.bgp_enable and
                     network_db.aim_extension_mapping.bgp_type
                     == 'default_export'):
