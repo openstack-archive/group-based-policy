@@ -1790,8 +1790,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session = context._plugin_context.session
         return aim_context.AimContext(session)
 
-    def _is_port_promiscuous(self, plugin_context, port):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
+    def _is_port_promiscuous(self, plugin_context, port, is_gbp=True):
+        if is_gbp:
+            pt = self._port_id_to_pt(plugin_context, port['id'])
+        else:
+            pt = None
         if (pt and pt.get('cluster_id') and
                 pt.get('cluster_id') != pt['id']):
             master = self._get_policy_target(plugin_context, pt['cluster_id'])
@@ -1832,25 +1835,34 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                           "port %s", port['id'])
             return epg
 
-    def _get_subnet_details(self, plugin_context, port, details):
+    def _get_subnet_details(self, plugin_context, port, details, is_gbp=True):
         # L2P might not exist for a pure Neutron port
-        l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
+        if is_gbp:
+            l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
+        else:
+            l2p = None
         # TODO(ivar): support shadow network
         # if not l2p and self._ptg_needs_shadow_network(context, ptg):
         #    l2p = self._get_l2_policy(context._plugin_context,
         #                              ptg['l2_policy_id'])
 
-        subnets = self._get_subnets(
-            plugin_context,
-            filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
+        if 'subnets' in details['_cache']:
+            subnets = details['_cache']['subnets']
+        else:
+            subnets = self._get_subnets(
+                plugin_context,
+                filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
         for subnet in subnets:
             dhcp_ports = {}
             subnet_dhcp_ips = set()
-            for dhcp_port in self._get_ports(
+            if 'dhcp_ports' in details['_cache']:
+                dhcp_ports_list = details['_cache']['dhcp_ports']
+            else:
+                dhcp_ports_list = self._get_ports(
                     plugin_context,
-                    filters={
-                        'network_id': [subnet['network_id']],
-                        'device_owner': [n_constants.DEVICE_OWNER_DHCP]}):
+                    filters={'network_id': [subnet['network_id']],
+                             'device_owner': [n_constants.DEVICE_OWNER_DHCP]})
+            for dhcp_port in dhcp_ports_list:
                 dhcp_ips = set([x['ip_address'] for x in dhcp_port['fixed_ips']
                                 if x['subnet_id'] == subnet['id']])
                 dhcp_ports.setdefault(dhcp_port['mac_address'], list(dhcp_ips))
@@ -1903,10 +1915,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.aim_mech_driver._notify_port_update(plugin_context, port)
 
     def _get_aap_details(self, plugin_context, port, details):
+        # TBD
         aaps = port['allowed_address_pairs']
         # Set the correct address ownership for this port
-        owned_addresses = self._get_owned_addresses(
-            plugin_context, port['id'])
+        if 'owned_addresses' in details['_cache']:
+            owned_addresses = details['_cache']['owned_addresses']
+        else:
+            owned_addresses = self._get_owned_addresses(
+                plugin_context, port['id'])
         for allowed in aaps:
             if allowed['ip_address'] in owned_addresses:
                 # Signal the agent that this particular address is active
@@ -1924,6 +1940,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          details):
         session = plugin_context.session
         result = []
+        if 'address_scope' in details['_cache']:
+            mappings = details['_cache']['address_scope']
+        else:
+            mappings = None
         # get all subnets of the specified VRF
         with session.begin(subtransactions=True):
             # Find VRF's address_scope first
@@ -1931,14 +1951,19 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 self.aim_mech_driver._get_address_scope_ids_for_vrf(
                     session,
                     aim_resource.VRF(tenant_name=vrf_tenant_name,
-                                     name=vrf_name)))
+                                     name=vrf_name),
+                    mappings))
             if address_scope_ids:
-                for address_scope_id in address_scope_ids:
+                if 'subnetpools' in details['_cache']:
+                    subnetpools = details['_cache']['subnetpools']
+                else:
                     subnetpools = self._get_subnetpools(
                         plugin_context,
-                        filters={'address_scope_id': [address_scope_id]})
-                    for pool in subnetpools:
-                        result.extend(pool['prefixes'])
+                        filters={'address_scope_id': address_scope_ids})
+                for pool in subnetpools:
+                    result.extend(pool['prefixes'])
+            elif 'vrf_subnets' in details['_cache']:
+                result = details['_cache']['vrf_subnets']
             else:
                 aim_ctx = aim_context.AimContext(db_session=session)
                 if vrf_tenant_name != md.COMMON_TENANT_NAME:
@@ -1958,25 +1983,29 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     # already
                     bds = [x for x in bds if x.tenant_name in valid_tenants]
                 # Retrieve subnets from BDs
-                net_ids = []
-                for bd in bds:
-                    try:
-                        net_ids.append(self.name_mapper.reverse_network(
-                            session, bd.name))
-                    except md_exc.InternalError:
-                        # Check if BD maps to an external network
-                        ext_ids = self.aim_mech_driver.get_network_ids_for_bd(
-                            session, bd)
-                        net_ids.extend(ext_ids)
-                        # If no external network is found, we ignore reverse
-                        # mapping failures because there may be APIC BDs in the
-                        # concerned VRF that Neutron is unaware of. This is
-                        # especially true for VRFs in the common tenant.
+                net_ids = self._get_net_ids_from_bds(session, bds)
                 if net_ids:
                     subnets = self._get_subnets(plugin_context,
                                                 {'network_id': net_ids})
                     result = [x['cidr'] for x in subnets]
         return result
+
+    def _get_net_ids_from_bds(self, session, bds):
+        net_ids = []
+        for bd in bds:
+            try:
+                net_ids.append(self.name_mapper.reverse_network(
+                    session, bd.name))
+            except md_exc.InternalError:
+                # Check if BD maps to an external network
+                ext_ids = self.aim_mech_driver.get_network_ids_for_bd(
+                    session, bd)
+                net_ids.extend(ext_ids)
+                # If no external network is found, we ignore reverse
+                # mapping failures because there may be APIC BDs in the
+                # concerned VRF that Neutron is unaware of. This is
+                # especially true for VRFs in the common tenant.
+        return net_ids
 
     def _get_segmentation_labels(self, plugin_context, port, details):
         pt = self._port_id_to_pt(plugin_context, port['id'])
@@ -1995,49 +2024,62 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # Handle them depending on whether there is a FIP on that
         # network.
         ext_nets = []
-
-        port_sn = set([x['subnet_id'] for x in port['fixed_ips']])
-        router_intf_ports = self._get_ports(
-            plugin_context,
-            filters={'device_owner': [n_constants.DEVICE_OWNER_ROUTER_INTF],
-                     'fixed_ips': {'subnet_id': port_sn}})
-        if router_intf_ports:
-            routers = self._get_routers(
+        if 'ext_nets' in details['_cache']:
+            ext_nets = details['_cache']['ext_nets']
+        else:
+            port_sn = set([x['subnet_id'] for x in port['fixed_ips']])
+            router_intf_ports = self._get_ports(
                 plugin_context,
-                filters={'id': [x['device_id']
-                                for x in router_intf_ports]})
-            ext_nets = self._get_networks(
-                plugin_context,
-                filters={'id': [r['external_gateway_info']['network_id']
-                                for r in routers
-                                if r.get('external_gateway_info')]})
+                filters={'device_owner':
+                         [n_constants.DEVICE_OWNER_ROUTER_INTF],
+                         'fixed_ips': {'subnet_id': port_sn}})
+            if router_intf_ports:
+                routers = self._get_routers(
+                    plugin_context,
+                    filters={'id': [x['device_id']
+                                    for x in router_intf_ports]})
+                ext_nets = self._get_networks(
+                    plugin_context,
+                    filters={'id': [r['external_gateway_info']['network_id']
+                                    for r in routers
+                                    if r.get('external_gateway_info')]})
         if not ext_nets:
             return fips, ipms, host_snat_ips
 
         # Handle FIPs of owned addresses - find other ports in the
         # network whose address is owned by this port.
         # If those ports have FIPs, then steal them.
-        fips_filter = [port['id']]
-        active_addrs = [a['ip_address']
-                        for a in details['allowed_address_pairs']
-                        if a.get('active')]
-        if active_addrs:
-            others = self._get_ports(
-                plugin_context,
-                filters={'network_id': [port['network_id']],
-                         'fixed_ips': {'ip_address': active_addrs}})
-            fips_filter.extend([p['id'] for p in others])
-        fips = self._get_fips(plugin_context,
-                              filters={'port_id': fips_filter})
+        if 'fips' in details['_cache']:
+            fips = details['_cache']['fips']
+        else:
+            fips_filter = [port['id']]
+            active_addrs = [a['ip_address']
+                            for a in details['allowed_address_pairs']
+                            if a.get('active')]
+            if active_addrs:
+                others = self._get_ports(
+                    plugin_context,
+                    filters={'network_id': [port['network_id']],
+                             'fixed_ips': {'ip_address': active_addrs}})
+                fips_filter.extend([p['id'] for p in others])
+            fips = self._get_fips(plugin_context,
+                                  filters={'port_id': fips_filter})
 
         for ext_net in ext_nets:
-            dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
-                cisco_apic.EXTERNAL_NETWORK)
-            ext_net_epg_dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
-                cisco_apic.EPG)
+            if 'ext_nets' in details['_cache']:
+                dn = ext_net.external_network_dn
+                ext_net_epg_dn = self.aim_mech_driver._get_network_epg(
+                                                                ext_net).dn
+                nat_type = ext_net.nat_type
+            else:
+                dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
+                    cisco_apic.EXTERNAL_NETWORK)
+                ext_net_epg_dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
+                    cisco_apic.EPG)
+                nat_type = ext_net.get(cisco_apic.NAT_TYPE)
             if not dn or not ext_net_epg_dn:
                 continue
-            if 'distributed' != ext_net.get(cisco_apic.NAT_TYPE):
+            if 'distributed' != nat_type:
                 continue
 
             # TODO(amitbose) Handle per-tenant NAT EPG
@@ -2404,8 +2446,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                             gpdb.PolicyRule.id).filter(
                                 gpdb.PolicyRule.id.in_(pr_ids)).all())]
 
-    def _get_port_mtu(self, context, port):
+    def _get_port_mtu(self, context, port, details):
         if self.advertise_mtu:
+            # TBD
             for dhcp_opt in port.get('extra_dhcp_opts'):
                 if (dhcp_opt.get('opt_name') == 'interface-mtu' or
                         dhcp_opt.get('opt_name') == '26'):
@@ -2414,7 +2457,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                             return int(dhcp_opt['opt_value'])
                         except ValueError:
                             continue
-            network = self._get_network(context, port['network_id'])
+            if 'network' in details['_cache']:
+                network = details['_cache']['network']
+            else:
+                network = self._get_network(context, port['network_id'])
             return network.get('mtu')
         return None
 
@@ -2422,8 +2468,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         network = self._get_network(context, port['network_id'])
         return network.get('dns_domain')
 
-    def _get_nested_domain(self, context, port):
-        network = self._get_network(context, port['network_id'])
+    def _get_nested_domain(self, context, port, details):
+        if 'network' in details['_cache']:
+            network = details['_cache']['network']
+        else:
+            network = self._get_network(context, port['network_id'])
         return (network.get('apic:nested_domain_name'),
                 network.get('apic:nested_domain_type'),
                 network.get('apic:nested_domain_infra_vlan'),
