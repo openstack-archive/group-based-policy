@@ -256,6 +256,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
+        self.enable_raw_sql_for_device_rpc = (cfg.CONF.ml2_apic_aim.
+                                              enable_raw_sql_for_device_rpc)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
         trunk_driver.register()
@@ -2560,8 +2562,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return vrfs.values()
 
     # Used by policy driver.
-    def _get_address_scope_ids_for_vrf(self, session, vrf):
-        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+    def _get_address_scope_ids_for_vrf(self, session, vrf, mappings=None):
+        mappings = mappings or self._get_address_scope_mappings_for_vrf(
+                                                                session, vrf)
         return [mapping.scope_id for mapping in mappings]
 
     def _get_network_ids_for_vrf(self, session, vrf):
@@ -3394,7 +3397,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._notify_port_update(plugin_context, p_id)
 
     def get_or_allocate_snat_ip(self, plugin_context, host_or_vrf,
-                                ext_network):
+                                ext_network, details=None):
         """Fetch or allocate SNAT IP on the external network.
 
         IP allocation is done by creating a port on the external network,
@@ -3407,34 +3410,60 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
              'prefixlen': <prefix_length_of_subnet>}
         """
         session = plugin_context.session
-
-        query = BAKERY(lambda s: s.query(
-            models_v2.Port))
-        query += lambda q: q.filter(
-            models_v2.Port.network_id == sa.bindparam('network_id'),
-            models_v2.Port.device_id == sa.bindparam('device_id'),
-            models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
-        snat_port = query(session).params(
-            network_id=ext_network['id'],
-            device_id=host_or_vrf).first()
-
-        snat_ip = None
-        if not snat_port or snat_port.fixed_ips is None:
-            # allocate SNAT port
-            extn_db_sn = extension_db.SubnetExtensionDb
-
+        if details and 'ext_nets' in details['_cache']:
+            snat_port_query = ("SELECT id FROM ports "
+                          "WHERE network_id = '" + ext_network['id'] + "' "
+                          "AND device_id = '" + host_or_vrf + "' AND "
+                          "device_owner = '" + DEVICE_OWNER_SNAT_PORT + "'")
+            snat_port = session.execute(snat_port_query).first()
+            if snat_port:
+                snat_port = dict(snat_port)
+                ip_query = ("SELECT ip_address, subnet_id FROM "
+                            "ipallocations WHERE "
+                            "port_id = '" + snat_port['id'] + "'")
+                ip_result = session.execute(ip_query)
+                snat_port['fixed_ips'] = []
+                for ip in ip_result:
+                    snat_port['fixed_ips'].append(
+                        {'ip_address': ip['ip_address'],
+                         'subnet_id': ip['subnet_id']})
+        else:
             query = BAKERY(lambda s: s.query(
-                models_v2.Subnet))
-            query += lambda q: q.join(
-                extn_db_sn,
-                extn_db_sn.subnet_id == models_v2.Subnet.id)
+                models_v2.Port))
             query += lambda q: q.filter(
-                models_v2.Subnet.network_id == sa.bindparam('network_id'))
-            query += lambda q: q.filter(
-                extn_db_sn.snat_host_pool.is_(True))
-            snat_subnets = query(session).params(
-                network_id=ext_network['id']).all()
-
+                models_v2.Port.network_id == sa.bindparam('network_id'),
+                models_v2.Port.device_id == sa.bindparam('device_id'),
+                models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+            snat_port = query(session).params(
+                network_id=ext_network['id'],
+                device_id=host_or_vrf).first()
+        snat_ip = None
+        if not snat_port or snat_port['fixed_ips'] is None:
+            # allocate SNAT port
+            if details and 'ext_nets' in details['_cache']:
+                snat_subnet_query = ("SELECT id, cidr, gateway_ip FROM "
+                                     "subnets JOIN "
+                                     "apic_aim_subnet_extensions AS "
+                                     "subnet_ext_1 ON "
+                                     "id = subnet_ext_1.subnet_id "
+                                     "WHERE network_id = '" +
+                                     ext_network['id'] + "' AND "
+                                     "subnet_ext_1.snat_host_pool = 1")
+                snat_subnets = session.execute(snat_subnet_query)
+                snat_subnets = list(snat_subnets)
+            else:
+                extn_db_sn = extension_db.SubnetExtensionDb
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Subnet))
+                query += lambda q: q.join(
+                    extn_db_sn,
+                    extn_db_sn.subnet_id == models_v2.Subnet.id)
+                query += lambda q: q.filter(
+                    models_v2.Subnet.network_id == sa.bindparam('network_id'))
+                query += lambda q: q.filter(
+                    extn_db_sn.snat_host_pool.is_(True))
+                snat_subnets = query(session).params(
+                    network_id=ext_network['id']).all()
             if not snat_subnets:
                 LOG.info('No subnet in external network %s is marked as '
                          'SNAT-pool',
@@ -3460,15 +3489,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                              'for SNAT IP allocation',
                              snat_subnet['id'])
         else:
-            snat_ip = snat_port.fixed_ips[0].ip_address
-
-            query = BAKERY(lambda s: s.query(
-                models_v2.Subnet))
-            query += lambda q: q.filter(
-                models_v2.Subnet.id == sa.bindparam('subnet_id'))
-            snat_subnet = query(session).params(
-                subnet_id=snat_port.fixed_ips[0].subnet_id).one()
-
+            snat_ip = snat_port['fixed_ips'][0]['ip_address']
+            if details and 'ext_nets' in details['_cache']:
+                snat_subnet_query = ("SELECT cidr, gateway_ip FROM subnets "
+                                     "WHERE id = '" +
+                                     snat_port['fixed_ips'][0]['subnet_id'] +
+                                     "'")
+                snat_subnet = session.execute(snat_subnet_query).first()
+            else:
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Subnet))
+                query += lambda q: q.filter(
+                    models_v2.Subnet.id == sa.bindparam('subnet_id'))
+                snat_subnet = query(session).params(
+                    subnet_id=snat_port.fixed_ips[0].subnet_id).one()
         if snat_ip:
             return {'host_snat_ip': snat_ip,
                     'gateway_ip': snat_subnet['gateway_ip'],
