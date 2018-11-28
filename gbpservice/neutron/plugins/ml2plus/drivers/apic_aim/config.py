@@ -58,6 +58,10 @@ apic_opts = [
                 "plugin, formatted as a dictionary mapping Neutron external "
                 "network IDs (UUIDs) to ACI external network distinguished "
                 "names."),
+    cfg.BoolOpt('enable_prepared_statements_for_ep_file',
+                default=False,
+                help=("This will use those prepared SQL statements to speed "
+                      "up the calculation of the EP file.")),
 ]
 
 
