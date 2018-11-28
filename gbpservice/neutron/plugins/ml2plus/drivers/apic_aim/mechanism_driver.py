@@ -251,6 +251,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
+        self.enable_prepared_statements_for_ep_file = (cfg.CONF.ml2_apic_aim.
+                                        enable_prepared_statements_for_ep_file)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
         trunk_driver.register()
@@ -2482,8 +2484,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return vrfs.values()
 
     # Used by policy driver.
-    def _get_address_scope_ids_for_vrf(self, session, vrf):
-        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
+    def _get_address_scope_ids_for_vrf(self, session, vrf, mappings=None):
+        mappings = mappings or self._get_address_scope_mappings_for_vrf(
+                                                                session, vrf)
         return [mapping.scope_id for mapping in mappings]
 
     def _get_network_ids_for_vrf(self, session, vrf):
