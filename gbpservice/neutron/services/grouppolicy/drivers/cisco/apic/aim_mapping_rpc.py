@@ -175,6 +175,12 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     # - self._get_dns_domain(context, port)
     @db_api.retry_if_session_inactive()
     def _get_gbp_details(self, context, request, host):
+        if self.aim_mech_driver.enable_prepared_statements_for_ep_file:
+            return self._get_gbp_details_new(context, request, host)
+        else:
+            return self._get_gbp_details_old(context, request, host)
+
+    def _get_gbp_details_old(self, context, request, host):
         with context.session.begin(subtransactions=True):
             device = request.get('device')
 
@@ -227,15 +233,14 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                 details['interface_mtu'] = mtu
             details['dns_domain'] = self._get_dns_domain(context, port)
 
-            if port.get('security_groups'):
-                self._add_security_group_details(context, port, details)
-
             # NOTE(ivar): having these methods cleanly separated actually makes
             # things less efficient by requiring lots of calls duplication.
             # we could alleviate this by passing down a cache that stores
             # commonly requested objects (like EPGs). 'details' itself could
             # be used for such caching.
             details['_cache'] = {}
+            if port.get('security_groups'):
+                self._add_security_group_details(context, port, details)
             vrf = self._get_port_vrf(context, port, details)
             details['l3_policy_id'] = '%s %s' % (vrf.tenant_name, vrf.name)
             self._add_subnet_details(context, port, details)
@@ -244,6 +249,149 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             self._add_nat_details(context, port, host, details)
             self._add_extra_details(context, port, details)
             self._add_segmentation_label_details(context, port, details)
+            self._set_dhcp_lease_time(details)
+            details.pop('_cache', None)
+            self._add_nested_domain_details(context, port, details)
+
+        LOG.debug("Details for port %s : %s", port['id'], details)
+        return details
+
+    # TODO(kentwu): Continue to use prepared statements to make performance
+    # improvement on _add_nat_details(), _add_vrf_details(),
+    # _add_subnet_details(), _get_port_mtu(), _add_nested_domain_details()
+    # and get_bound_port_context(). These functions have lots of calculations
+    # so need to query everything up front first then do those calculations
+    # on the client side.
+    def _get_gbp_details_new(self, context, request, host):
+        with context.session.begin(subtransactions=True):
+            device = request.get('device')
+
+            core_plugin = self._core_plugin
+            port_id = core_plugin._device_to_port_id(context, device)
+            port_context = core_plugin.get_bound_port_context(context, port_id,
+                                                              host)
+            if not port_context:
+                LOG.warning("Device %(device)s requested by agent "
+                            "%(agent_id)s not found in database",
+                            {'device': port_id,
+                             'agent_id': request.get('agent_id')})
+                return {'device': request.get('device')}
+            port = port_context.current
+
+            port_query = ("SELECT network_id, mac_address FROM ports WHERE "
+                          "ports.id = '" + port_id + "'")
+            port_result = context.session.execute(port_query)
+            # in UT env., sqlite doesn't implement rowcount so the value
+            # is always -1
+            if port_result.rowcount != 1 and port_result.rowcount != -1:
+                LOG.warning("Can't find the matching port DB record for "
+                            "this port ID: %(port_id)s",
+                            {'port_id': port_id})
+                return {'device': request.get('device')}
+            net_id = port_result.first()['network_id']
+
+            net_query = ("SELECT epg_name, epg_app_profile_name, "
+                         "epg_tenant_name, vrf_name, vrf_tenant_name, "
+                         "dns_domain, port_security_enabled FROM "
+                         "apic_aim_network_mappings LEFT OUTER JOIN networks "
+                         "AS networks_1 ON networks_1.id = "
+                         "apic_aim_network_mappings.network_id "
+                         "LEFT OUTER JOIN networksecuritybindings AS "
+                         "networksecuritybindings_1 ON networks_1.id = "
+                         "networksecuritybindings_1.network_id "
+                         "LEFT OUTER JOIN networkdnsdomains AS "
+                         "networkdnsdomains_1 ON networks_1.id = "
+                         "networkdnsdomains_1.network_id WHERE "
+                         "apic_aim_network_mappings.network_id = '"
+                         + net_id + "'")
+            net_result = context.session.execute(net_query)
+            if net_result.rowcount != 1 and net_result.rowcount != -1:
+                LOG.warning("Can't find the matching network DB record for "
+                            "this network ID: %(net_id)s",
+                            {'net_id': net_id})
+                return {'device': request.get('device')}
+            net_record = net_result.first()
+
+            ha_addr_query = ("SELECT ha_ip_address FROM "
+                             "apic_ml2_ha_ipaddress_to_port_owner WHERE "
+                             "apic_ml2_ha_ipaddress_to_port_owner.port_id = '"
+                             + port_id + "'")
+            ha_addr_result = context.session.execute(ha_addr_query)
+            owned_addresses = sorted([x[0] for x in ha_addr_result])
+            LOG.debug("kent get_gbp_details owned_addresses: %s",
+                      owned_addresses)
+
+            if port.get('security_groups'):
+                # Remove the encoding presentation of the string
+                # otherwise MySQL will complain
+                sg_list = [str(r) for r in port['security_groups']]
+                in_str = str(tuple(sg_list))
+                # Remove the ',' at the end otherwise MySQL will complain
+                if in_str[-1] == ')' and in_str[-2] == ',':
+                    in_str = in_str[0:-2] + in_str[-1]
+                sg_query = ("SELECT id, project_id FROM securitygroups WHERE "
+                            "id in " + in_str)
+                sg_result = context.session.execute(sg_query)
+                LOG.debug("kent get_gbp_details SG result %s", sg_result)
+
+            # NOTE(ivar): removed the PROXY_PORT_PREFIX hack.
+            # This was needed to support network services without hotplug.
+
+            details = {'device': request.get('device'),
+                       'enable_dhcp_optimization': self._is_dhcp_optimized(
+                           context, port),
+                       'enable_metadata_optimization': (
+                           self._is_metadata_optimized(context, port)),
+                       'port_id': port_id,
+                       'mac_address': port['mac_address'],
+                       'app_profile_name': net_record['epg_app_profile_name'],
+                       'tenant_id': port['tenant_id'],
+                       'host': port[portbindings.HOST_ID],
+                       # TODO(ivar): scope names, possibly through AIM or the
+                       # name mapper
+                       'ptg_tenant': net_record['epg_tenant_name'],
+                       'endpoint_group_name': net_record['epg_name'],
+                       # TODO(kentwu): make it to support GBP workflow also
+                       'promiscuous_mode': self._is_port_promiscuous(
+                                                context, port, is_gbp=False),
+                       'extra_ips': [],
+                       'floating_ip': [],
+                       'ip_mapping': [],
+                       # Put per mac-address extra info
+                       'extra_details': {}}
+
+            # Set VM name if needed.
+            if port['device_owner'].startswith(
+                    'compute:') and port['device_id']:
+                vm = nclient.NovaClient().get_server(port['device_id'])
+                details['vm-name'] = vm.name if vm else port['device_id']
+
+            mtu = self._get_port_mtu(context, port)
+            if mtu:
+                details['interface_mtu'] = mtu
+
+            details['dns_domain'] = net_record['dns_domain']
+
+            # NOTE(ivar): having these methods cleanly separated actually makes
+            # things less efficient by requiring lots of calls duplication.
+            # we could alleviate this by passing down a cache that stores
+            # commonly requested objects (like EPGs). 'details' itself could
+            # be used for such caching.
+            details['_cache'] = {}
+            if port.get('security_groups'):
+                details['_cache']['security_groups'] = sg_result
+                self._add_security_group_details(context, port, details)
+            self._add_subnet_details(context, port, details)
+            details['_cache']['owned_addresses'] = owned_addresses
+            self._add_allowed_address_pairs_details(context, port, details)
+            details['l3_policy_id'] = '%s %s' % (
+                        net_record['vrf_tenant_name'], net_record['vrf_name'])
+            self._add_vrf_details(context, details['l3_policy_id'], details)
+            self._add_nat_details(context, port, host, details)
+            self._add_extra_details(context, port, details)
+            # TODO(kentwu): make it to support GBP workflow also
+            self._add_segmentation_label_details(context, port, details,
+                                                 is_gbp=False)
             self._set_dhcp_lease_time(details)
             details.pop('_cache', None)
             self._add_nested_domain_details(context, port, details)
@@ -264,17 +412,29 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return
         details['security_group'] = []
 
-        port_sgs = (context.session.query(sg_models.SecurityGroup.id,
-                                          sg_models.SecurityGroup.tenant_id).
-                    filter(sg_models.SecurityGroup.id.
-                           in_(port['security_groups'])).
-                    all())
+        if 'security_groups' in details['_cache']:
+            port_sgs = details['_cache']['security_groups']
+        else:
+            port_sgs = (context.session.query(sg_models.SecurityGroup.id,
+                                        sg_models.SecurityGroup.tenant_id).
+                        filter(sg_models.SecurityGroup.id.
+                               in_(port['security_groups'])).
+                        all())
+        previous_sg_id = None
+        previous_tenant_id = None
         for sg_id, tenant_id in port_sgs:
+            # This is to work around an UT sqlite bug that duplicate SG
+            # entries will be returned somehow if we query it with a SELECT
+            # statement directly
+            if sg_id == previous_sg_id and tenant_id == previous_tenant_id:
+                continue
             tenant_aname = self.aim_mech_driver.name_mapper.project(
                 context.session, tenant_id)
             details['security_group'].append(
                 {'policy-space': tenant_aname,
                  'name': sg_id})
+            previous_sg_id = sg_id
+            previous_tenant_id = tenant_id
         # Always include this SG which has the default arp & dhcp rules
         details['security_group'].append(
             {'policy-space': 'common',
@@ -346,14 +506,16 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
 
     # Child class needs to support:
     # - self._get_segmentation_labels(context, port, details)
-    def _add_segmentation_label_details(self, context, port, details):
+    def _add_segmentation_label_details(self, context, port, details,
+                                        is_gbp=True):
         # This method needs to define requirements for this Mixin's child
         # classes in order to fill the following result parameters:
         # - segmentation_labels
         # apic_segmentation_label is a GBP driver extension configured
         # for the aim_mapping driver
-        details['segmentation_labels'] = self._get_segmentation_labels(
-            context, port, details)
+        if is_gbp:
+            details['segmentation_labels'] = self._get_segmentation_labels(
+                context, port, details)
 
     def _add_extra_details(self, context, port, details):
         # TODO(ivar): Extra details depend on HA and SC implementation

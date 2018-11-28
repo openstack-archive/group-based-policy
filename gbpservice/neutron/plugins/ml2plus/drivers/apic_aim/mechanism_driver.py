@@ -246,6 +246,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
+        self.enable_prepared_statements_for_ep_file = (cfg.CONF.ml2_apic_aim.
+                                        enable_prepared_statements_for_ep_file)
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
         trunk_driver.register()

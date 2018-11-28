@@ -1790,8 +1790,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session = context._plugin_context.session
         return aim_context.AimContext(session)
 
-    def _is_port_promiscuous(self, plugin_context, port):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
+    def _is_port_promiscuous(self, plugin_context, port, is_gbp=True):
+        if is_gbp:
+            pt = self._port_id_to_pt(plugin_context, port['id'])
+        else:
+            pt = None
         if (pt and pt.get('cluster_id') and
                 pt.get('cluster_id') != pt['id']):
             master = self._get_policy_target(plugin_context, pt['cluster_id'])
@@ -1905,8 +1908,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _get_aap_details(self, plugin_context, port, details):
         aaps = port['allowed_address_pairs']
         # Set the correct address ownership for this port
-        owned_addresses = self._get_owned_addresses(
-            plugin_context, port['id'])
+        if 'owned_addresses' in details['_cache']:
+            owned_addresses = details['_cache']['owned_addresses']
+        else:
+            owned_addresses = self._get_owned_addresses(
+                plugin_context, port['id'])
         for allowed in aaps:
             if allowed['ip_address'] in owned_addresses:
                 # Signal the agent that this particular address is active
