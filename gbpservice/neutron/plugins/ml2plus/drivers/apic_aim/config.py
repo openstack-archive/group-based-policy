@@ -53,6 +53,10 @@ apic_opts = [
                 "plugin, formatted as a dictionary mapping Neutron external "
                 "network IDs (UUIDs) to ACI external network distinguished "
                 "names."),
+    cfg.BoolOpt('enable_raw_sql_for_device_rpc',
+                default=False,
+                help=("This will use those raw SQL statements to speed "
+                      "up the calculation of the EP file.")),
 ]
 
 
