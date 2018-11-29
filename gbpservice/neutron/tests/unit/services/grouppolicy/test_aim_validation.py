@@ -64,6 +64,12 @@ class AimValidationTestMixin(object):
             api.VALIDATION_FAILED_UNREPAIRABLE,
             self.av_mgr.validate(repair=True))
 
+    def _validate_fails_binding_ports(self):
+        # Repair should fail.
+        self.assertEqual(
+            api.VALIDATION_FAILED_BINDING_PORTS,
+            self.av_mgr.validate(repair=True))
+
     def _test_aim_resource(self, resource, unexpected_attr_name='name',
                            unexpected_attr_value='unexpected',
                            test_unexpected_monitored=True):
@@ -862,7 +868,7 @@ class TestNeutronMapping(AimValidationTestCase):
                                                  'host': 'yyy'})
         self.db_session.query(ml2_models.PortBinding).filter_by(
             port_id=port['id']).update({'host': 'yyy'})
-        self._validate_unrepairable()
+        self._validate_fails_binding_ports()
 
     def test_legacy_cleanup(self):
         # Create external network.
