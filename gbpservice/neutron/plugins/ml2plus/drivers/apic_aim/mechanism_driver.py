@@ -4856,16 +4856,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # REVISIT: Deal with distributed port bindings? Also, consider
         # moving this to the ML2Plus plugin or to a base validation
         # manager, as it is not specific to this mechanism driver.
+        failure_count = 0
+        failure_hosts = set()
         for port_id, in (mgr.actual_session.query(models.PortBinding.port_id).
                         filter(models.PortBinding.host != '',
                                models.PortBinding.vif_type ==
                                portbindings.VIF_TYPE_UNBOUND)):
+            mgr.output("Attempting to bind port %s" % port_id)
             # REVISIT: Use the more efficient get_bound_port_contexts,
             # which is not available in stable/newton?
             pc = self.plugin.get_bound_port_context(
                 mgr.actual_context, port_id)
             if (pc.vif_type == portbindings.VIF_TYPE_BINDING_FAILED or
                 pc.vif_type == portbindings.VIF_TYPE_UNBOUND):
-                mgr.validation_failed(
-                    "unable to bind port %(port)s on host %(host)s" %
+                mgr.bind_ports_failed(
+                    "Unable to bind port %(port)s on host %(host)s" %
                     {'port': port_id, 'host': pc.host})
+                failure_count += 1
+                failure_hosts.add(pc.host)
+        if failure_count:
+            mgr.output(
+                "Failed to bind %s ports on hosts %s. See log for details. "
+                "Make sure L2 agents are alive, and re-run validation to try "
+                "binding them again." % (failure_count, list(failure_hosts)))
+        else:
+            mgr.output("All ports are bound")
