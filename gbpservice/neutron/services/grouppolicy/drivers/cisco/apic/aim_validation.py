@@ -122,6 +122,9 @@ class ValidationManager(object):
                     raise RollbackTransaction()
         except RollbackTransaction:
             pass
+        except Exception as exc:
+            self.output("Validation failed with exception: %s" % exc)
+            return api.VALIDATION_FAILED_UNREPAIRABLE
 
         # Bind unbound ports outside transaction.
         if (self.repair and
@@ -224,6 +227,10 @@ class ValidationManager(object):
         # VALIDATION_FAILED_UNREPAIRABLE.
         self.output("Failed UNREPAIRABLE due to %s" % reason)
         self.result = api.VALIDATION_FAILED_UNREPAIRABLE
+
+    def bind_ports_failed(self, message):
+        self.output(message)
+        self.result = api.VALIDATION_FAILED_BINDING_PORTS
 
     def _validate_aim_resources(self):
         for resource_class in self._expected_aim_resources.keys():
