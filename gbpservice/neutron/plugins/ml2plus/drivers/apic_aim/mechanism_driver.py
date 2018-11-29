@@ -807,16 +807,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # Before we can clean up the default vrf, we have to
                 # remove the association in the network_mapping first.
                 mapping = self._get_network_mapping(session, current['id'])
-                self._set_network_vrf(mapping, self._map_unrouted_vrf())
+                if mapping:
+                    self._set_network_vrf(mapping, self._map_unrouted_vrf())
                 vrf = self._map_default_vrf(session, current)
                 self._cleanup_default_vrf(aim_ctx, vrf)
         else:
             mapping = self._get_network_mapping(session, current['id'])
-            bd = self._get_network_bd(mapping)
-            self.aim.delete(aim_ctx, bd)
-            epg = self._get_network_epg(mapping)
-            self.aim.delete(aim_ctx, epg)
-            session.delete(mapping)
+            if mapping:
+                bd = self._get_network_bd(mapping)
+                self.aim.delete(aim_ctx, bd)
+                epg = self._get_network_epg(mapping)
+                self.aim.delete(aim_ctx, epg)
+                session.delete(mapping)
 
     def extend_network_dict_bulk(self, session, results):
         # Gather db objects
@@ -1117,7 +1119,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         aim_ctx = aim_context.AimContext(session)
         mapping = self._get_address_scope_mapping(session, current['id'])
 
-        if mapping.vrf_owned:
+        if mapping and mapping.vrf_owned:
             vrf = self._get_address_scope_vrf(mapping)
             session.delete(mapping)
             scopes = self._get_address_scopes_owning_vrf(session, vrf)
@@ -1331,6 +1333,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             l3_db.RouterPort.port_type ==
                             n_constants.DEVICE_OWNER_ROUTER_INTF)):
             ip_address, subnet_db, network_db = intf
+            if not network_db.aim_mapping:
+                LOG.warning(
+                    "Mapping missing for network %s in extend_router_dict" %
+                    network_db.id)
+                continue
 
             if network_db.aim_mapping.bd_name:
                 bd = self._get_network_bd(network_db.aim_mapping)
@@ -1356,6 +1363,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         for scope_id in scope_ids:
             scope_db = self._scope_by_id(session, scope_id)
+            if not scope_db.aim_mapping:
+                LOG.warning(
+                    "Mapping missing for address scope %s in "
+                    "extend_router_dict" % scope_db.id)
+                continue
+
             vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
             dist_names[a_l3.SCOPED_VRF % scope_id] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
@@ -4211,7 +4224,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             else:
                 vrf = self._map_address_scope(mgr.expected_session, scope_db)
                 mapping = self._add_address_scope_mapping(
-                    mgr.expected_session, scope_db.id, vrf)
+                    mgr.expected_session, scope_db.id, vrf, update_scope=False)
             vrf = self._get_address_scope_vrf(mapping)
             vrf.monitored = not mapping.vrf_owned
             vrf.display_name = (
@@ -4343,7 +4356,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # Expect NetworkMapping record if applicable.
             if bd or epg or vrf or ext_net:
                 self._add_network_mapping(
-                    mgr.expected_session, net_db.id, bd, epg, vrf, ext_net)
+                    mgr.expected_session, net_db.id, bd, epg, vrf, ext_net,
+                    update_network=False)
 
     def _get_router_ext_contracts(self, mgr):
         # Get external contracts for routers.

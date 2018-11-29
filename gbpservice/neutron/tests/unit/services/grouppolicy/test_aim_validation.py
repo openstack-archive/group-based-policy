@@ -871,6 +871,20 @@ class TestNeutronMapping(AimValidationTestCase):
         self._validate_fails_binding_ports()
 
     def test_legacy_cleanup(self):
+        # Create pre-existing AIM VRF.
+        vrf = aim_resource.VRF(tenant_name='common', name='v1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, vrf)
+
+        # Create pre-existing AIM L3Outside.
+        l3out = aim_resource.L3Outside(
+            tenant_name='common', name='l1', vrf_name='v1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, l3out)
+
+        # Create pre-existing AIM ExternalNetwork.
+        ext_net = aim_resource.ExternalNetwork(
+            tenant_name='common', l3out_name='l1', name='n1', monitored=True)
+        self.aim_mgr.create(self.aim_ctx, ext_net)
+
         # Create external network.
         kwargs = {'router:external': True,
                   'apic:distinguished_names':
@@ -880,47 +894,97 @@ class TestNeutronMapping(AimValidationTestCase):
             arg_list=self.extension_attributes, **kwargs)['network']
         ext_net_id = ext_net['id']
 
+        # Create router using external network.
+        kwargs = {'external_gateway_info': {'network_id': ext_net_id}}
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1',
+            arg_list=self.extension_attributes, **kwargs)['router']
+        router_id = router['id']
+
+        # Create internal network and subnet.
+        int_net_resp = self._make_network(self.fmt, 'net1', True)
+        int_net = int_net_resp['network']
+        int_net_id = int_net['id']
+        int_subnet = self._make_subnet(
+            self.fmt, int_net_resp, '10.0.1.1', '10.0.1.0/24')['subnet']
+        int_subnet_id = int_subnet['id']
+
+        # Add internal subnet to router.
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router_id,
+            {'subnet_id': int_subnet_id})
+
+        # Validate just to make sure everything is OK before creating
+        # legacy plugin's SNAT-related resources.
+        self._validate()
+
         # Create legacy plugin's SNAT-related Neutron network.
-        net_resp = self._make_network(
+        leg_net_resp = self._make_network(
             self.fmt,
             'host-snat-network-for-internal-use-' + ext_net_id, False)
-        net = net_resp['network']
-        net_id = net['id']
+        leg_net = leg_net_resp['network']
+        leg_net_id = leg_net['id']
 
         # Create legacy plugin's SNAT-related Neutron subnet.
-        subnet = self._make_subnet(
-            self.fmt, net_resp, '66.66.66.1', '66.66.66.0/24',
+        leg_subnet = self._make_subnet(
+            self.fmt, leg_net_resp, '66.66.66.1', '66.66.66.0/24',
             enable_dhcp=False)['subnet']
-        subnet_id = subnet['id']
+        leg_subnet_id = leg_subnet['id']
         data = {'subnet': {'name': 'host-snat-pool-for-internal-use'}}
-        subnet = self._update('subnets', subnet_id, data)['subnet']
+        leg_subnet = self._update('subnets', leg_subnet_id, data)['subnet']
 
         # Create legacy plugin's SNAT-related Neutron port.
-        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '66.66.66.5'}]
-        port = self._make_port(
-            self.fmt, net_id, fixed_ips=fixed_ips,
+        fixed_ips = [{'subnet_id': leg_subnet_id, 'ip_address': '66.66.66.5'}]
+        leg_port = self._make_port(
+            self.fmt, leg_net_id, fixed_ips=fixed_ips,
             name='host-snat-pool-for-internal-use',
             device_owner='host-snat-pool-port-device-owner-internal-use'
         )['port']
-        port_id = port['id']
+        leg_port_id = leg_port['id']
 
-        # Test cleanup of these resources.
+        # Delete all networks' mapping and extension records to
+        # simulate migration use case.
+        net_ids = [ext_net_id, int_net_id, leg_net_id]
+        (self.db_session.query(db.NetworkMapping).
+         filter(db.NetworkMapping.network_id.in_(net_ids)).
+         delete(synchronize_session=False))
+        (self.db_session.query(ext_db.NetworkExtensionDb).
+         filter(ext_db.NetworkExtensionDb.network_id.in_(net_ids)).
+         delete(synchronize_session=False))
+
+        # Delete all subnets' extension records to simulate migration
+        # use case.
+        subnet_ids = [int_subnet_id, leg_subnet_id]
+        (self.db_session.query(ext_db.SubnetExtensionDb).
+         filter(ext_db.SubnetExtensionDb.subnet_id.in_(subnet_ids)).
+         delete(synchronize_session=False))
+
+        # Test migration.
+        cfg.CONF.set_override(
+            'migrate_ext_net_dns',
+            {ext_net_id: 'uni/tn-common/out-l1/instP-n1'},
+            group='ml2_apic_aim')
         self._validate_repair_validate()
+
+        # Ensure legacy plugin's SNAT-related resources are gone.
         self._show(
-            'ports', port_id, expected_code=webob.exc.HTTPNotFound.code)
+            'ports', leg_port_id,
+            expected_code=webob.exc.HTTPNotFound.code)
         self._show(
-            'subnets', subnet_id, expected_code=webob.exc.HTTPNotFound.code)
+            'subnets', leg_subnet_id,
+            expected_code=webob.exc.HTTPNotFound.code)
         self._show(
-            'networks', net_id, expected_code=webob.exc.HTTPNotFound.code)
+            'networks', leg_net_id,
+            expected_code=webob.exc.HTTPNotFound.code)
 
         # Ensure new SNAT subnet was properly created on actual
         # external network.
         ext_subnets = self._show('networks', ext_net_id)['network']['subnets']
         self.assertEqual(1, len(ext_subnets))
         ext_subnet = self._show('subnets', ext_subnets[0])['subnet']
-        self.assertEqual(subnet['cidr'], ext_subnet['cidr'])
-        self.assertEqual(subnet['gateway_ip'], ext_subnet['gateway_ip'])
-        self.assertEqual(subnet['enable_dhcp'], ext_subnet['enable_dhcp'])
+        self.assertEqual(leg_subnet['cidr'], ext_subnet['cidr'])
+        self.assertEqual(leg_subnet['gateway_ip'], ext_subnet['gateway_ip'])
+        self.assertEqual(leg_subnet['enable_dhcp'], ext_subnet['enable_dhcp'])
         self.assertEqual('SNAT host pool', ext_subnet['name'])
         self.assertTrue(ext_subnet['apic:snat_host_pool'])
         self.assertEqual(ext_net['project_id'], ext_subnet['project_id'])
