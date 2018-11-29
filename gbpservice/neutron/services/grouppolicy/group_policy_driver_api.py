@@ -22,6 +22,7 @@ VALIDATION_PASSED = "passed"
 VALIDATION_REPAIRED = "repaired"
 VALIDATION_FAILED_REPAIRABLE = "failed repairable"
 VALIDATION_FAILED_UNREPAIRABLE = "failed unrepairable"
+VALIDATION_FAILED_BINDING_PORTS = "failed binding ports"
 
 
 @six.add_metaclass(abc.ABCMeta)
