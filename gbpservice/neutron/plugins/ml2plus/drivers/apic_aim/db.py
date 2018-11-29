@@ -67,13 +67,24 @@ class NetworkMapping(model_base.BASEV2):
 
 class DbMixin(object):
     def _add_address_scope_mapping(self, session, scope_id, vrf,
-                                   vrf_owned=True):
+                                   vrf_owned=True, update_scope=True):
         mapping = AddressScopeMapping(
             scope_id=scope_id,
             vrf_name=vrf.name,
             vrf_tenant_name=vrf.tenant_name,
             vrf_owned=vrf_owned)
         session.add(mapping)
+        if update_scope:
+            # The AddressScope instance should already be in the
+            # session cache, so this should not add another DB
+            # roundtrip. It needs to be updated in case something
+            # within the same transaction tries to access its
+            # aim_mapping relationship after retrieving the
+            # AddressScope record from the session cache.
+            scope = (session.query(as_db.AddressScope).
+                     filter_by(id=scope_id).
+                     one_or_none())
+            scope.aim_mapping = mapping
         return mapping
 
     def _get_address_scope_mapping(self, session, scope_id):
@@ -104,7 +115,7 @@ class DbMixin(object):
             name=mapping.vrf_name)
 
     def _add_network_mapping(self, session, network_id, bd, epg, vrf,
-                             ext_net=None):
+                             ext_net=None, update_network=True):
         if not ext_net:
             mapping = NetworkMapping(
                 network_id=network_id,
@@ -124,6 +135,17 @@ class DbMixin(object):
                 vrf_name=vrf.name,
                 vrf_tenant_name=vrf.tenant_name)
         session.add(mapping)
+        if update_network:
+            # The Network instance should already be in the session
+            # cache, so this should not add another DB roundtrip. It
+            # needs to be updated in case something within the same
+            # transaction tries to access its aim_mapping relationship
+            # after retrieving the Network record from the session
+            # cache.
+            net = (session.query(models_v2.Network).
+                   filter_by(id=network_id).
+                   one_or_none())
+            net.aim_mapping = mapping
         return mapping
 
     def _get_network_mapping(self, session, network_id):
@@ -166,6 +188,12 @@ class DbMixin(object):
 
     def _get_network_l3out(self, mapping):
         if not mapping:
+            # REVISIT: Is this still needed now that
+            # _add_network_mapping updates the Network instance's
+            # aim_mapping? If so, the test should probably be moved to
+            # the caller to make all these
+            # _get_<neutron-resource>_<aim-resource> methods more
+            # consistent.
             return None
         return aim_resource.L3Outside(
             tenant_name=mapping.l3out_tenant_name,
