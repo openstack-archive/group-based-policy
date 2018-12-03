@@ -937,7 +937,7 @@ class TestNeutronMapping(AimValidationTestCase):
         fixed_ips = [{'subnet_id': leg_subnet_id, 'ip_address': '66.66.66.5'}]
         leg_port = self._make_port(
             self.fmt, leg_net_id, fixed_ips=fixed_ips,
-            name='host-snat-pool-for-internal-use',
+            name='host-snat-pool-port-for-internal-use',
             device_owner='host-snat-pool-port-device-owner-internal-use'
         )['port']
         leg_port_id = leg_port['id']
