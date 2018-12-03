@@ -115,7 +115,7 @@ DEFAULT_HOST_DOMAIN = '*'
 
 LEGACY_SNAT_NET_NAME_PREFIX = 'host-snat-network-for-internal-use-'
 LEGACY_SNAT_SUBNET_NAME = 'host-snat-pool-for-internal-use'
-LEGACY_SNAT_PORT_NAME = 'host-snat-pool-for-internal-use'
+LEGACY_SNAT_PORT_NAME = 'host-snat-pool-port-for-internal-use'
 LEGACY_SNAT_PORT_DEVICE_OWNER = 'host-snat-pool-port-device-owner-internal-use'
 
 # TODO(kentwu): Move this to AIM utils maybe to avoid adding too much
