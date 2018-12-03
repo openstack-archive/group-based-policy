@@ -1,0 +1,9 @@
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Code-Review+2: Kent Wu <wu@noironetworks.com>
+Workflow+1: Kent Wu <wu@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Mon, 03 Dec 2018 20:37:27 +0000
+Reviewed-on: https://review.openstack.org/621612
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/queens
