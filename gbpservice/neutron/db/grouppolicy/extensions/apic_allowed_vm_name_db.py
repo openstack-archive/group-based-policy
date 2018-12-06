@@ -12,6 +12,9 @@
 
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
+
+BAKERY = baked.bakery()
 
 
 class ApicAllowedVMNameDB(model_base.BASEV2):
@@ -26,15 +29,26 @@ class ApicAllowedVMNameDB(model_base.BASEV2):
 class ApicAllowedVMNameDBMixin(object):
 
     def get_l3_policy_allowed_vm_names(self, session, l3_policy_id):
-        rows = (session.query(ApicAllowedVMNameDB).filter_by(
-                l3_policy_id=l3_policy_id).all())
+        query = BAKERY(lambda s: s.query(
+            ApicAllowedVMNameDB))
+        query += lambda q: q.filter_by(
+            l3_policy_id=sa.bindparam('l3_policy_id'))
+        rows = query(session).params(
+            l3_policy_id=l3_policy_id).all()
+
         return rows
 
     def get_l3_policy_allowed_vm_name(self, session, l3_policy_id,
                                       allowed_vm_name):
-        row = (session.query(ApicAllowedVMNameDB).filter_by(
+        query = BAKERY(lambda s: s.query(
+            ApicAllowedVMNameDB))
+        query += lambda q: q.filter_by(
+            l3_policy_id=sa.bindparam('l3_policy_id'),
+            allowed_vm_name=sa.bindparam('allowed_vm_name'))
+        row = query(session).params(
             l3_policy_id=l3_policy_id,
-            allowed_vm_name=allowed_vm_name).one())
+            allowed_vm_name=allowed_vm_name).one()
+
         return row
 
     def add_l3_policy_allowed_vm_name(self, session, l3_policy_id,
