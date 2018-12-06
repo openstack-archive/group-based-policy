@@ -12,6 +12,8 @@
 
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
 
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_auto_ptg_db as auto_ptg_db)
@@ -24,6 +26,9 @@ from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 
 LOG = logging.getLogger(__name__)
+
+BAKERY = baked.bakery(500, _size_alert=lambda c: LOG.warning(
+    "sqlalchemy baked query cache size exceeded in %s" % __name__))
 
 
 class AIMExtensionDriver(api.ExtensionDriver,
@@ -53,8 +58,14 @@ class AIMExtensionDriver(api.ExtensionDriver,
 
     def _set_intra_ptg_allow(self, session, data, result):
         ptg = data['policy_target_group']
-        ptg_db = (session.query(gp_db.PolicyTargetGroup)
-                  .filter_by(id=result['id']).one())
+
+        query = BAKERY(lambda s: s.query(
+            gp_db.PolicyTargetGroup))
+        query += lambda q: q.filter_by(
+            id=sa.bindparam('id'))
+        ptg_db = query(session).params(
+            id=result['id']).one()
+
         if not ptg_db:
             raise gpolicy.PolicyTargetGroupNotFound(
                 policy_target_group_id=result['id'])
