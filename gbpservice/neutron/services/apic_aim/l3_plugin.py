@@ -35,8 +35,6 @@ from sqlalchemy import inspect
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
-    extension_db as extn_db)
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 
 LOG = logging.getLogger(__name__)
@@ -46,7 +44,6 @@ LOG = logging.getLogger(__name__)
 class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                    extraroute_db.ExtraRoute_db_mixin,
                    l3_gwmode_db.L3_NAT_db_mixin,
-                   extn_db.ExtensionDbMixin,
                    dns_db.DNSDbMixin):
 
     supported_extension_aliases = ["router", "ext-gw-mode", "extraroute",
@@ -139,12 +136,12 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             self._md.delete_router(context, router)
 
     def _process_router_op(self, context, result, router_req):
-        self.set_router_extn_db(context.session, result['id'],
-                                router_req['router'])
+        self._md.set_router_extn_db(context.session, result['id'],
+                                    router_req['router'])
         self._include_router_extn_attr(context.session, result)
 
     def _include_router_extn_attr(self, session, router):
-        attr = self.get_router_extn_db(session, router['id'])
+        attr = self._md.get_router_extn_db(session, router['id'])
         router.update(attr)
 
     def add_router_interface(self, context, router_id, interface_info):
