@@ -56,6 +56,10 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         return self._mechanism_driver
 
     @property
+    def bakery(self):
+        return self._md.bakery
+
+    @property
     def extension_alias(self):
         return "cisco-apic"
 

@@ -3864,7 +3864,11 @@ class TestTopology(ApicAimTestCase):
         self._router_interface_action('add', rtr['id'], sub3['id'], None)
 
 
-class TestMigrations(ApicAimTestCase, db.DbMixin):
+class TestMigrations(ApicAimTestCase):
+    def setUp(self):
+        super(TestMigrations, self).setUp()
+        self.db_mixin = db.DbMixin()
+
     def test_apic_aim_persist(self):
         aim_ctx = aim_context.AimContext(self.db_session)
 
@@ -3873,7 +3877,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
             self.fmt, 4, name='as1')['address_scope']
         scope1_id = scope['id']
         scope1_vrf = scope[DN]['VRF']
-        mapping = self._get_address_scope_mapping(self.db_session, scope1_id)
+        mapping = self.db_mixin._get_address_scope_mapping(
+            self.db_session, scope1_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
 
@@ -3888,7 +3893,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         scope2_id = scope['id']
         scope2_vrf = scope[DN]['VRF']
         self.assertEqual(vrf.dn, scope2_vrf)
-        mapping = self._get_address_scope_mapping(self.db_session, scope2_id)
+        mapping = self.db_mixin._get_address_scope_mapping(
+            self.db_session, scope2_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
         old_db = data_migrations.DefunctAddressScopeExtensionDb(
@@ -3902,7 +3908,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net1_bd = net[DN]['BridgeDomain']
         net1_epg = net[DN]['EndpointGroup']
         net1_vrf = net[DN]['VRF']
-        mapping = self._get_network_mapping(self.db_session, net1_id)
+        mapping = self.db_mixin._get_network_mapping(self.db_session, net1_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
 
@@ -3912,7 +3918,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net2_bd = net[DN]['BridgeDomain']
         net2_epg = net[DN]['EndpointGroup']
         net2_vrf = net[DN]['VRF']
-        mapping = self._get_network_mapping(self.db_session, net2_id)
+        mapping = self.db_mixin._get_network_mapping(self.db_session, net2_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
 
@@ -3920,7 +3926,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         # mapping.
         net = self._make_ext_network('net3')
         net3_id = net['id']
-        mapping = self._get_network_mapping(self.db_session, net3_id)
+        mapping = self.db_mixin._get_network_mapping(self.db_session, net3_id)
         self.assertIsNone(mapping)
 
         # Verify normal address scope is missing DN.
@@ -3974,7 +3980,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         self.assertEqual(net2_vrf, net[DN]['VRF'])
 
         # Verify unmanaged external network has no mapping or DNs.
-        mapping = self._get_network_mapping(self.db_session, net3_id)
+        mapping = self.db_mixin._get_network_mapping(self.db_session, net3_id)
         self.assertIsNone(mapping)
         net = self._show('networks', net3_id)['network']
         self.assertNotIn('BridgeDomain', net[DN])

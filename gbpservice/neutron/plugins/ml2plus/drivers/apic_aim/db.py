@@ -18,6 +18,7 @@ from neutron.db.models import address_scope as as_db
 from neutron.db import models_v2
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
 from sqlalchemy import orm
 
 
@@ -73,6 +74,9 @@ class NetworkMapping(model_base.BASEV2):
 
 
 class DbMixin(object):
+    def __init__(self):
+        self.bakery = baked.bakery()
+
     def _add_address_scope_mapping(self, session, scope_id, vrf,
                                    vrf_owned=True, update_scope=True):
         mapping = AddressScopeMapping(
@@ -88,33 +92,39 @@ class DbMixin(object):
             # within the same transaction tries to access its
             # aim_mapping relationship after retrieving the
             # AddressScope record from the session cache.
-            scope = (session.query(as_db.AddressScope).
-                     filter_by(id=scope_id).
-                     one_or_none())
+            query = self.bakery(lambda s: s.query(as_db.AddressScope))
+            query += lambda q: q.filter_by(id=sa.bindparam('scope_id'))
+            scope = query(session).params(scope_id=scope_id).one_or_none()
             scope.aim_mapping = mapping
         return mapping
 
     def _get_address_scope_mapping(self, session, scope_id):
-        return (session.query(AddressScopeMapping).
-                filter_by(scope_id=scope_id).
-                one_or_none())
+        query = self.bakery(lambda s: s.query(AddressScopeMapping))
+        query += lambda q: q.filter_by(scope_id=sa.bindparam('scope_id'))
+        return query(session).params(scope_id=scope_id).one_or_none()
 
     def _get_address_scope_mappings_for_vrf(self, session, vrf):
-        return (session.query(AddressScopeMapping).
-                filter_by(vrf_tenant_name=vrf.tenant_name,
-                          vrf_name=vrf.name).
-                all())
+        query = self.bakery(lambda s: s.query(AddressScopeMapping))
+        query += lambda q: q.filter_by(
+            vrf_tenant_name=sa.bindparam('tenant_name'),
+            vrf_name=sa.bindparam('name'))
+        return query(session).params(
+            tenant_name=vrf.tenant_name,
+            name=vrf.name).all()
 
     def _get_address_scopes_owning_vrf(self, session, vrf):
-        return (session.query(as_db.AddressScope).
-                join(AddressScopeMapping,
-                     AddressScopeMapping.scope_id == as_db.AddressScope.id).
-                filter(AddressScopeMapping.vrf_tenant_name ==
-                       vrf.tenant_name,
-                       AddressScopeMapping.vrf_name == vrf.name,
-                       AddressScopeMapping.vrf_owned).
-                order_by(as_db.AddressScope.ip_version).
-                all())
+        query = self.bakery(lambda s: s.query(as_db.AddressScope))
+        query += lambda q: q.join(
+            AddressScopeMapping,
+            AddressScopeMapping.scope_id == as_db.AddressScope.id)
+        query += lambda q: q.filter(
+            AddressScopeMapping.vrf_tenant_name == sa.bindparam('tenant_name'),
+            AddressScopeMapping.vrf_name == sa.bindparam('name'),
+            AddressScopeMapping.vrf_owned)
+        query += lambda q: q.order_by(as_db.AddressScope.ip_version)
+        return query(session).params(
+            tenant_name=vrf.tenant_name,
+            name=vrf.name).all()
 
     def _get_address_scope_vrf(self, mapping):
         return aim_resource.VRF(
