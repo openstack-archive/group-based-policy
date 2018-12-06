@@ -11,7 +11,14 @@
 #    under the License.
 
 from neutron_lib.db import model_base
+from oslo_log import log
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
+
+LOG = log.getLogger(__name__)
+
+BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
+    "sqlalchemy baked query cache size exceeded in %s" % __name__))
 
 
 class ApicIntraPtgDB(model_base.BASEV2):
@@ -25,15 +32,25 @@ class ApicIntraPtgDB(model_base.BASEV2):
 class ApicIntraPtgDBMixin(object):
 
     def get_intra_ptg_allow(self, session, policy_target_group_id):
-        row = (session.query(ApicIntraPtgDB).filter_by(
-               policy_target_group_id=policy_target_group_id).one())
+        query = BAKERY(lambda s: s.query(
+            ApicIntraPtgDB))
+        query += lambda q: q.filter_by(
+            policy_target_group_id=sa.bindparam('policy_target_group_id'))
+        row = query(session).params(
+            policy_target_group_id=policy_target_group_id).one()
+
         return row['intra_ptg_allow']
 
     def set_intra_ptg_allow(self, session, policy_target_group_id,
                             intra_ptg_allow=True):
         with session.begin(subtransactions=True):
-            row = (session.query(ApicIntraPtgDB).filter_by(
-                policy_target_group_id=policy_target_group_id).first())
+            query = BAKERY(lambda s: s.query(
+                ApicIntraPtgDB))
+            query += lambda q: q.filter_by(
+                policy_target_group_id=sa.bindparam('policy_target_group_id'))
+            row = query(session).params(
+                policy_target_group_id=policy_target_group_id).first()
+
             if not row:
                 row = ApicIntraPtgDB(
                     policy_target_group_id=policy_target_group_id,

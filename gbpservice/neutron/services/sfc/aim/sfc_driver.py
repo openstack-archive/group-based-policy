@@ -31,6 +31,8 @@ from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
 from sqlalchemy import or_
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
@@ -50,6 +52,9 @@ PHYSDOM_TYPE = 'PhysDom'
 SUPPORTED_DOM_TYPES = [PHYSDOM_TYPE]
 DEFAULT_SUBNETS = ['128.0.0.0/1', '0.0.0.0/1', '8000::/1', '::/1']
 MAX_PPGS_PER_CHAIN = 3
+
+BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
+    "sqlalchemy baked query cache size exceeded in %s" % __name__))
 
 
 class SfcAIMDriverBase(base.SfcDriverBase):
@@ -672,18 +677,29 @@ class SfcAIMDriver(SfcAIMDriverBase):
     def _get_chains_by_classifier_id(self, plugin_context, flowc_id):
         context = plugin_context
         with db_api.context_manager.writer.using(context):
-            chain_ids = [x.portchain_id for x in context.session.query(
-                sfc_db.ChainClassifierAssoc).filter_by(
-                flowclassifier_id=flowc_id).all()]
+            query = BAKERY(lambda s: s.query(
+                sfc_db.ChainClassifierAssoc))
+            query += lambda q: q.filter_by(
+                flowclassifier_id=sa.bindparam('flowc_id'))
+            chain_ids = [x.portchain_id for x in query(context.session).params(
+                flowc_id=flowc_id).all()]
+
             return self.sfc_plugin.get_port_chains(plugin_context,
                                                    filters={'id': chain_ids})
 
     def _get_chains_by_ppg_ids(self, plugin_context, ppg_ids):
+        if not ppg_ids:
+            return []
         context = plugin_context
         with db_api.context_manager.writer.using(context):
-            chain_ids = [x.portchain_id for x in context.session.query(
-                sfc_db.ChainGroupAssoc).filter(
-                sfc_db.ChainGroupAssoc.portpairgroup_id.in_(ppg_ids)).all()]
+            query = BAKERY(lambda s: s.query(
+                sfc_db.ChainGroupAssoc))
+            query += lambda q: q.filter(
+                sfc_db.ChainGroupAssoc.portpairgroup_id.in_(
+                    sa.bindparam('ppg_ids', expanding=True)))
+            chain_ids = [x.portchain_id for x in query(context.session).params(
+                ppg_ids=ppg_ids).all()]
+
             return self.sfc_plugin.get_port_chains(plugin_context,
                                                    filters={'id': chain_ids})
 
@@ -698,14 +714,22 @@ class SfcAIMDriver(SfcAIMDriverBase):
         return []
 
     def _get_group_ids_by_network_ids(self, plugin_context, network_ids):
+        if not network_ids:
+            return []
         session = plugin_context.session
-        return [
-            x.portpairgroup_id for x in
-            session.query(sfc_db.PortPair).join(
-                models_v2.Port,
-                or_(models_v2.Port.id == sfc_db.PortPair.ingress,
-                    models_v2.Port.id == sfc_db.PortPair.egress)).filter(
-                models_v2.Port.network_id.in_(network_ids)).all()]
+
+        query = BAKERY(lambda s: s.query(
+            sfc_db.PortPair))
+        query += lambda q: q.join(
+            models_v2.Port,
+            or_(models_v2.Port.id == sfc_db.PortPair.ingress,
+                models_v2.Port.id == sfc_db.PortPair.egress))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id.in_(
+                sa.bindparam('network_ids', expanding=True)))
+        return [x.portpairgroup_id for x in
+                query(session).params(
+                    network_ids=network_ids).all()]
 
     def _should_regenerate_pp(self, context):
         attrs = [INGRESS, EGRESS, 'name']
@@ -1034,20 +1058,26 @@ class SfcAIMDriver(SfcAIMDriverBase):
     def _validate_flow_classifiers(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(flowc_db.FlowClassifier).first():
+        query = BAKERY(lambda s: s.query(
+            flowc_db.FlowClassifier))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "SFC->AIM validation for FC not yet implemented")
 
     def _validate_port_pair_groups(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(sfc_db.PortPairGroup).first():
+        query = BAKERY(lambda s: s.query(
+            sfc_db.PortPairGroup))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "SFC->AIM validation for PPG not yet implemented")
 
     def _validate_port_chains(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(sfc_db.PortChain).first():
+        query = BAKERY(lambda s: s.query(
+            sfc_db.PortChain))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "SFC->AIM validation for PC not yet implemented")

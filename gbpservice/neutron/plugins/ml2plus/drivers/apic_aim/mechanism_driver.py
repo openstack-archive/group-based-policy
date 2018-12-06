@@ -20,6 +20,7 @@ import netaddr
 import os
 import re
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
 from sqlalchemy import orm
 
 from aim.aim_lib.db import model as aim_lib_model
@@ -83,6 +84,10 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
 
 LOG = log.getLogger(__name__)
+
+BAKERY = baked.bakery(500, _size_alert=lambda c: LOG.warning(
+    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
 DEVICE_OWNER_SVI_PORT = 'apic:svi'
 
@@ -912,21 +917,32 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.get_network_ids_by_l3out_dn(
                     session, l3out.dn, lock_update=True))
             other_nets.discard(network_id)
-            cidrs = (session.query(models_v2.Subnet.cidr).filter(
-                models_v2.Subnet.network_id.in_(other_nets)).all())
-            cidrs = netaddr.IPSet([c[0] for c in cidrs])
-            if cidrs & netaddr.IPSet([current['cidr']]):
-                raise exceptions.ExternalSubnetOverlapInL3Out(
-                    cidr=current['cidr'], l3out=l3out.dn)
+            if other_nets:
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Subnet.cidr))
+                query += lambda q: q.filter(
+                    models_v2.Subnet.network_id.in_(sa.bindparam(
+                        'other_nets', expanding=True)))
+                cidrs = query(session).params(
+                    other_nets=list(other_nets)).all()
+
+                cidrs = netaddr.IPSet([c[0] for c in cidrs])
+                if cidrs & netaddr.IPSet([current['cidr']]):
+                    raise exceptions.ExternalSubnetOverlapInL3Out(
+                        cidr=current['cidr'], l3out=l3out.dn)
             ns.create_subnet(aim_ctx, l3out,
                              self._subnet_to_gw_ip_mask(current))
 
         # Limit 1 subnet per SVI network as each SVI interface
         # in ACI can only have 1 primary addr
         if self._is_svi_db(network_db):
-            subnets_size = (session.query(models_v2.Subnet)
-                            .filter(models_v2.Subnet.network_id == network_id)
-                            .count())
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet))
+            query += lambda q: q.filter(
+                models_v2.Subnet.network_id == sa.bindparam('network_id'))
+            subnets_size = query(session).params(
+                network_id=network_id).count()
+
             if subnets_size > 1:
                 raise exceptions.OnlyOneSubnetInSVINetwork()
 
@@ -1016,9 +1032,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         dist_names = {}
         aim_ctx = aim_context.AimContext(session)
 
-        network_db = (session.query(models_v2.Network).
-                      filter_by(id=subnet_db.network_id).
-                      one_or_none())
+        query = BAKERY(lambda s: s.query(
+            models_v2.Network))
+        query += lambda q: q.filter_by(
+            id=sa.bindparam('network_id'))
+        network_db = query(session).params(
+            network_id=subnet_db.network_id).one_or_none()
+
         if not network_db:
             LOG.warning("Network not found in extend_subnet_dict for %s",
                         result)
@@ -1062,18 +1082,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if current_scope_id != original_scope_id:
             # Find router interfaces involving subnets from this pool.
             pool_id = current['id']
-            rps = (session.query(l3_db.RouterPort).
-                   join(models_v2.Port,
-                        models_v2.Port.id == l3_db.RouterPort.port_id).
-                   join(models_v2.IPAllocation,
-                        models_v2.IPAllocation.port_id == models_v2.Port.id).
-                   join(models_v2.Subnet,
-                        models_v2.Subnet.id ==
-                        models_v2.IPAllocation.subnet_id).
-                   filter(models_v2.Subnet.subnetpool_id == pool_id,
-                          l3_db.RouterPort.port_type ==
-                          n_constants.DEVICE_OWNER_ROUTER_INTF).
-                   all())
+
+            query = BAKERY(lambda s: s.query(
+                l3_db.RouterPort))
+            query += lambda q: q.join(
+                models_v2.Port,
+                models_v2.Port.id == l3_db.RouterPort.port_id)
+            query += lambda q: q.join(
+                models_v2.IPAllocation,
+                models_v2.IPAllocation.port_id == models_v2.Port.id)
+            query += lambda q: q.join(
+                models_v2.Subnet,
+                models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+            query += lambda q: q.filter(
+                models_v2.Subnet.subnetpool_id == sa.bindparam('pool_id'),
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            rps = query(session).params(
+                pool_id=pool_id).all()
+
             if rps:
                 # TODO(rkukura): Implement moving the effected router
                 # interfaces from one scope to another, from scoped to
@@ -1226,21 +1253,32 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
             # REVISIT(rkukura): Refactor to share common code below with
             # extend_router_dict.
-            for intf in (session.query(models_v2.IPAllocation).
-                         join(l3_db.RouterPort,
-                              l3_db.RouterPort.port_id ==
-                              models_v2.IPAllocation.port_id).
-                         filter(l3_db.RouterPort.router_id == current['id'],
-                                l3_db.RouterPort.port_type ==
-                                n_constants.DEVICE_OWNER_ROUTER_INTF)):
+            query = BAKERY(lambda s: s.query(
+                models_v2.IPAllocation))
+            query += lambda q: q.join(
+                l3_db.RouterPort,
+                l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+            query += lambda q: q.filter(
+                l3_db.RouterPort.router_id == sa.bindparam('router_id'),
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            for intf in query(session).params(
+                    router_id=current['id']):
 
                 # TODO(rkukura): Avoid separate queries for these.
-                subnet_db = (session.query(models_v2.Subnet).
-                             filter_by(id=intf.subnet_id).
-                             one())
-                network_db = (session.query(models_v2.Network).
-                              filter_by(id=subnet_db.network_id).
-                              one())
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Subnet))
+                query += lambda q: q.filter_by(
+                    id=sa.bindparam('subnet_id'))
+                subnet_db = query(session).params(
+                    subnet_id=intf.subnet_id).one()
+
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Network))
+                query += lambda q: q.filter_by(
+                    id=sa.bindparam('network_id'))
+                network_db = query(session).params(
+                    network_id=subnet_db.network_id).one()
 
                 if network_db.aim_mapping and network_db.aim_mapping.bd_name:
                     dname = aim_utils.sanitize_display_name(
@@ -1335,21 +1373,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # here.
         unscoped_vrf = None
         scope_ids = set()
-        for intf in (session.query(models_v2.IPAllocation.ip_address,
-                                   models_v2.Subnet,
-                                   models_v2.Network).
-                     join(models_v2.Subnet,
-                          models_v2.Subnet.id ==
-                          models_v2.IPAllocation.subnet_id).
-                     join(models_v2.Network,
-                          models_v2.Network.id ==
-                          models_v2.Subnet.network_id).
-                     join(l3_db.RouterPort,
-                          l3_db.RouterPort.port_id ==
-                          models_v2.IPAllocation.port_id).
-                     filter(l3_db.RouterPort.router_id == router_db.id,
-                            l3_db.RouterPort.port_type ==
-                            n_constants.DEVICE_OWNER_ROUTER_INTF)):
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.IPAllocation.ip_address,
+            models_v2.Subnet,
+            models_v2.Network))
+        query += lambda q: q.join(
+            models_v2.Subnet,
+            models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+        query += lambda q: q.join(
+            models_v2.Network,
+            models_v2.Network.id == models_v2.Subnet.network_id)
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+        query += lambda q: q.filter(
+            l3_db.RouterPort.router_id == sa.bindparam('router_id'),
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
+        for intf in query(session).params(
+                router_id=router_db.id):
+
             ip_address, subnet_db, network_db = intf
             if not network_db.aim_mapping:
                 LOG.warning(
@@ -1429,19 +1472,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # network. The interface currently being added is not
         # included, because the RouterPort has not yet been added to
         # the DB session.
-        net_intfs = (session.query(l3_db.RouterPort.router_id,
-                                   models_v2.Subnet).
-                     join(models_v2.IPAllocation,
-                          models_v2.IPAllocation.port_id ==
-                          l3_db.RouterPort.port_id).
-                     join(models_v2.Subnet,
-                          models_v2.Subnet.id ==
-                          models_v2.IPAllocation.subnet_id).
-                     filter(models_v2.Subnet.network_id == network_id,
-                            l3_db.RouterPort.port_type ==
-                            n_constants.DEVICE_OWNER_ROUTER_INTF).
-                     limit(2).
-                     all())
+        query = BAKERY(lambda s: s.query(
+            l3_db.RouterPort.router_id,
+            models_v2.Subnet))
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id)
+        query += lambda q: q.join(
+            models_v2.Subnet,
+            models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+        query += lambda q: q.filter(
+            models_v2.Subnet.network_id == sa.bindparam('network_id'),
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
+        query += lambda q: q.limit(2)
+        net_intfs = query(session).params(
+            network_id=network_id).all()
+
         if net_intfs:
             # Since the EPGs that provide/consume routers' contracts
             # are at network rather than subnet granularity,
@@ -1666,9 +1712,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # stack's scope separately, or at least raise an exception.
         scope_id = self._get_address_scope_id_for_subnets(context, subnets)
 
-        router_db = (session.query(l3_db.Router).
-                     filter_by(id=router_id).
-                     one())
+        query = BAKERY(lambda s: s.query(
+            l3_db.Router))
+        query += lambda q: q.filter_by(
+            id=sa.bindparam('router_id'))
+        router_db = query(session).params(
+            router_id=router_id).one()
+
         contract = self._map_router(session, router_db, True)
 
         epg = None
@@ -1686,13 +1736,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             epg = self._get_network_l3out_ext_net(network_db.aim_mapping)
 
         # Find remaining routers with interfaces to this network.
+        query = BAKERY(lambda s: s.query(
+            l3_db.RouterPort.router_id))
+        query += lambda q: q.join(
+            models_v2.Port,
+            models_v2.Port.id == l3_db.RouterPort.port_id)
+        query += lambda q: q.filter(
+            models_v2.Port.network_id == sa.bindparam('network_id'),
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
+        query += lambda q: q.distinct()
         router_ids = [r[0] for r in
-                      session.query(l3_db.RouterPort.router_id).
-                      join(models_v2.Port,
-                           models_v2.Port.id == l3_db.RouterPort.port_id).
-                      filter(models_v2.Port.network_id == network_id,
-                             l3_db.RouterPort.port_type ==
-                             n_constants.DEVICE_OWNER_ROUTER_INTF).distinct()]
+                      query(session).params(
+                          network_id=network_id)]
 
         # If network is no longer connected to this router, stop
         # network's EPG from providing/consuming this router's
@@ -1873,10 +1928,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
-        sg_rules = (session.query(sg_models.SecurityGroupRule).
-                    filter(sg_models.SecurityGroupRule.remote_group_id.
-                           in_(security_groups)).
-                    all())
+
+        query = BAKERY(lambda s: s.query(
+            sg_models.SecurityGroupRule))
+        query += lambda q: q.filter(
+            sg_models.SecurityGroupRule.remote_group_id.in_(
+                sa.bindparam('security_groups', expanding=True)))
+        sg_rules = query(session).params(
+            security_groups=list(security_groups)).all()
+
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
         for sg_rule in sg_rules:
             tenant_aname = self.name_mapper.project(session,
@@ -2044,9 +2104,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # There is a bug in Neutron that sometimes the tenant_id contained
         # within the sg_rule is pointing to the wrong tenant. So here we have
         # to query DB to get the tenant_id of the SG then use that instead.
-        tenant_id = (session.query(sg_models.SecurityGroup.tenant_id).
-                     filter(sg_models.SecurityGroup.id ==
-                            sg_rule['security_group_id']).first())[0]
+        query = BAKERY(lambda s: s.query(
+            sg_models.SecurityGroup.tenant_id))
+        query += lambda q: q.filter(
+            sg_models.SecurityGroup.id == sa.bindparam('sg_id'))
+        tenant_id = query(session).params(
+            sg_id=sg_rule['security_group_id']).first()[0]
+
         return tenant_id
 
     def create_security_group_rule_precommit(self, context):
@@ -2057,14 +2121,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         tenant_aname = self.name_mapper.project(session, tenant_id)
         if sg_rule.get('remote_group_id'):
             remote_ips = []
-            sg_ports = (session.query(models_v2.Port).
-                        join(sg_models.SecurityGroupPortBinding,
-                             sg_models.SecurityGroupPortBinding.port_id ==
-                             models_v2.Port.id).
-                        filter(sg_models.SecurityGroupPortBinding.
-                               security_group_id ==
-                               sg_rule['remote_group_id']).
-                        all())
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Port))
+            query += lambda q: q.join(
+                sg_models.SecurityGroupPortBinding,
+                sg_models.SecurityGroupPortBinding.port_id ==
+                models_v2.Port.id)
+            query += lambda q: q.filter(
+                sg_models.SecurityGroupPortBinding.security_group_id ==
+                sa.bindparam('sg_id'))
+            sg_ports = query(session).params(
+                sg_id=sg_rule['remote_group_id']).all()
+
             for sg_port in sg_ports:
                 for fixed_ip in sg_port['fixed_ips']:
                     remote_ips.append(fixed_ip['ip_address'])
@@ -2432,49 +2501,58 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Find the unique VRFs for the scoped interfaces, accounting
         # for isomorphic scopes.
         vrfs = {}
-        scope_dbs = (session.query(as_db.AddressScope).
-                     join(models_v2.SubnetPool,
-                          models_v2.SubnetPool.address_scope_id ==
-                          as_db.AddressScope.id).
-                     join(models_v2.Subnet,
-                          models_v2.Subnet.subnetpool_id ==
-                          models_v2.SubnetPool.id).
-                     join(models_v2.IPAllocation,
-                          models_v2.IPAllocation.subnet_id ==
-                          models_v2.Subnet.id).
-                     join(l3_db.RouterPort,
-                          l3_db.RouterPort.port_id ==
-                          models_v2.IPAllocation.port_id).
-                     filter(l3_db.RouterPort.router_id == router_id).
-                     filter(l3_db.RouterPort.port_type ==
-                            n_constants.DEVICE_OWNER_ROUTER_INTF).
-                     distinct())
+
+        query = BAKERY(lambda s: s.query(
+            as_db.AddressScope))
+        query += lambda q: q.join(
+            models_v2.SubnetPool,
+            models_v2.SubnetPool.address_scope_id == as_db.AddressScope.id)
+        query += lambda q: q.join(
+            models_v2.Subnet,
+            models_v2.Subnet.subnetpool_id == models_v2.SubnetPool.id)
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.subnet_id == models_v2.Subnet.id)
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+        query += lambda q: q.filter(
+            l3_db.RouterPort.router_id == sa.bindparam('router_id'))
+        query += lambda q: q.filter(
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
+        query += lambda q: q.distinct()
+        scope_dbs = query(session).params(
+            router_id=router_id)
+
         for scope_db in scope_dbs:
             vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
             vrfs[tuple(vrf.identity)] = vrf
 
         # Find VRF for first unscoped interface.
-        network_db = (session.query(models_v2.Network).
-                      join(models_v2.Subnet,
-                           models_v2.Subnet.network_id ==
-                           models_v2.Network.id).
-                      join(models_v2.IPAllocation,
-                           models_v2.IPAllocation.subnet_id ==
-                           models_v2.Subnet.id).
-                      outerjoin(models_v2.SubnetPool,
-                                models_v2.SubnetPool.id ==
-                                models_v2.Subnet.subnetpool_id).
-                      join(l3_db.RouterPort,
-                           l3_db.RouterPort.port_id ==
-                           models_v2.IPAllocation.port_id).
-                      filter(l3_db.RouterPort.router_id == router_id,
-                             l3_db.RouterPort.port_type ==
-                             n_constants.DEVICE_OWNER_ROUTER_INTF).
-                      filter(sa.or_(models_v2.Subnet.subnetpool_id.is_(None),
-                                    models_v2.SubnetPool.address_scope_id.is_(
-                                        None))).
-                      limit(1).
-                      first())
+        query = BAKERY(lambda s: s.query(
+            models_v2.Network))
+        query += lambda q: q.join(
+            models_v2.Subnet,
+            models_v2.Subnet.network_id == models_v2.Network.id)
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.subnet_id == models_v2.Subnet.id)
+        query += lambda q: q.outerjoin(
+            models_v2.SubnetPool,
+            models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+        query += lambda q: q.filter(
+            l3_db.RouterPort.router_id == sa.bindparam('router_id'),
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
+        query += lambda q: q.filter(
+            sa.or_(models_v2.Subnet.subnetpool_id.is_(None),
+                   models_v2.SubnetPool.address_scope_id.is_(None)))
+        query += lambda q: q.limit(1)
+        network_db = query(session).params(
+            router_id=router_id).first()
+
         if network_db:
             vrf = self._get_network_vrf(network_db.aim_mapping)
             vrfs[tuple(vrf.identity)] = vrf
@@ -2495,34 +2573,50 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         scope_ids = self._get_address_scope_ids_for_vrf(session, vrf)
         if scope_ids:
-            rtr_dbs = (session.query(l3_db.Router)
-                       .join(l3_db.RouterPort,
-                             l3_db.RouterPort.router_id == l3_db.Router.id)
-                       .join(models_v2.IPAllocation,
-                             models_v2.IPAllocation.port_id ==
-                             l3_db.RouterPort.port_id)
-                       .join(models_v2.Subnet,
-                             models_v2.Subnet.id ==
-                             models_v2.IPAllocation.subnet_id)
-                       .join(models_v2.SubnetPool,
-                             models_v2.SubnetPool.id ==
-                             models_v2.Subnet.subnetpool_id)
-                       .filter(l3_db.RouterPort.port_type ==
-                               n_constants.DEVICE_OWNER_ROUTER_INTF)
-                       .filter(models_v2.SubnetPool.address_scope_id.in_(
-                           scope_ids))
-                       .distinct())
+            query = BAKERY(lambda s: s.query(
+                l3_db.Router))
+            query += lambda q: q.join(
+                l3_db.RouterPort,
+                l3_db.RouterPort.router_id == l3_db.Router.id)
+            query += lambda q: q.join(
+                models_v2.IPAllocation,
+                models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id)
+            query += lambda q: q.join(
+                models_v2.Subnet,
+                models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+            query += lambda q: q.join(
+                models_v2.SubnetPool,
+                models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
+            query += lambda q: q.filter(
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            query += lambda q: q.filter(
+                models_v2.SubnetPool.address_scope_id.in_(
+                    sa.bindparam('scope_ids', expanding=True)))
+            query += lambda q: q.distinct()
+            rtr_dbs = query(session).params(
+                scope_ids=scope_ids)
         else:
             net_ids = self._get_network_ids_for_vrf(session, vrf)
-            rtr_dbs = (session.query(l3_db.Router).
-                       join(l3_db.RouterPort,
-                            l3_db.RouterPort.router_id == l3_db.Router.id).
-                       join(models_v2.Port,
-                            models_v2.Port.id == l3_db.RouterPort.port_id).
-                       filter(models_v2.Port.network_id.in_(net_ids),
-                              l3_db.RouterPort.port_type ==
-                              n_constants.DEVICE_OWNER_ROUTER_INTF).
-                       distinct())
+            if not net_ids:
+                return []
+
+            query = BAKERY(lambda s: s.query(
+                l3_db.Router))
+            query += lambda q: q.join(
+                l3_db.RouterPort,
+                l3_db.RouterPort.router_id == l3_db.Router.id)
+            query += lambda q: q.join(
+                models_v2.Port,
+                models_v2.Port.id == l3_db.RouterPort.port_id)
+            query += lambda q: q.filter(
+                models_v2.Port.network_id.in_(
+                    sa.bindparam('net_ids', expanding=True)),
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            query += lambda q: q.distinct()
+            rtr_dbs = query(session).params(
+                net_ids=net_ids)
         return rtr_dbs
 
     def _associate_network_with_vrf(self, ctx, aim_ctx, network_db, new_vrf,
@@ -2783,23 +2877,34 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             visited_router_ids |= added_ids
             LOG.debug("Querying for networks interfaced to routers %s",
                       added_ids)
-            query = (session.query(models_v2.Network, models_v2.Subnet).
-                     join(models_v2.Subnet,
-                          models_v2.Subnet.network_id == models_v2.Network.id).
-                     join(models_v2.IPAllocation,
-                          models_v2.IPAllocation.subnet_id ==
-                          models_v2.Subnet.id).
-                     join(l3_db.RouterPort,
-                          l3_db.RouterPort.port_id ==
-                          models_v2.IPAllocation.port_id).
-                     filter(l3_db.RouterPort.router_id.in_(added_ids)))
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Network,
+                models_v2.Subnet))
+            query += lambda q: q.join(
+                models_v2.Subnet,
+                models_v2.Subnet.network_id == models_v2.Network.id)
+            query += lambda q: q.join(
+                models_v2.IPAllocation,
+                models_v2.IPAllocation.subnet_id == models_v2.Subnet.id)
+            query += lambda q: q.join(
+                l3_db.RouterPort,
+                l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+            query += lambda q: q.filter(
+                l3_db.RouterPort.router_id.in_(
+                    sa.bindparam('added_ids', expanding=True)))
             if visited_networks:
-                query = query.filter(
-                    ~models_v2.Network.id.in_(visited_networks.keys()))
-            results = (query.filter(l3_db.RouterPort.port_type ==
-                                    n_constants.DEVICE_OWNER_ROUTER_INTF).
-                       distinct().
-                       all())
+                query += lambda q: q.filter(
+                    ~models_v2.Network.id.in_(
+                        sa.bindparam('visited_networks', expanding=True)))
+            query += lambda q: q.filter(
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            query += lambda q: q.distinct()
+            results = query(session).params(
+                added_ids=list(added_ids),
+                visited_networks=visited_networks.keys()).all()
+
             self._expand_topology_for_networks(
                 session, visited_networks, visited_router_ids,
                 [network for network, subnet in results if not
@@ -2817,17 +2922,27 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if added_ids:
             LOG.debug("Querying for routers interfaced to networks %s",
                       added_ids)
-            query = (session.query(l3_db.RouterPort.router_id).
-                     join(models_v2.Port,
-                          models_v2.Port.id == l3_db.RouterPort.port_id).
-                     filter(models_v2.Port.network_id.in_(added_ids)))
+
+            query = BAKERY(lambda s: s.query(
+                l3_db.RouterPort.router_id))
+            query += lambda q: q.join(
+                models_v2.Port,
+                models_v2.Port.id == l3_db.RouterPort.port_id)
+            query += lambda q: q.filter(
+                models_v2.Port.network_id.in_(
+                    sa.bindparam('added_ids', expanding=True)))
             if visited_router_ids:
-                query = query.filter(
-                    ~l3_db.RouterPort.router_id.in_(visited_router_ids))
-            results = (query.filter(l3_db.RouterPort.port_type ==
-                                    n_constants.DEVICE_OWNER_ROUTER_INTF).
-                       distinct().
-                       all())
+                query += lambda q: q.filter(
+                    ~l3_db.RouterPort.router_id.in_(
+                        sa.bindparam('visited_router_ids', expanding=True)))
+            query += lambda q: q.filter(
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            query += lambda q: q.distinct()
+            results = query(session).params(
+                added_ids=list(added_ids),
+                visited_router_ids=list(visited_router_ids)).all()
+
             self._expand_topology_for_routers(
                 session, visited_networks, visited_router_ids,
                 [result[0] for result in results])
@@ -2852,21 +2967,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return fixed_ip['ip_address']
 
     def _subnet_router_ips(self, session, subnet_id):
-        return (session.query(models_v2.IPAllocation.ip_address,
-                              l3_db.RouterPort.router_id).
-                join(l3_db.RouterPort,
-                     l3_db.RouterPort.port_id ==
-                     models_v2.IPAllocation.port_id).
-                filter(
-                    models_v2.IPAllocation.subnet_id == subnet_id,
-                    l3_db.RouterPort.port_type ==
-                    n_constants.DEVICE_OWNER_ROUTER_INTF
-                ))
+        query = BAKERY(lambda s: s.query(
+            models_v2.IPAllocation.ip_address,
+            l3_db.RouterPort.router_id))
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+        query += lambda q: q.filter(
+            models_v2.IPAllocation.subnet_id == sa.bindparam('subnet_id'),
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
+        return query(session).params(
+            subnet_id=subnet_id)
 
     def _scope_by_id(self, session, scope_id):
-        return (session.query(as_db.AddressScope).
-                filter_by(id=scope_id).
-                one_or_none())
+        query = BAKERY(lambda s: s.query(
+            as_db.AddressScope))
+        query += lambda q: q.filter_by(
+            id=sa.bindparam('scope_id'))
+        return query(session).params(
+            scope_id=scope_id).one_or_none()
 
     def _map_network(self, session, network, vrf=None):
         tenant_aname = (vrf.tenant_name if vrf and vrf.tenant_name != 'common'
@@ -3089,51 +3208,69 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _get_router_intf_count(self, session, router, scope_id=None):
         if not scope_id:
-            result = (session.query(l3_db.RouterPort).
-                      filter(l3_db.RouterPort.router_id == router['id']).
-                      filter(l3_db.RouterPort.port_type ==
-                             n_constants.DEVICE_OWNER_ROUTER_INTF).
-                      count())
+            query = BAKERY(lambda s: s.query(
+                l3_db.RouterPort))
+            query += lambda q: q.filter(
+                l3_db.RouterPort.router_id == sa.bindparam('router_id'))
+            query += lambda q: q.filter(
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            result = query(session).params(
+                router_id=router['id']).count()
         elif scope_id == NO_ADDR_SCOPE:
-            result = (session.query(l3_db.RouterPort).
-                      join(models_v2.IPAllocation,
-                           models_v2.IPAllocation.port_id ==
-                           l3_db.RouterPort.port_id).
-                      join(models_v2.Subnet,
-                           models_v2.Subnet.id ==
-                           models_v2.IPAllocation.subnet_id).
-                      outerjoin(models_v2.SubnetPool,
-                                models_v2.SubnetPool.id ==
-                                models_v2.Subnet.subnetpool_id).
-                      filter(l3_db.RouterPort.router_id == router['id']).
-                      filter(l3_db.RouterPort.port_type ==
-                             n_constants.DEVICE_OWNER_ROUTER_INTF).
-                      filter(sa.or_(models_v2.Subnet.subnetpool_id.is_(None),
-                                    models_v2.SubnetPool.address_scope_id.is_(
-                                        None))).
-                      count())
+            query = BAKERY(lambda s: s.query(
+                l3_db.RouterPort))
+            query += lambda q: q.join(
+                models_v2.IPAllocation,
+                models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id)
+            query += lambda q: q.join(
+                models_v2.Subnet,
+                models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+            query += lambda q: q.outerjoin(
+                models_v2.SubnetPool,
+                models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
+            query += lambda q: q.filter(
+                l3_db.RouterPort.router_id == sa.bindparam('router_id'))
+            query += lambda q: q.filter(
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            query += lambda q: q.filter(
+                sa.or_(models_v2.Subnet.subnetpool_id.is_(None),
+                       models_v2.SubnetPool.address_scope_id.is_(None)))
+            result = query(session).params(
+                router_id=router['id']).count()
         else:
             # Include interfaces for isomorphic scope.
             mapping = self._get_address_scope_mapping(session, scope_id)
             vrf = self._get_address_scope_vrf(mapping)
             mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
             scope_ids = [mapping.scope_id for mapping in mappings]
-            result = (session.query(l3_db.RouterPort).
-                      join(models_v2.IPAllocation,
-                           models_v2.IPAllocation.port_id ==
-                           l3_db.RouterPort.port_id).
-                      join(models_v2.Subnet,
-                           models_v2.Subnet.id ==
-                           models_v2.IPAllocation.subnet_id).
-                      join(models_v2.SubnetPool,
-                           models_v2.SubnetPool.id ==
-                           models_v2.Subnet.subnetpool_id).
-                      filter(l3_db.RouterPort.router_id == router['id']).
-                      filter(l3_db.RouterPort.port_type ==
-                             n_constants.DEVICE_OWNER_ROUTER_INTF).
-                      filter(models_v2.SubnetPool.address_scope_id.in_(
-                          scope_ids)).
-                      count())
+            if not scope_ids:
+                return 0
+
+            query = BAKERY(lambda s: s.query(
+                l3_db.RouterPort))
+            query += lambda q: q.join(
+                models_v2.IPAllocation,
+                models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id)
+            query += lambda q: q.join(
+                models_v2.Subnet,
+                models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+            query += lambda q: q.join(
+                models_v2.SubnetPool,
+                models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
+            query += lambda q: q.filter(
+                l3_db.RouterPort.router_id == sa.bindparam('router_id'))
+            query += lambda q: q.filter(
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            query += lambda q: q.filter(
+                models_v2.SubnetPool.address_scope_id.in_(
+                    sa.bindparam('scope_ids', expanding=True)))
+            result = query(session).params(
+                router_id=router['id'],
+                scope_ids=scope_ids).count()
+
         return result
 
     def _get_address_scope_id_for_subnets(self, context, subnets):
@@ -3233,15 +3370,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         ports_to_notify = [port_id]
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
         if fixed_ips:
-            addr_pair = (
-                plugin_context.session.query(
-                    n_addr_pair_db.AllowedAddressPair)
-                .join(models_v2.Port,
-                      models_v2.Port.id ==
-                      n_addr_pair_db.AllowedAddressPair.port_id)
-                .filter(models_v2.Port.network_id == port['network_id'])
-                .filter(n_addr_pair_db.AllowedAddressPair.ip_address.in_(
-                    fixed_ips)).all())
+            query = BAKERY(lambda s: s.query(
+                n_addr_pair_db.AllowedAddressPair))
+            query += lambda q: q.join(
+                models_v2.Port,
+                models_v2.Port.id == n_addr_pair_db.AllowedAddressPair.port_id)
+            query += lambda q: q.filter(
+                models_v2.Port.network_id == sa.bindparam('network_id'))
+            query += lambda q: q.filter(
+                n_addr_pair_db.AllowedAddressPair.ip_address.in_(
+                    sa.bindparam('fixed_ips', expanding=True)))
+            addr_pair = query(plugin_context.session).params(
+                network_id=port['network_id'],
+                fixed_ips=fixed_ips).all()
+
             ports_to_notify.extend([x['port_id'] for x in addr_pair])
         for p in sorted(ports_to_notify):
             self._notify_port_update(plugin_context, p)
@@ -3265,23 +3407,34 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
              'prefixlen': <prefix_length_of_subnet>}
         """
         session = plugin_context.session
-        snat_port = (session.query(models_v2.Port)
-                     .filter(models_v2.Port.network_id == ext_network['id'],
-                             models_v2.Port.device_id == host_or_vrf,
-                             models_v2.Port.device_owner ==
-                             DEVICE_OWNER_SNAT_PORT)
-                     .first())
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id == sa.bindparam('network_id'),
+            models_v2.Port.device_id == sa.bindparam('device_id'),
+            models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+        snat_port = query(session).params(
+            network_id=ext_network['id'],
+            device_id=host_or_vrf).first()
+
         snat_ip = None
         if not snat_port or snat_port.fixed_ips is None:
             # allocate SNAT port
             extn_db_sn = extension_db.SubnetExtensionDb
-            snat_subnets = (session.query(models_v2.Subnet)
-                            .join(extn_db_sn,
-                                  extn_db_sn.subnet_id == models_v2.Subnet.id)
-                            .filter(models_v2.Subnet.network_id ==
-                                    ext_network['id'])
-                            .filter(extn_db_sn.snat_host_pool.is_(True))
-                            .all())
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet))
+            query += lambda q: q.join(
+                extn_db_sn,
+                extn_db_sn.subnet_id == models_v2.Subnet.id)
+            query += lambda q: q.filter(
+                models_v2.Subnet.network_id == sa.bindparam('network_id'))
+            query += lambda q: q.filter(
+                extn_db_sn.snat_host_pool.is_(True))
+            snat_subnets = query(session).params(
+                network_id=ext_network['id']).all()
+
             if not snat_subnets:
                 LOG.info('No subnet in external network %s is marked as '
                          'SNAT-pool',
@@ -3308,10 +3461,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                              snat_subnet['id'])
         else:
             snat_ip = snat_port.fixed_ips[0].ip_address
-            snat_subnet = (session.query(models_v2.Subnet)
-                           .filter(models_v2.Subnet.id ==
-                                   snat_port.fixed_ips[0].subnet_id)
-                           .one())
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet))
+            query += lambda q: q.filter(
+                models_v2.Subnet.id == sa.bindparam('subnet_id'))
+            snat_subnet = query(session).params(
+                subnet_id=snat_port.fixed_ips[0].subnet_id).one()
 
         if snat_ip:
             return {'host_snat_ip': snat_ip,
@@ -3320,30 +3476,44 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _has_snat_ip_ports(self, plugin_context, subnet_id):
         session = plugin_context.session
-        return (session.query(models_v2.Port)
-                .join(models_v2.IPAllocation,
-                      models_v2.IPAllocation.port_id == models_v2.Port.id)
-                .filter(models_v2.IPAllocation.subnet_id == subnet_id)
-                .filter(models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
-                .first())
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port))
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.port_id == models_v2.Port.id)
+        query += lambda q: q.filter(
+            models_v2.IPAllocation.subnet_id == sa.bindparam('subnet_id'))
+        query += lambda q: q.filter(
+            models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+        return query(session).params(
+            subnet_id=subnet_id).first()
 
     def _delete_snat_ip_ports_if_reqd(self, plugin_context,
                                       ext_network_id, exclude_router_id):
         e_context = plugin_context.elevated()
         session = plugin_context.session
+
         # if there are no routers uplinked to the external network,
         # then delete any ports allocated for SNAT IP
-        gw_qry = (session.query(models_v2.Port)
-                  .filter(models_v2.Port.network_id == ext_network_id,
-                          models_v2.Port.device_owner ==
-                          n_constants.DEVICE_OWNER_ROUTER_GW,
-                          models_v2.Port.device_id != exclude_router_id))
-        if not gw_qry.first():
-            snat_ports = (session.query(models_v2.Port.id)
-                          .filter(models_v2.Port.network_id == ext_network_id,
-                                  models_v2.Port.device_owner ==
-                                  DEVICE_OWNER_SNAT_PORT)
-                          .all())
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id == sa.bindparam('ext_network_id'),
+            models_v2.Port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW,
+            models_v2.Port.device_id != sa.bindparam('exclude_router_id'))
+        if not query(session).params(
+                ext_network_id=ext_network_id,
+                exclude_router_id=exclude_router_id).first():
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Port.id))
+            query += lambda q: q.filter(
+                models_v2.Port.network_id == sa.bindparam('ext_network_id'),
+                models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+            snat_ports = query(session).params(
+                ext_network_id=ext_network_id).all()
+
             for p in snat_ports:
                 try:
                     self.plugin.delete_port(e_context, p[0])
@@ -3360,13 +3530,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
         elif floatingip.get('floating_ip_address'):
             extn_db_sn = extension_db.SubnetExtensionDb
-            cidrs = (session.query(models_v2.Subnet.cidr)
-                    .join(extn_db_sn,
-                          extn_db_sn.subnet_id == models_v2.Subnet.id)
-                    .filter(models_v2.Subnet.network_id ==
-                            floatingip['floating_network_id'])
-                    .filter(extn_db_sn.snat_host_pool.is_(True))
-                    .all())
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet.cidr))
+            query += lambda q: q.join(
+                extn_db_sn,
+                extn_db_sn.subnet_id == models_v2.Subnet.id)
+            query += lambda q: q.filter(
+                models_v2.Subnet.network_id == sa.bindparam('network_id'))
+            query += lambda q: q.filter(extn_db_sn.snat_host_pool.is_(True))
+            cidrs = query(session).params(
+                network_id=floatingip['floating_network_id']).all()
+
             cidrs = netaddr.IPSet([c[0] for c in cidrs])
             if floatingip['floating_ip_address'] in cidrs:
                 raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
@@ -3374,14 +3549,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def get_subnets_for_fip(self, context, floatingip):
         session = context.session
         extn_db_sn = extension_db.SubnetExtensionDb
-        other_sn = (session.query(models_v2.Subnet.id)
-                    .outerjoin(extn_db_sn,
-                               extn_db_sn.subnet_id == models_v2.Subnet.id)
-                    .filter(models_v2.Subnet.network_id ==
-                            floatingip['floating_network_id'])
-                    .filter(sa.or_(extn_db_sn.snat_host_pool.is_(False),
-                                   extn_db_sn.snat_host_pool.is_(None)))
-                    .all())
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.Subnet.id))
+        query += lambda q: q.outerjoin(
+            extn_db_sn,
+            extn_db_sn.subnet_id == models_v2.Subnet.id)
+        query += lambda q: q.filter(
+            models_v2.Subnet.network_id == sa.bindparam('network_id'))
+        query += lambda q: q.filter(
+            sa.or_(extn_db_sn.snat_host_pool.is_(False),
+                   extn_db_sn.snat_host_pool.is_(None)))
+        other_sn = query(session).params(
+            network_id=floatingip['floating_network_id']).all()
+
         return [s[0] for s in other_sn]
 
     def _is_opflex_type(self, net_type):
@@ -3519,9 +3700,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
             if not network['subnets']:
                 return
-            subnet = (session.query(models_v2.Subnet)
-                      .filter(models_v2.Subnet.id ==
-                              network['subnets'][0]).one())
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet))
+            query += lambda q: q.filter(
+                models_v2.Subnet.id == sa.bindparam('subnet_id'))
+            subnet = query(session).params(
+                subnet_id=network['subnets'][0]).one()
+
             mask = subnet['cidr'].split('/')[1]
 
             primary_ips = []
@@ -3627,11 +3813,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
         if remove:
             # check if there are any other ports from this network on the host
-            exist = (session.query(models.PortBindingLevel)
-                     .filter_by(host=host, segment_id=segment['id'])
-                     .filter(models.PortBindingLevel.port_id !=
-                             port_context.current['id'])
-                     .first())
+            query = BAKERY(lambda s: s.query(
+                models.PortBindingLevel))
+            query += lambda q: q.filter_by(
+                host=sa.bindparam('host'),
+                segment_id=sa.bindparam('segment_id'))
+            query += lambda q: q.filter(
+                models.PortBindingLevel.port_id != sa.bindparam('port_id'))
+            exist = query(session).params(
+                host=host,
+                segment_id=segment['id'],
+                port_id=port_context.current['id']).first()
+
             if exist:
                 return
 
@@ -3658,13 +3851,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if (top and btm and
             self._is_opflex_type(top[api.NETWORK_TYPE]) and
             self._is_supported_non_opflex_type(btm[api.NETWORK_TYPE])):
+
             # if there are no other ports bound to segment, release the segment
-            ports = (port_context._plugin_context.session
-                     .query(models.PortBindingLevel)
-                     .filter_by(segment_id=btm[api.ID])
-                     .filter(models.PortBindingLevel.port_id !=
-                             port_context.current['id'])
-                     .first())
+            query = BAKERY(lambda s: s.query(
+                models.PortBindingLevel))
+            query += lambda q: q.filter_by(
+                segment_id=sa.bindparam('segment_id'))
+            query += lambda q: q.filter(
+                models.PortBindingLevel.port_id != sa.bindparam('port_id'))
+            ports = query(port_context._plugin_context.session).params(
+                segment_id=btm[api.ID],
+                port_id=port_context.current['id']).first()
+
             if not ports:
                 LOG.info('Releasing dynamic-segment %(s)s for port %(p)s',
                          {'s': btm, 'p': port_context.current['id']})
@@ -3818,14 +4016,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     port_context._plugin_context, port['id'])
 
             def _bound_port_query(session, port, hosts=None):
-                ports = (session.query(models.PortBindingLevel).
-                         join(models_v2.Port, models_v2.Port.id ==
-                              models.PortBindingLevel.port_id))
+                query = BAKERY(lambda s: s.query(
+                    models.PortBindingLevel))
+                query += lambda q: q.join(
+                    models_v2.Port, models_v2.Port.id ==
+                    models.PortBindingLevel.port_id)
                 if hosts:
-                    ports = ports.filter(
-                        models.PortBindingLevel.host.in_(hosts))
-                ports = ports.filter(
-                    models.PortBindingLevel.port_id != port['id'])
+                    query += lambda q: q.filter(
+                        models.PortBindingLevel.host.in_(
+                            sa.bindparam('hosts', expanding=True)))
+                query += lambda q: q.filter(
+                    models.PortBindingLevel.port_id != sa.bindparam('port_id'))
+                ports = query(session).params(
+                    hosts=hosts,
+                    port_id=port['id'])
                 return ports
 
             if ptg:
@@ -3879,12 +4083,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _get_non_opflex_segments_on_host(self, context, host):
         session = context.session
-        segments = (session.query(segments_model.NetworkSegment)
-                    .join(models.PortBindingLevel,
-                          models.PortBindingLevel.segment_id ==
-                          segments_model.NetworkSegment.id)
-                    .filter(models.PortBindingLevel.host == host)
-                    .all())
+
+        query = BAKERY(lambda s: s.query(
+            segments_model.NetworkSegment))
+        query += lambda q: q.join(
+            models.PortBindingLevel,
+            models.PortBindingLevel.segment_id ==
+            segments_model.NetworkSegment.id)
+        query += lambda q: q.filter(
+            models.PortBindingLevel.host == sa.bindparam('host'))
+        segments = query(session).params(
+            host=host).all()
+
         net_ids = set([])
         result = []
         for seg in segments:
@@ -3896,34 +4106,54 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return result
 
     def _get_router_interface_subnets(self, session, router_id):
-        subnet_ids = (session.query(models_v2.IPAllocation.subnet_id)
-                      .join(l3_db.RouterPort,
-                            l3_db.RouterPort.port_id ==
-                            models_v2.IPAllocation.port_id)
-                      .filter(l3_db.RouterPort.router_id == router_id)
-                      .distinct())
+        query = BAKERY(lambda s: s.query(
+            models_v2.IPAllocation.subnet_id))
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+        query += lambda q: q.filter(
+            l3_db.RouterPort.router_id == sa.bindparam('router_id'))
+        query += lambda q: q.distinct()
+        subnet_ids = query(session).params(
+            router_id=router_id)
+
         return [s[0] for s in subnet_ids]
 
     def _get_non_router_ports_in_subnets(self, session, subnet_ids):
         if not subnet_ids:
             return []
-        port_ids = (session.query(models_v2.IPAllocation.port_id)
-                    .join(models_v2.Port,
-                          models_v2.Port.id == models_v2.IPAllocation.port_id)
-                    .filter(models_v2.IPAllocation.subnet_id.in_(subnet_ids))
-                    .filter(models_v2.Port.device_owner !=
-                            n_constants.DEVICE_OWNER_ROUTER_INTF)
-                    .all())
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.IPAllocation.port_id))
+        query += lambda q: q.join(
+            models_v2.Port,
+            models_v2.Port.id == models_v2.IPAllocation.port_id)
+        query += lambda q: q.filter(
+            models_v2.IPAllocation.subnet_id.in_(
+                sa.bindparam('subnet_ids', expanding=True)))
+        query += lambda q: q.filter(
+            models_v2.Port.device_owner !=
+            n_constants.DEVICE_OWNER_ROUTER_INTF)
+        port_ids = query(session).params(
+            subnet_ids=subnet_ids).all()
+
         return [p[0] for p in port_ids]
 
     def _get_non_router_ports_in_networks(self, session, network_ids):
         if not network_ids:
             return []
-        port_ids = (session.query(models_v2.Port.id).
-                    filter(models_v2.Port.network_id.in_(network_ids)).
-                    filter(models_v2.Port.device_owner !=
-                           n_constants.DEVICE_OWNER_ROUTER_INTF).
-                    all())
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port.id))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id.in_(
+                sa.bindparam('network_ids', expanding=True)))
+        query += lambda q: q.filter(
+            models_v2.Port.device_owner !=
+            n_constants.DEVICE_OWNER_ROUTER_INTF)
+        port_ids = query(session).params(
+            network_ids=list(network_ids)).all()
+
         return [p[0] for p in port_ids]
 
     def _get_port_network_id(self, plugin_context, port_id):
@@ -4141,13 +4371,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._validate_floatingips(mgr)
         self._validate_port_bindings(mgr)
 
+    # Note: The queries bellow are executed only once per run of the
+    # validation CLI tool, but are baked in order to speed up unit
+    # test execution, where they are called repeatedly.
+
     def _validate_legacy_resources(self, mgr):
         # Delete legacy SNAT ports.
-        for port_id, in (
-                mgr.actual_session.query(models_v2.Port.id).
-                filter_by(
-                    name=LEGACY_SNAT_PORT_NAME,
-                    device_owner=LEGACY_SNAT_PORT_DEVICE_OWNER)):
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port.id))
+        query += lambda q: q.filter_by(
+            name=LEGACY_SNAT_PORT_NAME,
+            device_owner=LEGACY_SNAT_PORT_DEVICE_OWNER)
+        for port_id, in query(mgr.actual_session):
             if mgr.should_repair(
                     "legacy APIC driver SNAT port %s" % port_id, "Deleting"):
                 try:
@@ -4158,18 +4393,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         "with %s" % (port_id, exc))
 
         # Delete legacy SNAT subnets.
-        for subnet_id, in (
-                mgr.actual_session.query(models_v2.Subnet.id).
-                filter_by(name=LEGACY_SNAT_SUBNET_NAME)):
+        query = BAKERY(lambda s: s.query(
+            models_v2.Subnet.id))
+        query += lambda q: q.filter_by(
+            name=LEGACY_SNAT_SUBNET_NAME)
+        for subnet_id, in query(mgr.actual_session):
             subnet = self.plugin.get_subnet(mgr.actual_context, subnet_id)
             net = self.plugin.get_network(
                 mgr.actual_context, subnet['network_id'])
             net_name = net['name']
             if net_name and net_name.startswith(LEGACY_SNAT_NET_NAME_PREFIX):
                 ext_net_id = net_name[len(LEGACY_SNAT_NET_NAME_PREFIX):]
-                ext_net = (mgr.actual_session.query(models_v2.Network).
-                           filter_by(id=ext_net_id).
-                           one_or_none())
+
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Network))
+                query += lambda q: q.filter_by(
+                    id=sa.bindparam('ext_net_id'))
+                ext_net = query(mgr.actual_session).params(
+                    ext_net_id=ext_net_id).one_or_none()
+
                 if ext_net and ext_net.external:
                     if mgr.should_repair(
                             "legacy APIC driver SNAT subnet %s" %
@@ -4199,10 +4441,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         "with %s" % (subnet_id, exc))
 
         # Delete legacy SNAT networks.
-        for net_id, in (
-                mgr.actual_session.query(models_v2.Network.id).
-                filter(models_v2.Network.name.startswith(
-                    LEGACY_SNAT_NET_NAME_PREFIX))):
+        query = BAKERY(lambda s: s.query(
+            models_v2.Network.id))
+        query += lambda q: q.filter(
+            models_v2.Network.name.startswith(LEGACY_SNAT_NET_NAME_PREFIX))
+        for net_id, in query(mgr.actual_session):
             if mgr.should_repair(
                     "legacy APIC driver SNAT network %s" % net_id,
                     "Deleting"):
@@ -4234,7 +4477,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _validate_address_scopes(self, mgr):
         owned_scopes_by_vrf = defaultdict(list)
-        for scope_db in mgr.actual_session.query(as_db.AddressScope):
+
+        query = BAKERY(lambda s: s.query(
+            as_db.AddressScope))
+        for scope_db in query(mgr.actual_session):
             self._expect_project(mgr, scope_db.project_id)
             mapping = scope_db.aim_mapping
             if mapping:
@@ -4262,7 +4508,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _validate_routers(self, mgr):
         router_dbs = {}
         ext_net_routers = defaultdict(list)
-        for router_db in mgr.actual_session.query(l3_db.Router):
+
+        query = BAKERY(lambda s: s.query(
+            l3_db.Router))
+        for router_db in query(mgr.actual_session):
             self._expect_project(mgr, router_db.project_id)
             router_dbs[router_db.id] = router_db
             if router_db.gw_port_id:
@@ -4291,9 +4540,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return router_dbs, ext_net_routers
 
     def _validate_networks(self, mgr, router_dbs, ext_net_routers):
-        net_dbs = {net_db.id: net_db for net_db in
-                   mgr.actual_session.query(models_v2.Network).options(
-                       orm.joinedload('segments'))}
+        query = BAKERY(lambda s: s.query(
+            models_v2.Network))
+        query += lambda q: q.options(
+            orm.joinedload('segments'))
+        net_dbs = {net_db.id: net_db for net_db in query(mgr.actual_session)}
 
         router_ext_prov, router_ext_cons = self._get_router_ext_contracts(mgr)
         routed_nets = self._get_router_interface_info(mgr)
@@ -4380,8 +4631,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Get external contracts for routers.
         router_ext_prov = defaultdict(set)
         router_ext_cons = defaultdict(set)
-        for contract in mgr.actual_session.query(
-                extension_db.RouterExtensionContractDb):
+
+        query = BAKERY(lambda s: s.query(
+            extension_db.RouterExtensionContractDb))
+        for contract in query(mgr.actual_session):
             if contract.provides:
                 router_ext_prov[contract.router_id].add(contract.contract_name)
             else:
@@ -4392,25 +4645,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _get_router_interface_info(self, mgr):
         # Find details of all router interfaces for each routed network.
         routed_nets = defaultdict(list)
-        for intf in (
-                mgr.actual_session.query(l3_db.RouterPort.router_id,
-                                         models_v2.IPAllocation.ip_address,
-                                         models_v2.Subnet,
-                                         db.AddressScopeMapping).
-                join(models_v2.IPAllocation,
-                     models_v2.IPAllocation.port_id ==
-                     l3_db.RouterPort.port_id).
-                join(models_v2.Subnet,
-                     models_v2.Subnet.id ==
-                     models_v2.IPAllocation.subnet_id).
-                outerjoin(models_v2.SubnetPool,
-                          models_v2.SubnetPool.id ==
-                          models_v2.Subnet.subnetpool_id).
-                outerjoin(db.AddressScopeMapping,
-                          db.AddressScopeMapping.scope_id ==
-                          models_v2.SubnetPool.address_scope_id).
-                filter(l3_db.RouterPort.port_type ==
-                       n_constants.DEVICE_OWNER_ROUTER_INTF)):
+
+        query = BAKERY(lambda s: s.query(
+            l3_db.RouterPort.router_id,
+            models_v2.IPAllocation.ip_address,
+            models_v2.Subnet,
+            db.AddressScopeMapping))
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id)
+        query += lambda q: q.join(
+            models_v2.Subnet,
+            models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+        query += lambda q: q.outerjoin(
+            models_v2.SubnetPool,
+            models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
+        query += lambda q: q.outerjoin(
+            db.AddressScopeMapping,
+            db.AddressScopeMapping.scope_id ==
+            models_v2.SubnetPool.address_scope_id)
+        query += lambda q: q.filter(
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
+        for intf in query(mgr.actual_session):
             intf = InterfaceValidationInfo._make(intf)
             routed_nets[intf.subnet.network_id].append(intf)
 
@@ -4748,17 +5004,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _validate_security_groups(self, mgr):
         sg_ips = defaultdict(set)
-        for sg_id, ip in (
-                mgr.actual_session.query(
-                    sg_models.SecurityGroupPortBinding.security_group_id,
-                    models_v2.IPAllocation.ip_address).
-                join(models_v2.IPAllocation,
-                     models_v2.IPAllocation.port_id ==
-                     sg_models.SecurityGroupPortBinding.port_id)):
+
+        query = BAKERY(lambda s: s.query(
+            sg_models.SecurityGroupPortBinding.security_group_id,
+            models_v2.IPAllocation.ip_address))
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.port_id ==
+            sg_models.SecurityGroupPortBinding.port_id)
+        for sg_id, ip in query(mgr.actual_session):
             sg_ips[sg_id].add(ip)
 
-        for sg_db in (mgr.actual_session.query(sg_models.SecurityGroup).
-                      options(orm.joinedload('rules'))):
+        query = BAKERY(lambda s: s.query(
+            sg_models.SecurityGroup))
+        query += lambda q: q.options(
+            orm.joinedload('rules'))
+        for sg_db in query(mgr.actual_session):
             # Ignore anonymous SGs, which seem to be a Neutron bug.
             if sg_db.tenant_id:
                 self._expect_project(mgr, sg_db.project_id)
@@ -4802,21 +5063,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     mgr.expect_aim_resource(sg_rule)
 
     def _validate_ports(self, mgr):
-        for project_id, in (
-                mgr.actual_session.query(models_v2.Port.project_id).
-                distinct()):
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port.project_id))
+        query += lambda q: q.distinct()
+        for project_id, in query(mgr.actual_session):
             self._expect_project(mgr, project_id)
 
     def _validate_subnetpools(self, mgr):
-        for project_id, in (
-                mgr.actual_session.query(models_v2.SubnetPool.project_id).
-                distinct()):
+        query = BAKERY(lambda s: s.query(
+            models_v2.SubnetPool.project_id))
+        query += lambda q: q.distinct()
+        for project_id, in query(mgr.actual_session):
             self._expect_project(mgr, project_id)
 
     def _validate_floatingips(self, mgr):
-        for project_id, in (
-                mgr.actual_session.query(l3_db.FloatingIP.project_id).
-                distinct()):
+        query = BAKERY(lambda s: s.query(
+            l3_db.FloatingIP.project_id))
+        query += lambda q: q.distinct()
+        for project_id, in query(mgr.actual_session):
             self._expect_project(mgr, project_id)
 
     def _validate_port_bindings(self, mgr):
@@ -4824,8 +5088,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # moving this to the ML2Plus plugin or to a base validation
         # manager, as it is not specific to this mechanism driver.
 
-        for port in (mgr.actual_session.query(models_v2.Port).
-                     options(orm.joinedload('binding_levels'))):
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port))
+        query += lambda q: q.options(
+            orm.joinedload('binding_levels'))
+        for port in query(mgr.actual_session):
             binding = port.port_binding
             levels = port.binding_levels
             unbind = False
@@ -4887,10 +5154,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # manager, as it is not specific to this mechanism driver.
         failure_count = 0
         failure_hosts = set()
-        for port_id, in (mgr.actual_session.query(models.PortBinding.port_id).
-                        filter(models.PortBinding.host != '',
-                               models.PortBinding.vif_type ==
-                               portbindings.VIF_TYPE_UNBOUND)):
+
+        query = BAKERY(lambda s: s.query(
+            models.PortBinding.port_id))
+        query += lambda q: q.filter(
+            models.PortBinding.host != '',
+            models.PortBinding.vif_type == portbindings.VIF_TYPE_UNBOUND)
+        for port_id, in query(mgr.actual_session):
             mgr.output("Attempting to bind port %s" % port_id)
             # REVISIT: Use the more efficient get_bound_port_contexts,
             # which is not available in stable/newton?
