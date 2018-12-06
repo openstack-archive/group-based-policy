@@ -12,6 +12,9 @@
 
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
+
+BAKERY = baked.bakery()
 
 
 class ApicReuseBdDB(model_base.BASEV2):
@@ -26,8 +29,15 @@ class ApicReuseBdDB(model_base.BASEV2):
 class ApicReuseBdDBMixin(object):
 
     def get_reuse_bd_l2policy(self, session, l2_policy_id):
-        row = (session.query(ApicReuseBdDB).filter_by(
-               l2_policy_id=l2_policy_id).first())
+        # REVISIT: This method is not executed in any unit test.
+
+        query = BAKERY(lambda s: s.query(
+            ApicReuseBdDB))
+        query += lambda q: q.filter_by(
+            l2_policy_id=sa.bindparam('l2_policy_id'))
+        row = query(session).params(
+            l2_policy_id=l2_policy_id).first()
+
         return row
 
     def add_reuse_bd_l2policy(self, session, l2_policy_id,
@@ -38,5 +48,11 @@ class ApicReuseBdDBMixin(object):
             session.add(row)
 
     def is_reuse_bd_target(self, session, l2_policy_id):
-        return (session.query(ApicReuseBdDB).filter_by(
-                target_l2_policy_id=l2_policy_id).first() is not None)
+        # REVISIT: This method is not executed in any unit test.
+
+        query = BAKERY(lambda s: s.query(
+            ApicReuseBdDB))
+        query += lambda q: q.filter_by(
+            target_l2_policy_id=sa.bindparam('l2_policy_id'))
+        return query(session).params(
+            l2_policy_id=l2_policy_id).first() is not None

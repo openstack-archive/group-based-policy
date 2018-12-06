@@ -16,11 +16,14 @@
 from neutron.db import models_v2
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
 from sqlalchemy import orm
 from sqlalchemy.sql.expression import true
 
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3
+
+BAKERY = baked.bakery()
 
 
 class NetworkExtensionDb(model_base.BASEV2):
@@ -95,10 +98,15 @@ class ExtensionDbMixin(object):
             network_id, {})
 
     def get_network_extn_db_bulk(self, session, network_ids):
+        if not network_ids:
+            return {}
+
+        # Baked queries using in_ require sqlalchemy >=1.2.
         db_objs = (session.query(NetworkExtensionDb).filter(
             NetworkExtensionDb.network_id.in_(network_ids)).all())
         db_cidrs = (session.query(NetworkExtensionCidrDb).filter(
             NetworkExtensionCidrDb.network_id.in_(network_ids)).all())
+
         cidrs_by_net_id = {}
         for db_cidr in db_cidrs:
             cidrs_by_net_id.setdefault(db_cidr.network_id, []).append(
@@ -128,8 +136,13 @@ class ExtensionDbMixin(object):
 
     def set_network_extn_db(self, session, network_id, res_dict):
         with session.begin(subtransactions=True):
-            db_obj = (session.query(NetworkExtensionDb).filter_by(
-                      network_id=network_id).first())
+            query = BAKERY(lambda s: s.query(
+                NetworkExtensionDb))
+            query += lambda q: q.filter_by(
+                network_id=sa.bindparam('network_id'))
+            db_obj = query(session).params(
+                network_id=network_id).first()
+
             db_obj = db_obj or NetworkExtensionDb(network_id=network_id)
             if cisco_apic.EXTERNAL_NETWORK in res_dict:
                 db_obj['external_network_dn'] = (
@@ -152,40 +165,71 @@ class ExtensionDbMixin(object):
                                        network_id=network_id)
 
     def get_network_ids_by_ext_net_dn(self, session, dn, lock_update=False):
-        ids = session.query(NetworkExtensionDb.network_id).filter_by(
-            external_network_dn=dn)
+        query = BAKERY(lambda s: s.query(
+            NetworkExtensionDb.network_id))
+        query += lambda q: q.filter_by(
+            external_network_dn=sa.bindparam('dn'))
         if lock_update:
-            ids = ids.with_lockmode('update')
+            # REVISIT: Eliminate locking.
+            query += lambda q: q.with_lockmode('update')
+        ids = query(session).params(dn=dn)
+
         return [i[0] for i in ids]
 
     def get_network_ids_by_l3out_dn(self, session, dn, lock_update=False):
-        ids = session.query(NetworkExtensionDb.network_id).filter(
-            NetworkExtensionDb.external_network_dn.like(dn + "/%"))
+        query = BAKERY(lambda s: s.query(
+            NetworkExtensionDb.network_id))
+        query += lambda q: q.filter(
+            NetworkExtensionDb.external_network_dn.like(
+                sa.bindparam('dn') + "/%"))
         if lock_update:
-            ids = ids.with_lockmode('update')
+            # REVISIT: Eliminate locking.
+            query += lambda q: q.with_lockmode('update')
+        ids = query(session).params(dn=dn)
+
         return [i[0] for i in ids]
 
     def get_svi_network_ids_by_l3out_dn(self, session, dn, lock_update=False):
-        ids = session.query(NetworkExtensionDb.network_id).filter(
-            NetworkExtensionDb.external_network_dn.like(dn + "/%"),
+        query = BAKERY(lambda s: s.query(
+            NetworkExtensionDb.network_id))
+        query += lambda q: q.filter(
+            NetworkExtensionDb.external_network_dn.like(
+                sa.bindparam('dn') + "/%"),
             NetworkExtensionDb.svi == true())
         if lock_update:
-            ids = ids.with_lockmode('update')
+            # REVISIT: Eliminate locking.
+            query += lambda q: q.with_lockmode('update')
+        ids = query(session).params(dn=dn)
+
         return [i[0] for i in ids]
 
     def get_external_cidrs_by_ext_net_dn(self, session, dn, lock_update=False):
         ctab = NetworkExtensionCidrDb
         ntab = NetworkExtensionDb
-        cidrs = session.query(ctab.cidr).join(
-            ntab, ntab.network_id == ctab.network_id).filter(
-                    ntab.external_network_dn == dn).distinct()
+
+        query = BAKERY(lambda s: s.query(
+            ctab.cidr))
+        query += lambda q: q.join(
+            ntab,
+            ntab.network_id == ctab.network_id)
+        query += lambda q: q.filter(
+            ntab.external_network_dn == sa.bindparam('dn'))
+        query += lambda q: q.distinct()
         if lock_update:
-            cidrs = cidrs.with_lockmode('update')
+            # REVISIT: Eliminate locking.
+            query += lambda q: q.with_lockmode('update')
+        cidrs = query(session).params(dn=dn)
+
         return [c[0] for c in cidrs]
 
     def get_subnet_extn_db(self, session, subnet_id):
-        db_obj = (session.query(SubnetExtensionDb).filter_by(
-                  subnet_id=subnet_id).first())
+        query = BAKERY(lambda s: s.query(
+            SubnetExtensionDb))
+        query += lambda q: q.filter_by(
+            subnet_id=sa.bindparam('subnet_id'))
+        db_obj = query(session).params(
+            subnet_id=subnet_id).first()
+
         result = {}
         if db_obj:
             self._set_if_not_none(result, cisco_apic.SNAT_HOST_POOL,
@@ -193,16 +237,26 @@ class ExtensionDbMixin(object):
         return result
 
     def set_subnet_extn_db(self, session, subnet_id, res_dict):
-        db_obj = (session.query(SubnetExtensionDb).filter_by(
-                  subnet_id=subnet_id).first())
+        query = BAKERY(lambda s: s.query(
+            SubnetExtensionDb))
+        query += lambda q: q.filter_by(
+            subnet_id=sa.bindparam('subnet_id'))
+        db_obj = query(session).params(
+            subnet_id=subnet_id).first()
+
         db_obj = db_obj or SubnetExtensionDb(subnet_id=subnet_id)
         if cisco_apic.SNAT_HOST_POOL in res_dict:
             db_obj['snat_host_pool'] = res_dict[cisco_apic.SNAT_HOST_POOL]
         session.add(db_obj)
 
     def get_router_extn_db(self, session, router_id):
-        db_contracts = (session.query(RouterExtensionContractDb).filter_by(
-                        router_id=router_id).all())
+        query = BAKERY(lambda s: s.query(
+            RouterExtensionContractDb))
+        query += lambda q: q.filter_by(
+            router_id=sa.bindparam('router_id'))
+        db_contracts = query(session).params(
+            router_id=router_id).all()
+
         return {cisco_apic_l3.EXTERNAL_PROVIDED_CONTRACTS:
                 [c['contract_name'] for c in db_contracts if c['provides']],
                 cisco_apic_l3.EXTERNAL_CONSUMED_CONTRACTS:
@@ -211,7 +265,12 @@ class ExtensionDbMixin(object):
 
     def _update_list_attr(self, session, db_model, column,
                           new_values, **filters):
+        if new_values is None:
+            return
+
+        # REVISIT: Can this query be baked?
         rows = session.query(db_model).filter_by(**filters).all()
+
         new_values = set(new_values)
         for r in rows:
             if r[column] in new_values:

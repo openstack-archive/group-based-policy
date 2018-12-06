@@ -263,17 +263,22 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return
         details['security_group'] = []
 
-        port_sgs = (context.session.query(sg_models.SecurityGroup.id,
-                                          sg_models.SecurityGroup.tenant_id).
-                    filter(sg_models.SecurityGroup.id.
-                           in_(port['security_groups'])).
-                    all())
-        for sg_id, tenant_id in port_sgs:
-            tenant_aname = self.aim_mech_driver.name_mapper.project(
-                context.session, tenant_id)
-            details['security_group'].append(
-                {'policy-space': tenant_aname,
-                 'name': sg_id})
+        if port['security_groups']:
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            port_sgs = (context.session.query(
+                sg_models.SecurityGroup.id,
+                sg_models.SecurityGroup.tenant_id).
+                        filter(sg_models.SecurityGroup.id.
+                               in_(port['security_groups'])).
+                        all())
+
+            for sg_id, tenant_id in port_sgs:
+                tenant_aname = self.aim_mech_driver.name_mapper.project(
+                    context.session, tenant_id)
+                details['security_group'].append(
+                    {'policy-space': tenant_aname,
+                     'name': sg_id})
+
         # Always include this SG which has the default arp & dhcp rules
         details['security_group'].append(
             {'policy-space': 'common',

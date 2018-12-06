@@ -12,6 +12,9 @@
 
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
+
+BAKERY = baked.bakery()
 
 
 class ApicSegmentationLabelDB(model_base.BASEV2):
@@ -25,15 +28,26 @@ class ApicSegmentationLabelDB(model_base.BASEV2):
 class ApicSegmentationLabelDBMixin(object):
 
     def get_policy_target_segmentation_labels(self, session, policy_target_id):
-        rows = (session.query(ApicSegmentationLabelDB).filter_by(
-                policy_target_id=policy_target_id).all())
+        query = BAKERY(lambda s: s.query(
+            ApicSegmentationLabelDB))
+        query += lambda q: q.filter_by(
+            policy_target_id=sa.bindparam('policy_target_id'))
+        rows = query(session).params(
+            policy_target_id=policy_target_id).all()
+
         return rows
 
     def get_policy_target_segmentation_label(self, session, policy_target_id,
                                              segmentation_label):
-        row = (session.query(ApicSegmentationLabelDB).filter_by(
+        query = BAKERY(lambda s: s.query(
+            ApicSegmentationLabelDB))
+        query += lambda q: q.filter_by(
+            policy_target_id=sa.bindparam('policy_target_id'),
+            segmentation_label=sa.bindparam('segmentation_label'))
+        row = query(session).params(
             policy_target_id=policy_target_id,
-            segmentation_label=segmentation_label).one())
+            segmentation_label=segmentation_label).one()
+
         return row
 
     def add_policy_target_segmentation_label(self, session, policy_target_id,

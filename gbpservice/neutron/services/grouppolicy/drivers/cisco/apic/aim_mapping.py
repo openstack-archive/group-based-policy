@@ -14,6 +14,8 @@ import hashlib
 import netaddr
 import re
 import six
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
@@ -64,6 +66,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 LOG = logging.getLogger(__name__)
+
+BAKERY = baked.bakery()
+
 FORWARD = 'Forward'
 REVERSE = 'Reverse'
 FILTER_DIRECTIONS = {FORWARD: False, REVERSE: True}
@@ -1259,16 +1264,26 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 # the gbp_obj here should be a ptg
                 l2p_id = gbp_obj['l2_policy_id']
                 if l2p_id:
-                    l2p_db = session.query(
-                        gpmdb.L2PolicyMapping).filter_by(id=l2p_id).first()
+                    query = BAKERY(lambda s: s.query(
+                        gpmdb.L2PolicyMapping))
+                    query += lambda q: q.filter_by(
+                        id=sa.bindparam('l2p_id'))
+                    l2p_db = query(session).params(
+                        l2p_id=l2p_id).first()
+
                     l3p_id = l2p_db['l3_policy_id']
             elif aim_resource_class.__name__ == (
                 aim_resource.BridgeDomain.__name__):
                 # the gbp_obj here should be a l2p
                 l3p_id = gbp_obj['l3_policy_id']
             if l3p_id:
-                l3p_db = session.query(
-                    gpmdb.L3PolicyMapping).filter_by(id=l3p_id).first()
+                query = BAKERY(lambda s: s.query(
+                    gpmdb.L3PolicyMapping))
+                query += lambda q: q.filter_by(
+                    id=sa.bindparam('l3p_id'))
+                l3p_db = query(session).params(
+                    l3p_id=l3p_id).first()
+
                 tenant_id = l3p_db['tenant_id']
             tenant_name = self.name_mapper.project(session, tenant_id)
         LOG.debug("Mapped tenant_id %(id)s to %(apic_name)s",
@@ -2469,11 +2484,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def apic_epg_name_for_policy_target_group(self, session, ptg_id,
                                               name=None):
-        ptg_db = session.query(gpmdb.PolicyTargetGroupMapping).filter_by(
-            id=ptg_id).first()
+        query = BAKERY(lambda s: s.query(
+            gpmdb.PolicyTargetGroupMapping))
+        query += lambda q: q.filter_by(
+            id=sa.bindparam('ptg_id'))
+        ptg_db = query(session).params(
+            ptg_id=ptg_id).first()
+
         if ptg_db and self._is_auto_ptg(ptg_db):
-            l2p_db = session.query(gpmdb.L2PolicyMapping).filter_by(
-                id=ptg_db['l2_policy_id']).first()
+            query = BAKERY(lambda s: s.query(
+                gpmdb.L2PolicyMapping))
+            query += lambda q: q.filter_by(
+                id=sa.bindparam('l2p_id'))
+            l2p_db = query(session).params(
+                l2p_id=ptg_db['l2_policy_id']).first()
+
             network_id = l2p_db['network_id']
             admin_context = self._get_admin_context_reuse_session(session)
             net = self._get_network(admin_context, network_id)
@@ -2538,6 +2563,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                    context.current['id']).all()]
 
     def _get_prss_for_policy_rules(self, context, pr_ids):
+        if not pr_ids:
+            return []
+
+        # Baked queries using in_ require sqlalchemy >=1.2.
         return [self._get_policy_rule_set(
             context._plugin_context, x['id']) for x in (
                 context._plugin_context.session.query(
@@ -2581,7 +2610,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_ctx = aim_context.AimContext(session)
         contract_name_prefix = alib.get_service_contract_filter_entries(
                 ).keys()[0]
-        l3ps = session.query(gpmdb.L3PolicyMapping).all()
+
+        query = BAKERY(lambda s: s.query(
+            gpmdb.L3PolicyMapping))
+        l3ps = query(session).all()
+
         name_mapper = apic_mapper.APICNameMapper()
         aim_mgr = aim_manager.AimManager()
         self._aim = aim_mgr
@@ -2640,49 +2673,63 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _validate_l3_policies(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.L3Policy).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.L3Policy))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for L3P not yet implemented")
 
     def _validate_l2_policies(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.L2Policy).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.L2Policy))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for L2P not yet implemented")
 
     def _validate_policy_target_groups(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.PolicyTargetGroup).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.PolicyTargetGroup))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for PTG not yet implemented")
 
     def _validate_policy_targets(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.PolicyTarget).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.PolicyTarget))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for PT not yet implemented")
 
     def _validate_application_policy_groups(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.ApplicationPolicyGroup).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.ApplicationPolicyGroup))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for APG not yet implemented")
 
     def _validate_policy_classifiers(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.PolicyClassifier).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.PolicyClassifier))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for PC not yet implemented")
 
     def _validate_policy_rule_sets(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.PolicyRuleSet).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.PolicyRuleSet))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for PRS not yet implemented")
 
@@ -2692,13 +2739,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # validate_neutron_mapping rather than validate_aim_mapping,
         # since external_routes maps to the cisco_apic.EXTERNAL_CIDRS
         # network extension.
-        if mgr.actual_session.query(gpdb.ExternalSegment).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.ExternalSegment))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for ES not yet implemented")
 
     def _validate_external_policies(self, mgr):
         # REVISIT: Implement validation of actual mapping to AIM
         # resources.
-        if mgr.actual_session.query(gpdb.ExternalPolicy).first():
+        query = BAKERY(lambda s: s.query(
+            gpdb.ExternalPolicy))
+        if query(mgr.actual_session).first():
             mgr.validation_failed(
                 "GBP->AIM validation for EP not yet implemented")

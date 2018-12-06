@@ -19,6 +19,8 @@ from neutron.callbacks import resources
 from neutron import manager
 from neutron_lib.api import validators
 from oslo_log import log as logging
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -27,6 +29,8 @@ from gbpservice.neutron.services.sfc.aim import exceptions as sfc_exc
 
 LOG = logging.getLogger(__name__)
 flowclassifier.SUPPORTED_L7_PARAMETERS.update(sfc_cts.AIM_FLC_L7_PARAMS)
+
+BAKERY = baked.bakery()
 
 
 class FlowclassifierAIMDriverBase(base.FlowClassifierDriverBase):
@@ -118,10 +122,16 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
         with context.session.begin(subtransactions=True):
             classifier_ids = []
             for keyword in [sfc_cts.LOGICAL_SRC_NET, sfc_cts.LOGICAL_DST_NET]:
+                query = BAKERY(lambda s: s.query(
+                    flc_db.L7Parameter))
+                query += lambda q: q.filter_by(
+                    keyword=sa.bindparam('keyword'))
+                query += lambda q: q.filter_by(
+                    value=sa.bindparam('network_id'))
                 classifier_ids.extend(
-                    [x.classifier_id for x in context.session.query(
-                        flc_db.L7Parameter).filter_by(
-                        keyword=keyword).filter_by(value=network_id).all()])
+                    [x.classifier_id for x in query(context.session).params(
+                        keyword=keyword, network_id=network_id).all()])
+
             return classifier_ids
 
     def _handle_network_delete(self, rtype, event, trigger, context,
