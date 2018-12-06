@@ -214,6 +214,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def __init__(self):
         LOG.info("APIC AIM MD __init__")
+        super(ApicMechanismDriver, self).__init__()
 
     def initialize(self):
         LOG.info("APIC AIM MD initializing")
