@@ -10,6 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
+
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as db_api
@@ -30,6 +33,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
 
 
 LOG = log.getLogger(__name__)
+
+BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
+    "sqlalchemy baked query cache size exceeded in %s" % __name__))
 
 
 class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
@@ -264,17 +270,23 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return
         details['security_group'] = []
 
-        port_sgs = (context.session.query(sg_models.SecurityGroup.id,
-                                          sg_models.SecurityGroup.tenant_id).
-                    filter(sg_models.SecurityGroup.id.
-                           in_(port['security_groups'])).
-                    all())
-        for sg_id, tenant_id in port_sgs:
-            tenant_aname = self.aim_mech_driver.name_mapper.project(
-                context.session, tenant_id)
-            details['security_group'].append(
-                {'policy-space': tenant_aname,
-                 'name': sg_id})
+        if port['security_groups']:
+            query = BAKERY(lambda s: s.query(
+                sg_models.SecurityGroup.id,
+                sg_models.SecurityGroup.tenant_id))
+            query += lambda q: q.filter(
+                sg_models.SecurityGroup.id.in_(
+                    sa.bindparam('sg_ids', expanding=True)))
+            port_sgs = query(context.session).params(
+                sg_ids=port['security_groups']).all()
+
+            for sg_id, tenant_id in port_sgs:
+                tenant_aname = self.aim_mech_driver.name_mapper.project(
+                    context.session, tenant_id)
+                details['security_group'].append(
+                    {'policy-space': tenant_aname,
+                     'name': sg_id})
+
         # Always include this SG which has the default arp & dhcp rules
         details['security_group'].append(
             {'policy-space': 'common',
