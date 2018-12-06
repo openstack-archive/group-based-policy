@@ -149,6 +149,8 @@ class KeystoneNotificationEndpoint(object):
         # malformed notification?
         if not tenant_id:
             return None
+        else:
+            return tenant_id
 
         if event_type == 'identity.project.updated':
             new_project_name = (self._driver.project_name_cache.
