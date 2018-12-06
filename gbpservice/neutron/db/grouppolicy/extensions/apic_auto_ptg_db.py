@@ -11,7 +11,14 @@
 #    under the License.
 
 from neutron_lib.db import model_base
+from oslo_log import log
 import sqlalchemy as sa
+from sqlalchemy.ext import baked
+
+LOG = log.getLogger(__name__)
+
+BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
+    "sqlalchemy baked query cache size exceeded in %s" % __name__))
 
 
 class ApicAutoPtgDB(model_base.BASEV2):
@@ -25,8 +32,13 @@ class ApicAutoPtgDB(model_base.BASEV2):
 class ApicAutoPtgDBMixin(object):
 
     def get_is_auto_ptg(self, session, policy_target_group_id):
-        row = (session.query(ApicAutoPtgDB).filter_by(
-               policy_target_group_id=policy_target_group_id).one())
+        query = BAKERY(lambda s: s.query(
+            ApicAutoPtgDB))
+        query += lambda q: q.filter_by(
+            policy_target_group_id=sa.bindparam('policy_target_group_id'))
+        row = query(session).params(
+            policy_target_group_id=policy_target_group_id).one()
+
         return row['is_auto_ptg']
 
     def set_is_auto_ptg(self, session, policy_target_group_id,
