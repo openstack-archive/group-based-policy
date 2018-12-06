@@ -27,6 +27,7 @@ from neutron_lib.plugins import directory
 LOG = logging.getLogger(__name__)
 
 
+# REVISIT: Fix the misspelling of 'association'.
 class HAIPAddressToPortAssocation(model_base.BASEV2):
 
     """Port Owner for HA IP Address.
@@ -45,27 +46,49 @@ class HAIPAddressToPortAssocation(model_base.BASEV2):
                         nullable=False, primary_key=True)
 
 
-class PortForHAIPAddress(object):
+class HAIPOwnerDbMixin(object):
 
     def _get_ha_ipaddress(self, port_id, ipaddress, session=None):
         session = session or db_api.get_reader_session()
-        return session.query(HAIPAddressToPortAssocation).filter_by(
-            port_id=port_id, ha_ip_address=ipaddress).first()
+
+        query = self.bakery(lambda s: s.query(
+            HAIPAddressToPortAssocation))
+        query += lambda q: q.filter_by(
+            port_id=sa.bindparam('port_id'),
+            ha_ip_address=sa.bindparam('ipaddress'))
+        return query(session).params(
+            port_id=port_id, ipaddress=ipaddress).first()
 
     def get_port_for_ha_ipaddress(self, ipaddress, network_id):
         """Returns the Neutron Port ID for the HA IP Addresss."""
         session = db_api.get_reader_session()
-        port_ha_ip = session.query(HAIPAddressToPortAssocation).join(
-            models_v2.Port).filter(
-                HAIPAddressToPortAssocation.ha_ip_address == ipaddress).filter(
-                    models_v2.Port.network_id == network_id).first()
+
+        query = self.bakery(lambda s: s.query(
+            HAIPAddressToPortAssocation))
+        query += lambda q: q.join(
+            models_v2.Port,
+            models_v2.Port.id == HAIPAddressToPortAssocation.port_id)
+        query += lambda q: q.filter(
+            HAIPAddressToPortAssocation.ha_ip_address ==
+            sa.bindparam('ipaddress'))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id == sa.bindparam('network_id'))
+        port_ha_ip = query(session).params(
+            ipaddress=ipaddress, network_id=network_id).first()
+
         return port_ha_ip
 
     def get_ha_ipaddresses_for_port(self, port_id):
         """Returns the HA IP Addressses associated with a Port."""
         session = db_api.get_reader_session()
-        objs = session.query(HAIPAddressToPortAssocation).filter_by(
+
+        query = self.bakery(lambda s: s.query(
+            HAIPAddressToPortAssocation))
+        query += lambda q: q.filter_by(
+            port_id=sa.bindparam('port_id'))
+        objs = query(session).params(
             port_id=port_id).all()
+
         return sorted([x['ha_ip_address'] for x in objs])
 
     def set_port_id_for_ha_ipaddress(self, port_id, ipaddress, session=None):
@@ -90,6 +113,11 @@ class PortForHAIPAddress(object):
         session = session or db_api.get_writer_session()
         with session.begin(subtransactions=True):
             try:
+                # REVISIT: Can this query be baked? The
+                # sqlalchemy.ext.baked.Result class does not have a
+                # delete() method, and adding delete() to the baked
+                # query before executing it seems to result in the
+                # params() not being evaluated.
                 return session.query(
                     HAIPAddressToPortAssocation).filter_by(
                         port_id=port_id,
@@ -99,13 +127,10 @@ class PortForHAIPAddress(object):
 
     def get_ha_port_associations(self):
         session = db_api.get_reader_session()
-        return session.query(HAIPAddressToPortAssocation).all()
 
-
-class HAIPOwnerDbMixin(object):
-
-    def __init__(self):
-        self.ha_ip_handler = PortForHAIPAddress()
+        query = self.bakery(lambda s: s.query(
+            HAIPAddressToPortAssocation))
+        return query(session).all()
 
     def _get_plugin(self):
         return directory.get_plugin()
@@ -129,15 +154,13 @@ class HAIPOwnerDbMixin(object):
             if not ipa:
                 continue
             try:
-                old_owner = self.ha_ip_handler.get_port_for_ha_ipaddress(
+                old_owner = self.get_port_for_ha_ipaddress(
                     ipa, network_id or port['network_id'])
                 session = db_api.get_writer_session()
                 with session.begin(subtransactions=True):
-                    self.ha_ip_handler.set_port_id_for_ha_ipaddress(port_id,
-                                                                    ipa,
-                                                                    session)
+                    self.set_port_id_for_ha_ipaddress(port_id, ipa, session)
                     if old_owner and old_owner['port_id'] != port_id:
-                        self.ha_ip_handler.delete_port_id_for_ha_ipaddress(
+                        self.delete_port_id_for_ha_ipaddress(
                             old_owner['port_id'], ipa, session)
                         ports_to_update.add(old_owner['port_id'])
             except db_exc.DBReferenceError as dbe:

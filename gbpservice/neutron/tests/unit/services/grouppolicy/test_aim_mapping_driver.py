@@ -3411,7 +3411,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         # set new owner
         self.driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h1')
-        obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
+        obj = self.driver.get_port_for_ha_ipaddress(
             '1.2.3.4', net_id)
 
         self.assertEqual(pt1['port_id'], obj['port_id'])
@@ -3423,7 +3423,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         ip_owner_info['port'] = pt2['port_id']
         self.driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h2')
-        obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
+        obj = self.driver.get_port_for_ha_ipaddress(
             '1.2.3.4', net_id)
         self.assertEqual(pt2['port_id'], obj['port_id'])
         exp_calls = [
@@ -5439,9 +5439,9 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                              allowed_address_pairs=allow_addr)['port']
         self._bind_port_to_host(p1['id'], 'h1')
         self._bind_port_to_host(p2['id'], 'h2')
-        self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
+        self.driver.set_port_id_for_ha_ipaddress(
             p1['id'], '1.2.3.250')
-        self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
+        self.driver.set_port_id_for_ha_ipaddress(
             p2['id'], '1.2.3.251')
         allow_addr[0]['active'] = True
         details = self.driver.get_gbp_details(

@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sqlalchemy as sa
+
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
 from neutron.db import api as db_api
@@ -252,7 +254,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
         return details
 
     def _get_owned_addresses(self, plugin_context, port_id):
-        return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
+        return set(self.get_ha_ipaddresses_for_port(port_id))
 
     def _add_security_group_details(self, context, port, details):
         vif_details = port.get('binding:vif_details')
@@ -264,17 +266,23 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return
         details['security_group'] = []
 
-        port_sgs = (context.session.query(sg_models.SecurityGroup.id,
-                                          sg_models.SecurityGroup.tenant_id).
-                    filter(sg_models.SecurityGroup.id.
-                           in_(port['security_groups'])).
-                    all())
-        for sg_id, tenant_id in port_sgs:
-            tenant_aname = self.aim_mech_driver.name_mapper.project(
-                context.session, tenant_id)
-            details['security_group'].append(
-                {'policy-space': tenant_aname,
-                 'name': sg_id})
+        if port['security_groups']:
+            query = self.bakery(lambda s: s.query(
+                sg_models.SecurityGroup.id,
+                sg_models.SecurityGroup.tenant_id))
+            query += lambda q: q.filter(
+                sg_models.SecurityGroup.id.in_(
+                    sa.bindparam('sg_ids', expanding=True)))
+            port_sgs = query(context.session).params(
+                sg_ids=port['security_groups']).all()
+
+            for sg_id, tenant_id in port_sgs:
+                tenant_aname = self.aim_mech_driver.name_mapper.project(
+                    context.session, tenant_id)
+                details['security_group'].append(
+                    {'policy-space': tenant_aname,
+                     'name': sg_id})
+
         # Always include this SG which has the default arp & dhcp rules
         details['security_group'].append(
             {'policy-space': 'common',

@@ -88,33 +88,49 @@ class DbMixin(object):
             # within the same transaction tries to access its
             # aim_mapping relationship after retrieving the
             # AddressScope record from the session cache.
-            scope = (session.query(as_db.AddressScope).
-                     filter_by(id=scope_id).
-                     one_or_none())
+            query = self.bakery(lambda s: s.query(
+                as_db.AddressScope))
+            query += lambda q: q.filter_by(
+                id=sa.bindparam('scope_id'))
+            scope = query(session).params(
+                scope_id=scope_id).one_or_none()
+
             scope.aim_mapping = mapping
         return mapping
 
     def _get_address_scope_mapping(self, session, scope_id):
-        return (session.query(AddressScopeMapping).
-                filter_by(scope_id=scope_id).
-                one_or_none())
+        query = self.bakery(lambda s: s.query(
+            AddressScopeMapping))
+        query += lambda q: q.filter_by(
+            scope_id=sa.bindparam('scope_id'))
+        return query(session).params(
+            scope_id=scope_id).one_or_none()
 
     def _get_address_scope_mappings_for_vrf(self, session, vrf):
-        return (session.query(AddressScopeMapping).
-                filter_by(vrf_tenant_name=vrf.tenant_name,
-                          vrf_name=vrf.name).
-                all())
+        query = self.bakery(lambda s: s.query(
+            AddressScopeMapping))
+        query += lambda q: q.filter_by(
+            vrf_tenant_name=sa.bindparam('tenant_name'),
+            vrf_name=sa.bindparam('name'))
+        return query(session).params(
+            tenant_name=vrf.tenant_name,
+            name=vrf.name).all()
 
     def _get_address_scopes_owning_vrf(self, session, vrf):
-        return (session.query(as_db.AddressScope).
-                join(AddressScopeMapping,
-                     AddressScopeMapping.scope_id == as_db.AddressScope.id).
-                filter(AddressScopeMapping.vrf_tenant_name ==
-                       vrf.tenant_name,
-                       AddressScopeMapping.vrf_name == vrf.name,
-                       AddressScopeMapping.vrf_owned).
-                order_by(as_db.AddressScope.ip_version).
-                all())
+        query = self.bakery(lambda s: s.query(
+            as_db.AddressScope))
+        query += lambda q: q.join(
+            AddressScopeMapping,
+            AddressScopeMapping.scope_id == as_db.AddressScope.id)
+        query += lambda q: q.filter(
+            AddressScopeMapping.vrf_tenant_name == sa.bindparam('tenant_name'),
+            AddressScopeMapping.vrf_name == sa.bindparam('name'),
+            AddressScopeMapping.vrf_owned)
+        query += lambda q: q.order_by(
+            as_db.AddressScope.ip_version)
+        return query(session).params(
+            tenant_name=vrf.tenant_name,
+            name=vrf.name).all()
 
     def _get_address_scope_vrf(self, mapping):
         return aim_resource.VRF(
@@ -149,38 +165,67 @@ class DbMixin(object):
             # transaction tries to access its aim_mapping relationship
             # after retrieving the Network record from the session
             # cache.
-            net = (session.query(models_v2.Network).
-                   filter_by(id=network_id).
-                   one_or_none())
+            query = self.bakery(lambda s: s.query(
+                models_v2.Network))
+            query += lambda q: q.filter_by(
+                id=sa.bindparam('network_id'))
+            net = query(session).params(
+                network_id=network_id).one_or_none()
+
             net.aim_mapping = mapping
         return mapping
 
     def _get_network_mapping(self, session, network_id):
-        return (session.query(NetworkMapping).
-                filter_by(network_id=network_id).
-                one_or_none())
+        query = self.bakery(lambda s: s.query(
+            NetworkMapping))
+        query += lambda q: q.filter_by(
+            network_id=sa.bindparam('network_id'))
+        return query(session).params(
+            network_id=network_id).one_or_none()
 
     def _get_network_mapping_bulk(self, session, network_ids):
-        return session.query(NetworkMapping).filter(
-            NetworkMapping.network_id.in_(network_ids)).all()
+        # REVISIT: This method is not called during any UT, and does
+        # not appear to be referenced elsewhere in this repository.
+        if not network_ids:
+            return []
+
+        query = self.bakery(lambda s: s.query(
+            NetworkMapping))
+        query += lambda q: q.filter(
+            NetworkMapping.network_id.in_(
+                sa.bindparam('network_ids', expanding=True)))
+        return query(session).params(
+            network_ids=network_ids).all()
 
     def _get_network_mappings_for_vrf(self, session, vrf):
-        return (session.query(NetworkMapping).
-                filter_by(vrf_tenant_name=vrf.tenant_name,
-                          vrf_name=vrf.name).
-                all())
+        query = self.bakery(lambda s: s.query(
+            NetworkMapping))
+        query += lambda q: q.filter_by(
+            vrf_tenant_name=sa.bindparam('vrf_tenant_name'),
+            vrf_name=sa.bindparam('vrf_name'))
+        return query(session).params(
+            vrf_tenant_name=vrf.tenant_name,
+            vrf_name=vrf.name).all()
 
     def _get_network_mappings_for_bd(self, session, bd):
-        return (session.query(NetworkMapping).
-                filter_by(bd_tenant_name=bd.tenant_name,
-                          bd_name=bd.name).
-                all())
+        query = self.bakery(lambda s: s.query(
+            NetworkMapping))
+        query += lambda q: q.filter_by(
+            bd_tenant_name=sa.bindparam('bd_tenant_name'),
+            bd_name=sa.bindparam('bd_name'))
+        return query(session).params(
+            bd_tenant_name=bd.tenant_name,
+            bd_name=bd.name).all()
 
     def _is_vrf_used_by_networks(self, session, vrf):
-        return (session.query(NetworkMapping.network_id).
-                filter_by(vrf_tenant_name=vrf.tenant_name,
-                          vrf_name=vrf.name).
-                first() is not None)
+        query = self.bakery(lambda s: s.query(
+            NetworkMapping.network_id))
+        query += lambda q: q.filter_by(
+            vrf_tenant_name=sa.bindparam('vrf_tenant_name'),
+            vrf_name=sa.bindparam('vrf_name'))
+        return query(session).params(
+            vrf_tenant_name=vrf.tenant_name,
+            vrf_name=vrf.name).first() is not None
 
     def _get_network_bd(self, mapping):
         return aim_resource.BridgeDomain(

@@ -31,6 +31,7 @@ from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
+import sqlalchemy as sa
 from sqlalchemy import or_
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
@@ -166,6 +167,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
                 LOG.error("No AIM driver found")
                 raise exc.GroupPolicyDeploymentError()
         return self._aim_flowc_driver
+
+    @property
+    def bakery(self):
+        return self.aim_mech.bakery
 
     def create_port_pair_precommit(self, context):
         """Map Port Pair to AIM model
@@ -672,18 +677,29 @@ class SfcAIMDriver(SfcAIMDriverBase):
     def _get_chains_by_classifier_id(self, plugin_context, flowc_id):
         context = plugin_context
         with db_api.context_manager.writer.using(context):
-            chain_ids = [x.portchain_id for x in context.session.query(
-                sfc_db.ChainClassifierAssoc).filter_by(
-                flowclassifier_id=flowc_id).all()]
+            query = self.bakery(lambda s: s.query(
+                sfc_db.ChainClassifierAssoc))
+            query += lambda q: q.filter_by(
+                flowclassifier_id=sa.bindparam('flowc_id'))
+            chain_ids = [x.portchain_id for x in query(context.session).params(
+                flowc_id=flowc_id).all()]
+
             return self.sfc_plugin.get_port_chains(plugin_context,
                                                    filters={'id': chain_ids})
 
     def _get_chains_by_ppg_ids(self, plugin_context, ppg_ids):
+        if not ppg_ids:
+            return []
         context = plugin_context
         with db_api.context_manager.writer.using(context):
-            chain_ids = [x.portchain_id for x in context.session.query(
-                sfc_db.ChainGroupAssoc).filter(
-                sfc_db.ChainGroupAssoc.portpairgroup_id.in_(ppg_ids)).all()]
+            query = self.bakery(lambda s: s.query(
+                sfc_db.ChainGroupAssoc))
+            query += lambda q: q.filter(
+                sfc_db.ChainGroupAssoc.portpairgroup_id.in_(
+                    sa.bindparam('ppg_ids', expanding=True)))
+            chain_ids = [x.portchain_id for x in query(context.session).params(
+                ppg_ids=ppg_ids).all()]
+
             return self.sfc_plugin.get_port_chains(plugin_context,
                                                    filters={'id': chain_ids})
 
@@ -698,14 +714,22 @@ class SfcAIMDriver(SfcAIMDriverBase):
         return []
 
     def _get_group_ids_by_network_ids(self, plugin_context, network_ids):
+        if not network_ids:
+            return []
         session = plugin_context.session
-        return [
-            x.portpairgroup_id for x in
-            session.query(sfc_db.PortPair).join(
-                models_v2.Port,
-                or_(models_v2.Port.id == sfc_db.PortPair.ingress,
-                    models_v2.Port.id == sfc_db.PortPair.egress)).filter(
-                models_v2.Port.network_id.in_(network_ids)).all()]
+
+        query = self.bakery(lambda s: s.query(
+            sfc_db.PortPair))
+        query += lambda q: q.join(
+            models_v2.Port,
+            or_(models_v2.Port.id == sfc_db.PortPair.ingress,
+                models_v2.Port.id == sfc_db.PortPair.egress))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id.in_(
+                sa.bindparam('network_ids', expanding=True)))
+        return [x.portpairgroup_id for x in
+                query(session).params(
+                    network_ids=network_ids).all()]
 
     def _should_regenerate_pp(self, context):
         attrs = [INGRESS, EGRESS, 'name']

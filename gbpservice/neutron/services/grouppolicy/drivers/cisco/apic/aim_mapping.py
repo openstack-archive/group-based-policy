@@ -13,6 +13,7 @@
 import hashlib
 import re
 import six
+import sqlalchemy as sa
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
@@ -175,6 +176,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._apic_allowed_vm_name_driver = None
         self._aim = None
         self._name_mapper = None
+        self._bakery = None
         self.create_auto_ptg = cfg.CONF.aim_mapping.create_auto_ptg
         if self.create_auto_ptg:
             LOG.info('Auto PTG creation configuration set, '
@@ -218,6 +220,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if not self._name_mapper:
             self._name_mapper = self.aim_mech_driver.name_mapper
         return self._name_mapper
+
+    @property
+    def bakery(self):
+        if not self._bakery:
+            self._bakery = self.aim_mech_driver.bakery
+        return self._bakery
 
     @property
     def apic_segmentation_label_driver(self):
@@ -1122,16 +1130,26 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 # the gbp_obj here should be a ptg
                 l2p_id = gbp_obj['l2_policy_id']
                 if l2p_id:
-                    l2p_db = session.query(
-                        gpmdb.L2PolicyMapping).filter_by(id=l2p_id).first()
+                    query = self.bakery(lambda s: s.query(
+                        gpmdb.L2PolicyMapping))
+                    query += lambda q: q.filter_by(
+                        id=sa.bindparam('l2p_id'))
+                    l2p_db = query(session).params(
+                        l2p_id=l2p_id).first()
+
                     l3p_id = l2p_db['l3_policy_id']
             elif aim_resource_class.__name__ == (
                 aim_resource.BridgeDomain.__name__):
                 # the gbp_obj here should be a l2p
                 l3p_id = gbp_obj['l3_policy_id']
             if l3p_id:
-                l3p_db = session.query(
-                    gpmdb.L3PolicyMapping).filter_by(id=l3p_id).first()
+                query = self.bakery(lambda s: s.query(
+                    gpmdb.L3PolicyMapping))
+                query += lambda q: q.filter_by(
+                    id=sa.bindparam('l3p_id'))
+                l3p_db = query(session).params(
+                    l3p_id=l3p_id).first()
+
                 tenant_id = l3p_db['tenant_id']
             tenant_name = self.name_mapper.project(session, tenant_id)
         LOG.debug("Mapped tenant_id %(id)s to %(apic_name)s",
@@ -2337,11 +2355,21 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context = gbp_utils.get_current_context()
         # get_network can do a DB write, hence we use a writer
         with db_api.context_manager.writer.using(context):
-            ptg_db = session.query(gpmdb.PolicyTargetGroupMapping).filter_by(
-                id=ptg_id).first()
+            query = self.bakery(lambda s: s.query(
+                gpmdb.PolicyTargetGroupMapping))
+            query += lambda q: q.filter_by(
+                id=sa.bindparam('ptg_id'))
+            ptg_db = query(session).params(
+                ptg_id=ptg_id).first()
+
             if ptg_db and self._is_auto_ptg(ptg_db):
-                l2p_db = session.query(gpmdb.L2PolicyMapping).filter_by(
-                    id=ptg_db['l2_policy_id']).first()
+                query = self.bakery(lambda s: s.query(
+                    gpmdb.L2PolicyMapping))
+                query += lambda q: q.filter_by(
+                    id=sa.bindparam('l2p_id'))
+                l2p_db = query(session).params(
+                    l2p_id=ptg_db['l2_policy_id']).first()
+
                 network_id = l2p_db['network_id']
                 admin_context = n_context.get_admin_context()
                 net = self._get_network(admin_context, network_id)
@@ -2392,17 +2420,24 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._handle_network_service_policy(context)
 
     def _get_prss_for_policy_rules(self, context, pr_ids):
+        if not pr_ids:
+            return []
+
+        query = self.bakery(lambda s: s.query(
+            gpdb.PolicyRuleSet))
+        query += lambda q: q.join(
+            gpdb.PRSToPRAssociation,
+            gpdb.PRSToPRAssociation.policy_rule_set_id ==
+            gpdb.PolicyRuleSet.id)
+        query += lambda q: q.join(
+            gpdb.PolicyRule,
+            gpdb.PRSToPRAssociation.policy_rule_id == gpdb.PolicyRule.id)
+        query += lambda q: q.filter(
+            gpdb.PolicyRule.id.in_(sa.bindparam('pr_ids', expanding=True)))
         return [self._get_policy_rule_set(
             context._plugin_context, x['id']) for x in (
-                context._plugin_context.session.query(
-                    gpdb.PolicyRuleSet).join(
-                        gpdb.PRSToPRAssociation,
-                        gpdb.PRSToPRAssociation.policy_rule_set_id ==
-                        gpdb.PolicyRuleSet.id).join(
-                            gpdb.PolicyRule,
-                            gpdb.PRSToPRAssociation.policy_rule_id ==
-                            gpdb.PolicyRule.id).filter(
-                                gpdb.PolicyRule.id.in_(pr_ids)).all())]
+                query(context._plugin_context.session).params(
+                    pr_ids=pr_ids).all())]
 
     def _get_port_mtu(self, context, port):
         if self.advertise_mtu:
@@ -2441,7 +2476,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_ctx = aim_context.AimContext(session)
         contract_name_prefix = alib.get_service_contract_filter_entries(
                 ).keys()[0]
-        l3ps = session.query(gpmdb.L3PolicyMapping).all()
+
+        query = self.bakery(lambda s: s.query(
+            gpmdb.L3PolicyMapping))
+        l3ps = query(session).all()
+
         name_mapper = apic_mapper.APICNameMapper()
         aim_mgr = aim_manager.AimManager()
         self._aim = aim_mgr
