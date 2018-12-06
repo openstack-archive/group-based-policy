@@ -160,13 +160,18 @@ def create_security_group(self, context, security_group, default_sg=False):
                 ethertype=ethertype)
             context.session.add(egress_rule)
 
-        secgroup_dict = self._make_security_group_dict(security_group_db)
-        kwargs['security_group'] = secgroup_dict
+        # The 'id' is needed by the precommit handler
+        # in the apic_aim mechanism driver. Ensure that
+        # it is carried in the kwargs.
+        s['id'] = security_group_db['id']
         self._registry_notify(resources.SECURITY_GROUP,
                               events.PRECOMMIT_CREATE,
                               exc_cls=ext_sg.SecurityGroupConflict,
                               **kwargs)
 
+    secgroup_dict = self._make_security_group_dict(security_group_db)
+
+    kwargs['security_group'] = secgroup_dict
     registry.notify(resources.SECURITY_GROUP, events.AFTER_CREATE, self,
                     **kwargs)
     return secgroup_dict
