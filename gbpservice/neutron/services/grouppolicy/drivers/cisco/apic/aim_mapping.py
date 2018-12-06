@@ -2004,8 +2004,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if router_intf_ports:
             routers = self._get_routers(
                 plugin_context,
-                filters={'device_id': [x['device_id']
-                                       for x in router_intf_ports]})
+                filters={'id': [x['device_id']
+                                for x in router_intf_ports]})
             ext_nets = self._get_networks(
                 plugin_context,
                 filters={'id': [r['external_gateway_info']['network_id']
