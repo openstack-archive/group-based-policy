@@ -62,7 +62,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus import patch_neutron
 from gbpservice.neutron.services.grouppolicy import (
@@ -118,6 +117,8 @@ SVI = 'apic:svi'
 BGP = 'apic:bgp_enable'
 ASN = 'apic:bgp_asn'
 BGP_TYPE = 'apic:bgp_type'
+
+common_bakery = None
 
 
 def sort_if_list(attr):
@@ -306,6 +307,13 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                 self.plugin.__dict__['_aliases'].remove(
                         'dhcp_agent_scheduler')
         self._mock_aim_obj_eq_operator()
+
+        # Use a common sqlalchemy bakery for all tests in the process.
+        global common_bakery
+        if common_bakery:
+            self.driver.bakery = common_bakery
+        else:
+            common_bakery = self.driver.bakery
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
@@ -1113,7 +1121,6 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_svi_network_lifecycle(self):
         session = db_api.get_writer_session()
-        extn = extn_db.ExtensionDbMixin()
 
         # test create.
         net = self._make_network(self.fmt, 'net1', True)['network']
@@ -1142,7 +1149,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # test delete
         self._delete('networks', net['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net['id']))
+        self.assertFalse(self.driver.get_network_extn_db(session, net['id']))
         self._check_network_deleted(net)
 
     def test_security_group_lifecycle(self):
@@ -3864,7 +3871,7 @@ class TestTopology(ApicAimTestCase):
         self._router_interface_action('add', rtr['id'], sub3['id'], None)
 
 
-class TestMigrations(ApicAimTestCase, db.DbMixin):
+class TestMigrations(ApicAimTestCase):
     def test_apic_aim_persist(self):
         aim_ctx = aim_context.AimContext(self.db_session)
 
@@ -3873,7 +3880,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
             self.fmt, 4, name='as1')['address_scope']
         scope1_id = scope['id']
         scope1_vrf = scope[DN]['VRF']
-        mapping = self._get_address_scope_mapping(self.db_session, scope1_id)
+        mapping = self.driver._get_address_scope_mapping(
+            self.db_session, scope1_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
 
@@ -3888,7 +3896,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         scope2_id = scope['id']
         scope2_vrf = scope[DN]['VRF']
         self.assertEqual(vrf.dn, scope2_vrf)
-        mapping = self._get_address_scope_mapping(self.db_session, scope2_id)
+        mapping = self.driver._get_address_scope_mapping(
+            self.db_session, scope2_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
         old_db = data_migrations.DefunctAddressScopeExtensionDb(
@@ -3902,7 +3911,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net1_bd = net[DN]['BridgeDomain']
         net1_epg = net[DN]['EndpointGroup']
         net1_vrf = net[DN]['VRF']
-        mapping = self._get_network_mapping(self.db_session, net1_id)
+        mapping = self.driver._get_network_mapping(self.db_session, net1_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
 
@@ -3912,7 +3921,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net2_bd = net[DN]['BridgeDomain']
         net2_epg = net[DN]['EndpointGroup']
         net2_vrf = net[DN]['VRF']
-        mapping = self._get_network_mapping(self.db_session, net2_id)
+        mapping = self.driver._get_network_mapping(self.db_session, net2_id)
         with self.db_session.begin():
             self.db_session.delete(mapping)
 
@@ -3920,7 +3929,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         # mapping.
         net = self._make_ext_network('net3')
         net3_id = net['id']
-        mapping = self._get_network_mapping(self.db_session, net3_id)
+        mapping = self.driver._get_network_mapping(self.db_session, net3_id)
         self.assertIsNone(mapping)
 
         # Verify normal address scope is missing DN.
@@ -3974,7 +3983,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         self.assertEqual(net2_vrf, net[DN]['VRF'])
 
         # Verify unmanaged external network has no mapping or DNs.
-        mapping = self._get_network_mapping(self.db_session, net3_id)
+        mapping = self.driver._get_network_mapping(self.db_session, net3_id)
         self.assertIsNone(mapping)
         net = self._show('networks', net3_id)['network']
         self.assertNotIn('BridgeDomain', net[DN])
@@ -4456,7 +4465,6 @@ class TestExtensionAttributes(ApicAimTestCase):
 
     def test_bgp_enabled_network_lifecycle(self):
         session = db_api.get_writer_session()
-        extn = extn_db.ExtensionDbMixin()
 
         # Test create SVI network without BGP.
         net1 = self._make_network(self.fmt, 'net1', True,
@@ -4519,13 +4527,12 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net1['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        self.assertFalse(self.driver.get_network_extn_db(session, net1['id']))
         self._delete('networks', net2['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+        self.assertFalse(self.driver.get_network_extn_db(session, net2['id']))
 
     def test_network_with_nested_domain_lifecycle(self):
         session = db_api.get_reader_session()
-        extn = extn_db.ExtensionDbMixin()
         vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
                      'vlan_ranges': [{'start': '6', 'end': '9'},
                                      {'start': '11', 'end': '14'}]}
@@ -4572,7 +4579,7 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net1['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        self.assertFalse(self.driver.get_network_extn_db(session, net1['id']))
         db_vlans = (session.query(
             extn_db.NetworkExtNestedDomainAllowedVlansDb).filter_by(
                 network_id=net1['id']).all())
@@ -4580,7 +4587,6 @@ class TestExtensionAttributes(ApicAimTestCase):
 
     def test_external_network_lifecycle(self):
         session = db_api.get_reader_session()
-        extn = extn_db.ExtensionDbMixin()
 
         # create with APIC DN, nat_typeand default CIDR
         net1 = self._make_ext_network('net1',
@@ -4661,8 +4667,8 @@ class TestExtensionAttributes(ApicAimTestCase):
         self._delete('networks', net2['id'])
         self._delete('networks', net1['id'])
 
-        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
-        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+        self.assertFalse(self.driver.get_network_extn_db(session, net1['id']))
+        self.assertFalse(self.driver.get_network_extn_db(session, net2['id']))
 
     def test_external_network_fail(self):
         # APIC DN not specified
@@ -4697,7 +4703,6 @@ class TestExtensionAttributes(ApicAimTestCase):
 
     def test_external_subnet_lifecycle(self):
         session = db_api.get_reader_session()
-        extn = extn_db.ExtensionDbMixin()
 
         net1 = self._make_ext_network('net1',
                                       dn=self.dn_t1_l1_n1)
@@ -4735,7 +4740,7 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # delete subnet
         self._delete('subnets', subnet['id'])
-        self.assertFalse(extn.get_subnet_extn_db(session, subnet['id']))
+        self.assertFalse(self.driver.get_subnet_extn_db(session, subnet['id']))
 
         # Simulate a prior existing subnet (i.e. no extension attrs exist)
         # Get should give default value, and updates should stick
@@ -4761,7 +4766,6 @@ class TestExtensionAttributes(ApicAimTestCase):
 
     def test_router_lifecycle(self):
         session = db_api.get_reader_session()
-        extn = extn_db.ExtensionDbMixin()
 
         # create router with default values
         rtr0 = self._make_router(self.fmt, 'test-tenant',
@@ -4803,13 +4807,14 @@ class TestExtensionAttributes(ApicAimTestCase):
         # delete
         self._delete('routers', rtr1['id'])
         self.assertEqual({PROV: [], CONS: []},
-            extn.get_router_extn_db(session, rtr1['id']))
+            self.driver.get_router_extn_db(session, rtr1['id']))
 
         # Simulate a prior existing router (i.e. no extension attrs exist)
         rtr2 = self._make_router(self.fmt, 'test-tenant', 'router2',
             arg_list=self.extension_attributes,
             **{PROV: ['k'], CONS: ['k']})['router']
-        extn.set_router_extn_db(session, rtr2['id'], {PROV: [], CONS: []})
+        self.driver.set_router_extn_db(
+            session, rtr2['id'], {PROV: [], CONS: []})
         rtr2 = self._show('routers', rtr2['id'])['router']
         self.assertEqual([], rtr2[PROV])
         self.assertEqual([], rtr2[CONS])
