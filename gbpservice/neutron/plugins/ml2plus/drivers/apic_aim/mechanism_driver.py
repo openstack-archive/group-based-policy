@@ -285,6 +285,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         raise exceptions.ExhaustedApicRouterIdPool(
             pool=self.apic_router_id_pool)
 
+    @db_api.retry_if_session_inactive()
     def _ensure_static_resources(self):
         session = db_api.get_writer_session()
         aim_ctx = aim_context.AimContext(session)
