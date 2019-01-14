@@ -49,23 +49,29 @@ class PortForHAIPAddress(object):
 
     def _get_ha_ipaddress(self, port_id, ipaddress, session=None):
         session = session or db_api.get_reader_session()
-        return session.query(HAIPAddressToPortAssocation).filter_by(
-            port_id=port_id, ha_ip_address=ipaddress).first()
+        with session.begin(subtransactions=True):
+            ip = session.query(HAIPAddressToPortAssocation).filter_by(
+                port_id=port_id, ha_ip_address=ipaddress).first()
+        return ip
 
-    def get_port_for_ha_ipaddress(self, ipaddress, network_id):
+    def get_port_for_ha_ipaddress(self, ipaddress, network_id,
+                                  session=None):
         """Returns the Neutron Port ID for the HA IP Addresss."""
-        session = db_api.get_reader_session()
-        port_ha_ip = session.query(HAIPAddressToPortAssocation).join(
-            models_v2.Port).filter(
-                HAIPAddressToPortAssocation.ha_ip_address == ipaddress).filter(
+        session = session or db_api.get_reader_session()
+        with session.begin(subtransactions=True):
+            port_ha_ip = session.query(HAIPAddressToPortAssocation).join(
+                models_v2.Port).filter(
+                    HAIPAddressToPortAssocation.ha_ip_address ==
+                    ipaddress).filter(
                     models_v2.Port.network_id == network_id).first()
         return port_ha_ip
 
     def get_ha_ipaddresses_for_port(self, port_id):
         """Returns the HA IP Addressses associated with a Port."""
         session = db_api.get_reader_session()
-        objs = session.query(HAIPAddressToPortAssocation).filter_by(
-            port_id=port_id).all()
+        with session.begin(subtransactions=True):
+            objs = session.query(HAIPAddressToPortAssocation).filter_by(
+                port_id=port_id).all()
         return sorted([x['ha_ip_address'] for x in objs])
 
     def set_port_id_for_ha_ipaddress(self, port_id, ipaddress, session=None):
@@ -99,7 +105,9 @@ class PortForHAIPAddress(object):
 
     def get_ha_port_associations(self):
         session = db_api.get_reader_session()
-        return session.query(HAIPAddressToPortAssocation).all()
+        with session.begin(subtransactions=True):
+            ports = session.query(HAIPAddressToPortAssocation).all()
+        return ports
 
 
 class HAIPOwnerDbMixin(object):
@@ -120,6 +128,7 @@ class HAIPOwnerDbMixin(object):
             return ports_to_update
         LOG.debug("Got IP owner update: %s", ip_owner_info)
         core_plugin = self._get_plugin()
+        # REVISIT: just use SQLAlchemy session and models_v2.Port?
         port = core_plugin.get_port(nctx.get_admin_context(), port_id)
         if not port:
             LOG.debug("Ignoring update for non-existent port: %s", port_id)
@@ -129,16 +138,16 @@ class HAIPOwnerDbMixin(object):
             if not ipa:
                 continue
             try:
-                old_owner = self.ha_ip_handler.get_port_for_ha_ipaddress(
-                    ipa, network_id or port['network_id'])
                 session = db_api.get_writer_session()
                 with session.begin(subtransactions=True):
+                    old_owner = self.ha_ip_handler.get_port_for_ha_ipaddress(
+                        ipa, network_id or port['network_id'],
+                        session=session)
                     self.ha_ip_handler.set_port_id_for_ha_ipaddress(port_id,
-                                                                    ipa,
-                                                                    session)
+                        ipa, session=session)
                     if old_owner and old_owner['port_id'] != port_id:
                         self.ha_ip_handler.delete_port_id_for_ha_ipaddress(
-                            old_owner['port_id'], ipa, session)
+                            old_owner['port_id'], ipa, session=session)
                         ports_to_update.add(old_owner['port_id'])
             except db_exc.DBReferenceError as dbe:
                 LOG.debug("Ignoring FK error for port %s: %s", port_id, dbe)
