@@ -53,45 +53,49 @@ class HAIPAddressToPortAssocation(model_base.BASEV2):
 class PortForHAIPAddress(object):
 
     def _get_ha_ipaddress(self, port_id, ipaddress, session=None):
+        ip = None
         session = session or db_api.get_reader_session()
+        with session.begin(subtransactions=True):
+            query = BAKERY(lambda s: s.query(
+                HAIPAddressToPortAssocation))
+            query += lambda q: q.filter_by(
+                port_id=sa.bindparam('port_id'),
+                ha_ip_address=sa.bindparam('ipaddress'))
+            ip = query(session).params(
+                port_id=port_id, ipaddress=ipaddress).first()
+        return ip
 
-        query = BAKERY(lambda s: s.query(
-            HAIPAddressToPortAssocation))
-        query += lambda q: q.filter_by(
-            port_id=sa.bindparam('port_id'),
-            ha_ip_address=sa.bindparam('ipaddress'))
-        return query(session).params(
-            port_id=port_id, ipaddress=ipaddress).first()
-
-    def get_port_for_ha_ipaddress(self, ipaddress, network_id):
+    def get_port_for_ha_ipaddress(self, ipaddress, network_id,
+                                  session=None):
         """Returns the Neutron Port ID for the HA IP Addresss."""
-        session = db_api.get_reader_session()
-
-        query = BAKERY(lambda s: s.query(
-            HAIPAddressToPortAssocation))
-        query += lambda q: q.join(
-            models_v2.Port,
-            models_v2.Port.id == HAIPAddressToPortAssocation.port_id)
-        query += lambda q: q.filter(
-            HAIPAddressToPortAssocation.ha_ip_address ==
-            sa.bindparam('ipaddress'))
-        query += lambda q: q.filter(
-            models_v2.Port.network_id == sa.bindparam('network_id'))
-        port_ha_ip = query(session).params(
-            ipaddress=ipaddress, network_id=network_id).first()
-
+        port_ha_ip = None
+        session = session or db_api.get_reader_session()
+        with session.begin(subtransactions=True):
+            query = BAKERY(lambda s: s.query(
+                HAIPAddressToPortAssocation))
+            query += lambda q: q.join(
+                models_v2.Port,
+                models_v2.Port.id == HAIPAddressToPortAssocation.port_id)
+            query += lambda q: q.filter(
+                HAIPAddressToPortAssocation.ha_ip_address ==
+                sa.bindparam('ipaddress'))
+            query += lambda q: q.filter(
+                models_v2.Port.network_id == sa.bindparam('network_id'))
+            port_ha_ip = query(session).params(
+                ipaddress=ipaddress, network_id=network_id).first()
         return port_ha_ip
 
     def get_ha_ipaddresses_for_port(self, port_id):
         """Returns the HA IP Addressses associated with a Port."""
+        objs = []
         session = db_api.get_reader_session()
-
-        query = BAKERY(lambda s: s.query(
-            HAIPAddressToPortAssocation))
-        query += lambda q: q.filter_by(
-            port_id=sa.bindparam('port_id'))
-        objs = query(session).params(
-            port_id=port_id).all()
+        with session.begin(subtransactions=True):
+            query = BAKERY(lambda s: s.query(
+                HAIPAddressToPortAssocation))
+            query += lambda q: q.filter_by(
+                port_id=sa.bindparam('port_id'))
+            objs = query(session).params(
+                port_id=port_id).all()
 
         return sorted([x['ha_ip_address'] for x in objs])
 
@@ -130,11 +134,13 @@ class PortForHAIPAddress(object):
                 return
 
     def get_ha_port_associations(self):
+        associations = []
         session = db_api.get_reader_session()
-
-        query = BAKERY(lambda s: s.query(
-            HAIPAddressToPortAssocation))
-        return query(session).all()
+        with session.begin(subtransactions=True):
+            query = BAKERY(lambda s: s.query(
+                HAIPAddressToPortAssocation))
+            associations = query(session).all()
+        return associations
 
 
 class HAIPOwnerDbMixin(object):
@@ -155,6 +161,7 @@ class HAIPOwnerDbMixin(object):
             return ports_to_update
         LOG.debug("Got IP owner update: %s", ip_owner_info)
         core_plugin = self._get_plugin()
+        # REVISIT: just use SQLAlchemy session and models_v2.Port?
         port = core_plugin.get_port(nctx.get_admin_context(), port_id)
         if not port:
             LOG.debug("Ignoring update for non-existent port: %s", port_id)
@@ -164,16 +171,16 @@ class HAIPOwnerDbMixin(object):
             if not ipa:
                 continue
             try:
-                old_owner = self.ha_ip_handler.get_port_for_ha_ipaddress(
-                    ipa, network_id or port['network_id'])
                 session = db_api.get_writer_session()
                 with session.begin(subtransactions=True):
+                    old_owner = self.ha_ip_handler.get_port_for_ha_ipaddress(
+                        ipa, network_id or port['network_id'], session=session)
                     self.ha_ip_handler.set_port_id_for_ha_ipaddress(port_id,
                                                                     ipa,
                                                                     session)
                     if old_owner and old_owner['port_id'] != port_id:
                         self.ha_ip_handler.delete_port_id_for_ha_ipaddress(
-                            old_owner['port_id'], ipa, session)
+                            old_owner['port_id'], ipa, session=session)
                         ports_to_update.add(old_owner['port_id'])
             except db_exc.DBReferenceError as dbe:
                 LOG.debug("Ignoring FK error for port %s: %s", port_id, dbe)
