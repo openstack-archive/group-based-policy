@@ -1,0 +1,9 @@
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Thu, 17 Jan 2019 17:43:01 +0000
+Reviewed-on: https://review.openstack.org/629649
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/queens
