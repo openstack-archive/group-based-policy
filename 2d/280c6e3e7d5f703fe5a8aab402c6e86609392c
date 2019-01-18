@@ -1,0 +1,10 @@
+Code-Review+2: Thomas Bachman <bachman@noironetworks.com>
+Code-Review+2: Robert Kukura <kukura@noironetworks.com>
+Workflow+1: Robert Kukura <kukura@noironetworks.com>
+Code-Review+1: zhaixiaojun <zhaixiaojun@gohighsec.com>
+Verified+2: Zuul
+Submitted-by: Zuul
+Submitted-at: Fri, 18 Jan 2019 03:04:48 +0000
+Reviewed-on: https://review.openstack.org/629653
+Project: openstack/group-based-policy
+Branch: refs/heads/stable/ocata
