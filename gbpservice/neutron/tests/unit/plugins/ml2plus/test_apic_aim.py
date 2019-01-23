@@ -3445,6 +3445,51 @@ class TestSyncState(ApicAimTestCase):
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router_interface_subnet('error')
 
+    def _test_router_interface_multiple_subnets(self, expected_state,
+                                                subnet2_attach=True):
+        net_resp = self._make_network(self.fmt, 'net1', True)
+
+        subnet1 = self._make_subnet(
+            self.fmt, net_resp, '10.0.0.1', '10.0.0.0/24')['subnet']
+
+        subnet2 = self._make_subnet(
+            self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24')['subnet']
+        sub_exp_sync_state = {}
+        sub_exp_sync_state[subnet1['id']] = expected_state
+        sub_exp_sync_state[subnet2['id']] = (expected_state if subnet2_attach
+                                            else 'N/A')
+
+        router = self._make_router(self.fmt, 'test-tenant', 'router1')[
+            'router']
+
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router['id'],
+            {'subnet_id': subnet1['id']})
+        if subnet2_attach:
+            self.l3_plugin.add_router_interface(
+                n_context.get_admin_context(), router['id'],
+                {'subnet_id': subnet2['id']})
+
+        router = self._show('routers', router['id'])['router']
+        self.assertEqual(expected_state,
+                         router['apic:synchronization_state'])
+
+        subnets = self._list('subnets')
+        for subnet in subnets['subnets']:
+            self.assertEqual(sub_exp_sync_state[subnet['id']],
+                             subnet['apic:synchronization_state'])
+
+    def test_router_interface_multiple_subnets_synced(self):
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            self._test_router_interface_multiple_subnets('synced')
+
+    def test_router_interface_multiple_subnets_one_attached(self):
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            self._test_router_interface_multiple_subnets('synced',
+                                                         subnet2_attach=False)
+
     def _test_external_network(self, expected_state, dn=None, msg=None):
         net = self._make_ext_network('net1', dn=dn)
         self.assertEqual(expected_state, net['apic:synchronization_state'],
@@ -3512,8 +3557,10 @@ class TestSyncState(ApicAimTestCase):
 
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
-            self._test_external_subnet('synced',
-                                       dn=self.dn_t1_l1_n1)
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_external_subnet('synced',
+                                           dn=self.dn_t1_l1_n1)
 
         for expected_status, status_func in [
                 ('build', TestSyncState._get_pending_status_for_type),
@@ -3522,8 +3569,10 @@ class TestSyncState(ApicAimTestCase):
                 return status_func(context, resource, aim_resource.Subnet)
             with mock.patch('aim.aim_manager.AimManager.get_status',
                             get_status):
-                self._test_external_subnet(expected_status,
-                                           dn=self.dn_t1_l1_n1)
+                with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                                TestSyncState._mocked_get_statuses):
+                    self._test_external_subnet(expected_status,
+                                               dn=self.dn_t1_l1_n1)
 
     def test_unmanaged_external_subnet(self):
         self._test_external_subnet('N/A')
