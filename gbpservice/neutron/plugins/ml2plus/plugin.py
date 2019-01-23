@@ -672,3 +672,74 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             nets = self._filter_nets_provider(context, nets, filters)
 
         return [db_utils.resource_fields(net, fields) for net in nets]
+
+    def _make_subnets_dict(self, subnets_db, fields=None, context=None):
+        subnets = []
+        for subnet_db in subnets_db:
+            res = {'id': subnet_db['id'],
+                   'name': subnet_db['name'],
+                   'tenant_id': subnet_db['tenant_id'],
+                   'network_id': subnet_db['network_id'],
+                   'ip_version': subnet_db['ip_version'],
+                   'subnetpool_id': subnet_db['subnetpool_id'],
+                   'enable_dhcp': subnet_db['enable_dhcp'],
+                   'ipv6_ra_mode': subnet_db['ipv6_ra_mode'],
+                   'ipv6_address_mode': subnet_db['ipv6_address_mode'],
+                   }
+            res['gateway_ip'] = str(
+                    subnet_db['gateway_ip']) if subnet_db['gateway_ip'] else (
+                    None)
+            res['cidr'] = subnet_db['cidr']
+            res['allocation_pools'] = [{'start': pool['first_ip'],
+                                       'end': pool['last_ip']}
+                                       for pool in
+                                       subnet_db['allocation_pools']]
+            res['host_routes'] = [{'destination': route['destination'],
+                                  'nexthop': route['nexthop']}
+                                  for route in subnet_db['routes']]
+            res['dns_nameservers'] = [dns['address']
+                                      for dns in subnet_db['dns_nameservers']]
+
+            # The shared attribute for a subnet is the same
+            # as its parent network
+            res['shared'] = self._is_network_shared(context,
+                                                    subnet_db.rbac_entries)
+
+            subnets.append((res, subnet_db))
+
+        resource_extend.apply_funcs(subnet_def.COLLECTION_NAME + '_BULK',
+                                    subnets, None)
+
+        result = []
+        for res, subnet_db in subnets:
+            res[api_plus.BULK_EXTENDED] = True
+            resource_extend.apply_funcs(subnet_def.COLLECTION_NAME,
+                                        res, subnet_db)
+            res.pop(api_plus.BULK_EXTENDED, None)
+            result.append(db_utils.resource_fields(res, []))
+
+        return result
+
+    @db_api.retry_if_session_inactive()
+    def get_subnets(self, context, filters=None, fields=None,
+                    sorts=None, limit=None, marker=None,
+                    page_reverse=False):
+
+        with db_api.context_manager.writer.using(context):
+            marker_obj = self._get_marker_obj(context, 'subnet', limit, marker)
+
+            # REVIST(sridar): We need to rethink if we want to support
+            # OVO. For now we put our head in the sand but this needs a
+            # revisit.
+            # Also, older branches are a slight variation, in line with
+            # upstream code.
+            subnets_db = self._get_collection(context, models_v2.Subnet,
+                                              filters=filters,
+                                              dict_func=None,
+                                              sorts=sorts,
+                                              limit=limit,
+                                              marker_obj=marker_obj,
+                                              page_reverse=page_reverse)
+
+            subnets = self._make_subnets_dict(subnets_db, fields, context)
+        return [self._fields(subnet, fields) for subnet in subnets]
