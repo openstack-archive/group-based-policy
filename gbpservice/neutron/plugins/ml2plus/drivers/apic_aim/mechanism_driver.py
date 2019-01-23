@@ -1100,47 +1100,71 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Non-external neutron subnets are unmapped from AIM Subnets as
         # they are removed from routers.
 
+    def extend_subnet_dict_bulk(self, session, results):
+        LOG.debug("APIC AIM MD Bulk extending dict for subnet: %s", results)
+
+        aim_ctx = aim_context.AimContext(session)
+        aim_resources = []
+        res_dict_by_aim_res_dn = {}
+
+        net_ids = []
+        for result in results:
+            net_ids.append(result[0]['network_id'])
+        net_ids = list(set(net_ids))
+
+        # TODO(sridar): Baked query - evaluate across branches,
+        # with in_
+        networks_db = (session.query(models_v2.Network).
+                       filter(models_v2.Network.id.in_(net_ids)).all())
+        net_map = {network['id']: network for network in networks_db}
+
+        for res_dict, subnet_db in results:
+            res_dict[cisco_apic.SYNC_STATE] = cisco_apic.SYNC_NOT_APPLICABLE
+            res_dict[cisco_apic.DIST_NAMES] = {}
+            dist_names = res_dict[cisco_apic.DIST_NAMES]
+
+            network_db = net_map.get(res_dict['network_id'], None)
+            # TODO(sridar): Not sure if this can happen -  validate.
+            if not network_db:
+                LOG.warning("Network not found in extend_subnet_dict_bulk "
+                            "for %s", subnet_db)
+                continue
+
+            if network_db.external is not None:
+                l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
+                                                               network_db)
+                if ext_net:
+                    sub = ns.get_subnet(aim_ctx, l3out,
+                                        self._subnet_to_gw_ip_mask(subnet_db))
+                    if sub:
+                        dist_names[cisco_apic.SUBNET] = sub.dn
+                        res_dict_by_aim_res_dn[sub.dn] = res_dict
+                        aim_resources.append(sub)
+            elif network_db.aim_mapping and network_db.aim_mapping.bd_name:
+                bd = self._get_network_bd(network_db.aim_mapping)
+
+                for gw_ip, router_id in self._subnet_router_ips(session,
+                                                                subnet_db.id):
+                    sn = self._map_subnet(subnet_db, gw_ip, bd)
+                    dist_names[gw_ip] = sn.dn
+                    res_dict_by_aim_res_dn[sn.dn] = res_dict
+                    aim_resources.append(sn)
+
+        for status in self.aim.get_statuses(aim_ctx, aim_resources):
+            res_dict = res_dict_by_aim_res_dn.get(status.resource_dn, {})
+            res_dict[cisco_apic.SYNC_STATE] = self._merge_status(
+                aim_ctx,
+                res_dict.get(cisco_apic.SYNC_STATE,
+                             cisco_apic.SYNC_NOT_APPLICABLE),
+                None, status=status)
+
     def extend_subnet_dict(self, session, subnet_db, result):
         if result.get(api_plus.BULK_EXTENDED):
             return
+
         LOG.debug("APIC AIM MD extending dict for subnet: %s", result)
 
-        sync_state = cisco_apic.SYNC_NOT_APPLICABLE
-        dist_names = {}
-        aim_ctx = aim_context.AimContext(session)
-
-        query = BAKERY(lambda s: s.query(
-            models_v2.Network))
-        query += lambda q: q.filter_by(
-            id=sa.bindparam('network_id'))
-        network_db = query(session).params(
-            network_id=subnet_db.network_id).one_or_none()
-
-        if not network_db:
-            LOG.warning("Network not found in extend_subnet_dict for %s",
-                        result)
-            return
-
-        if network_db.external is not None:
-            l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
-                                                               network_db)
-            if ext_net:
-                sub = ns.get_subnet(aim_ctx, l3out,
-                                    self._subnet_to_gw_ip_mask(subnet_db))
-                if sub:
-                    dist_names[cisco_apic.SUBNET] = sub.dn
-                    sync_state = self._merge_status(aim_ctx, sync_state, sub)
-        elif network_db.aim_mapping and network_db.aim_mapping.bd_name:
-            bd = self._get_network_bd(network_db.aim_mapping)
-
-            for gw_ip, router_id in self._subnet_router_ips(session,
-                                                            subnet_db.id):
-                sn = self._map_subnet(subnet_db, gw_ip, bd)
-                dist_names[gw_ip] = sn.dn
-                sync_state = self._merge_status(aim_ctx, sync_state, sn)
-
-        result[cisco_apic.DIST_NAMES] = dist_names
-        result[cisco_apic.SYNC_STATE] = sync_state
+        self.extend_subnet_dict_bulk(session, [(result, subnet_db)])
 
     def update_subnetpool_precommit(self, context):
         current = context.current
