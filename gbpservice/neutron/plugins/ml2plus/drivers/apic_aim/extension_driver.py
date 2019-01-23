@@ -173,6 +173,21 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 else:
                     LOG.exception("APIC AIM extend_subnet_dict failed")
 
+    def extend_subnet_dict_bulk(self, session, results):
+        try:
+            self._md.extend_subnet_dict_bulk(session, results)
+            for result, subnet_db in results:
+                res_dict = self.get_subnet_extn_db(session, subnet_db['id'])
+                result[cisco_apic.SNAT_HOST_POOL] = (
+                    res_dict.get(cisco_apic.SNAT_HOST_POOL, False))
+        except Exception as e:
+            with excutils.save_and_reraise_exception():
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_subnet_dict_bulk got retriable "
+                              "exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_subnet_dict_bulk failed")
+
     def process_create_subnet(self, plugin_context, data, result):
         res_dict = {cisco_apic.SNAT_HOST_POOL:
                     data.get(cisco_apic.SNAT_HOST_POOL, False)}
