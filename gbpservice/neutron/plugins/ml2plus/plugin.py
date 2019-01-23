@@ -27,6 +27,7 @@ from neutron.db import api as db_api
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.db import provisioning_blocks
+from neutron.objects import subnet as subnet_obj
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
@@ -604,3 +605,78 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.type_manager.extend_networks_dict_provider(context, net_data)
             nets = self._filter_nets_provider(context, net_data, filters)
         return [db_utils.resource_fields(net, fields) for net in nets]
+
+    def _make_subnets_dict(self, subnets_db, fields=None, context=None):
+        subnets = []
+        for subnet_db in subnets_db:
+            res = {'id': subnet_db['id'],
+                   'name': subnet_db['name'],
+                   'tenant_id': subnet_db['tenant_id'],
+                   'network_id': subnet_db['network_id'],
+                   'ip_version': subnet_db['ip_version'],
+                   'subnetpool_id': subnet_db['subnetpool_id'],
+                   'enable_dhcp': subnet_db['enable_dhcp'],
+                   'ipv6_ra_mode': subnet_db['ipv6_ra_mode'],
+                   'ipv6_address_mode': subnet_db['ipv6_address_mode'],
+                   }
+            res['gateway_ip'] = str(
+                    subnet_db['gateway_ip']) if subnet_db['gateway_ip'] else (
+                        None)
+            #TODO(sridar) Evaluate if we need to handle this
+            # workaround as present in neutron.
+            if isinstance(subnet_db, subnet_obj.Subnet):
+                res['cidr'] = str(subnet_db.cidr)
+                res['allocation_pools'] = [{'start': str(pool.start),
+                                           'end': str(pool.end)}
+                                           for pool in
+                                           subnet_db.allocation_pools]
+                res['host_routes'] = [{'destination': str(route.destination),
+                                       'nexthop': str(route.nexthop)}
+                                     for route in subnet_db.host_routes]
+                res['dns_nameservers'] = [str(dns.address)
+                                          for dns in subnet_db.dns_nameservers]
+                res['shared'] = subnet_db.shared
+            else:
+                res['cidr'] = subnet_db['cidr']
+                res['allocation_pools'] = [{'start': pool['first_ip'],
+                                           'end': pool['last_ip']}
+                                           for pool in
+                                           subnet_db['allocation_pools']]
+                res['host_routes'] = [{'destination': route['destination'],
+                                       'nexthop': route['nexthop']}
+                                      for route in subnet_db['routes']]
+                res['dns_nameservers'] = [dns['address']
+                                          for dns in
+                                          subnet_db['dns_nameservers']]
+
+                # The shared attribute for a subnet is the same
+                # as its parent network
+                res['shared'] = self._is_network_shared(context,
+                                                        subnet_db.rbac_entries)
+
+            subnets.append((res, subnet_db))
+
+        resource_extend.apply_funcs(subnet_def.COLLECTION_NAME + '_BULK',
+                                    subnets, None)
+
+        result = []
+        for res, subnet_db in subnets:
+            res[api_plus.BULK_EXTENDED] = True
+            if isinstance(subnet_db, subnet_obj.Subnet):
+                resource_extend.apply_funcs(subnet_def.COLLECTION_NAME,
+                                            res, subnet_db.db_obj)
+            else:
+                resource_extend.apply_funcs(subnet_def.COLLECTION_NAME,
+                                            res, subnet_db)
+            res.pop(api_plus.BULK_EXTENDED, None)
+            result.append(db_utils.resource_fields(res, []))
+
+        return result
+
+    @db_api.retry_if_session_inactive()
+    def get_subnets(self, context, filters=None, fields=None,
+                    sorts=None, limit=None, marker=None,
+                    page_reverse=False):
+        subnet_objs = self._get_subnets(context, filters, fields, sorts, limit,
+                                        marker, page_reverse)
+        return self._make_subnets_dict(subnet_objs, fields, context)
