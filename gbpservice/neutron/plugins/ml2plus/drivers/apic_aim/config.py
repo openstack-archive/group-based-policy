@@ -53,10 +53,15 @@ apic_opts = [
                 "plugin, formatted as a dictionary mapping Neutron external "
                 "network IDs (UUIDs) to ACI external network distinguished "
                 "names."),
+    # REVISIT: Eliminate the following two options, leaving a single
+    # RPC implementation.
     cfg.BoolOpt('enable_raw_sql_for_device_rpc',
                 default=False,
                 help=("This will use those raw SQL statements to speed "
                       "up the calculation of the EP file.")),
+    cfg.BoolOpt('enable_new_rpc',
+                default=False,
+                help=("Enable new RPC handler.")),
     cfg.IntOpt('apic_nova_vm_name_cache_update_interval', default=60,
                help=("How many seconds for the polling thread on each "
                      "controller should wait before it updates the nova vm "

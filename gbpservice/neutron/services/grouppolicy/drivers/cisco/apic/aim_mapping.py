@@ -61,6 +61,7 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import config  # noqa
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 LOG = logging.getLogger(__name__)
@@ -97,48 +98,6 @@ COMMON_TENANT_AIM_RESOURCES = [aim_resource.Contract.__name__,
                                aim_resource.FilterEntry.__name__]
 # REVISIT: override add_router_interface L3 API check for now
 NO_VALIDATE = cisco_apic_l3.OVERRIDE_NETWORK_ROUTING_TOPOLOGY_VALIDATION
-
-# REVISIT: Auto-PTG is currently config driven to align with the
-# config driven behavior of the older driver but is slated for
-# removal.
-opts = [
-    cfg.BoolOpt('create_auto_ptg',
-                default=True,
-                help=_("Automatically create a PTG when a L2 Policy "
-                       "gets created. This is currently an aim_mapping "
-                       "policy driver specific feature.")),
-    cfg.BoolOpt('create_per_l3p_implicit_contracts',
-                default=True,
-                help=_("This configuration is set to True to migrate a "
-                       "deployment that has l3_policies without implicit "
-                       "AIM contracts (these are deployments which have "
-                       "AIM implicit contracts per tenant). A Neutron server "
-                       "restart is required for this configuration to take "
-                       "effect. The creation of the implicit contracts "
-                       "happens at the time of the AIM policy driver "
-                       "initialization. The configuration can be set to "
-                       "False to avoid recreating the implicit contracts "
-                       "on subsequent Neutron server restarts. This "
-                       "option will be removed in the O release")),
-    cfg.BoolOpt('advertise_mtu',
-                default=True,
-                help=_('If True, advertise network MTU values if core plugin '
-                       'calculates them. MTU is advertised to running '
-                       'instances via DHCP and RA MTU options.')),
-    cfg.IntOpt('nested_host_vlan',
-               default=4094,
-               help=_("This is a locally siginificant VLAN used to provide "
-                      "connectivity to the OpenStack VM when configured "
-                      "to host the nested domain (Kubernetes/OpenShift).  "
-                      "Any traffic originating from the VM and intended "
-                      "to go on the Neutron network, is tagged with this "
-                      "VLAN. The VLAN is stripped by the Opflex installed "
-                      "flows on the integration bridge and the traffic is "
-                      "forwarded on the Neutron network.")),
-]
-
-
-cfg.CONF.register_opts(opts, "aim_mapping")
 
 
 class InvalidVrfForDualStackAddressScopes(exc.GroupPolicyBadRequest):
