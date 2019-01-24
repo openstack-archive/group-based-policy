@@ -38,6 +38,7 @@ from neutron.db import api as db_api
 from neutron.db import provisioning_blocks
 from neutron.db import segments_db
 from neutron.plugins.ml2 import driver_context
+from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
@@ -45,6 +46,7 @@ from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_tracked_resources as tr_res
 from neutron.tests.unit import testlib_api
+from neutron_lib.api.definitions import portbindings
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
@@ -8280,3 +8282,304 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
             mechanism_drivers=['logger', 'apic_aim'])
         self.expected_binding_info = [('apic_aim', 'opflex'),
                                       ('apic_aim', 'vlan')]
+
+
+class TestOpflexRpc(ApicAimTestCase):
+    def setUp(self, *args, **kwargs):
+        super(TestOpflexRpc, self).setUp(*args, **kwargs)
+
+    def _check_response(self, request, response, port, net, subnets,
+                        network_type='opflex', vm_name='someid'):
+        print("checking port: %s" % port)
+        print(" with net: %s" % net)
+        print(" with subnets: %s" % subnets)
+
+        epg = aim_resource.EndpointGroup.from_dn(
+            net['apic:distinguished_names']['EndpointGroup'])
+
+        vrf = aim_resource.VRF.from_dn(
+            net['apic:distinguished_names']['VRF'])
+
+        self.assertEqual(request['device'], response['device'])
+        self.assertEqual(request['request_id'], response['request_id'])
+        self.assertEqual(request['timestamp'], response['timestamp'])
+
+        neutron_details = response['neutron_details']
+        self.assertEqual(
+            port['admin_state_up'], neutron_details['admin_state_up'])
+        self.assertEqual(
+            port['device_owner'], neutron_details['device_owner'])
+        self.assertEqual(
+            sorted(port['fixed_ips'], key=lambda x: x['ip_address']),
+            sorted(neutron_details['fixed_ips'],
+                   key=lambda x: x['ip_address']))
+        self.assertEqual(net['id'], neutron_details['network_id'])
+        self.assertEqual(network_type, neutron_details['network_type'])
+        self.assertEqual('physnet1', neutron_details['physical_network'])
+        self.assertEqual(port['id'], neutron_details['port_id'])
+
+        gbp_details = response['gbp_details']
+        self.assertEqual(epg.app_profile_name, gbp_details['app_profile_name'])
+        self.assertEqual(request['device'], gbp_details['device'])
+        if self.driver.dhcp_lease_time > 0:
+            self.assertEqual(self.driver.dhcp_lease_time,
+                             gbp_details['dhcp_lease_time'])
+        else:
+            self.assertNotIn('dhcp_lease_time', gbp_details)
+        self.assertEqual(net['dns_domain'], gbp_details['dns_domain'])
+        self.assertEqual(self.driver.enable_dhcp_opt,
+                         gbp_details['enable_dhcp_optimization'])
+        self.assertEqual(self.driver.enable_metadata_opt,
+                         gbp_details['enable_metadata_optimization'])
+        self.assertEqual(epg.name, gbp_details['endpoint_group_name'])
+        # REVISIT: Test floating_ip.
+        self.assertEqual(port['binding:host_id'], gbp_details['host'])
+        self.assertEqual(vrf.tenant_name + ' ' + vrf.name,
+                         gbp_details['l3_policy_id'])
+        # REVISIT: Test host_snat_ips.
+        self.assertEqual(net['mtu'], gbp_details['interface_mtu'])
+        # REVISIT: Test ip_mapping.
+        self.assertEqual(port['mac_address'], gbp_details['mac_address'])
+        # nested_domain_* and nested_host_vlan tested in TestNestedDomain
+        self.assertEqual(port['id'], gbp_details['port_id'])
+        self.assertEqual(not port['port_security_enabled'],
+                         gbp_details['promiscuous_mode'])
+        self.assertEqual(epg.tenant_name, gbp_details['ptg_tenant'])
+        # REVISIT: Test security_group.
+        # segmentation_labels tested in TestPolicyTarget
+        self._check_response_subnets(gbp_details['subnets'], subnets)
+        self.assertEqual(vm_name, gbp_details['vm-name'])
+        self.assertEqual(vrf.name, gbp_details['vrf_name'])
+        self.assertEqual(sorted([sn['cidr'] for sn in subnets]),
+                         sorted(gbp_details['vrf_subnets']))
+        self.assertEqual(vrf.tenant_name, gbp_details['vrf_tenant'])
+
+        # trunk_details = response['trunk_details']
+
+    def _check_response_subnets(self, subnet_details, subnets):
+        self.assertEqual(len(subnets), len(subnet_details))
+        for subnet, details in zip(
+                sorted(subnets, key=lambda x: x['cidr']),
+                sorted(subnet_details, key=lambda x: x['cidr'])):
+            dhcp_ports = subnet.get('_dhcp_ports', [])
+            dhcp_server_ips = [ip['ip_address'] for port in dhcp_ports
+                               for ip in port['fixed_ips']
+                               if ip['subnet_id'] == subnet['id']]
+            dhcp_server_ports = {port['mac_address']:
+                                 [ip['ip_address']
+                                  for ip in port['fixed_ips']
+                                  if ip['subnet_id'] == subnet['id']]
+                                 for port in dhcp_ports}
+            self.assertEqual(len(dhcp_ports), len(dhcp_server_ports))
+            dns_nameservers = subnet['dns_nameservers'] or dhcp_server_ips
+            host_routes = subnet['host_routes']
+            gateway_ip = subnet['gateway_ip']
+            default_routes = []
+            metadata_routes = []
+            for route in host_routes:
+                if route['destination'] == '0.0.0.0/0':
+                    default_routes.append(route)
+                elif route['destination'] == '169.254.169.254/16':
+                    metadata_routes.append(route)
+            if not default_routes and gateway_ip:
+                host_routes.append(
+                    {'destination': '0.0.0.0/0', 'nexthop': gateway_ip})
+            if (not metadata_routes
+                and dhcp_server_ports and not default_routes):
+                # This test may not work if there are multiple DHCP
+                # ports for the subnet, since which DHCP port's IPs
+                # will be used for the metadata routes is not
+                # deterministic. Therefore, be sure to specify
+                # metadata routes or default routes for subnets with
+                # multiple DHCP ports.
+                for ip in dhcp_server_ports.values()[0]:
+                    host_routes.append(
+                        {'destination': '169.254.169.254/16',
+                         'nexthop': ip})
+
+            self.assertEqual(subnet['cidr'], details['cidr'])
+            self.assertEqual(sorted(dhcp_server_ips),
+                             sorted(details['dhcp_server_ips']))
+            self.assertEqual(dhcp_server_ports, details['dhcp_server_ports'])
+            self.assertEqual(sorted(dns_nameservers),
+                             sorted(details['dns_nameservers']))
+            self.assertEqual(gateway_ip, details['gateway_ip'])
+            self.assertEqual(subnet['enable_dhcp'], details['enable_dhcp'])
+            self.assertEqual(sorted(host_routes),
+                             sorted(details['host_routes']))
+            self.assertEqual(subnet['id'], details['id'])
+            self.assertEqual(subnet['ip_version'], details['ip_version'])
+
+    def _check_fail_response(self, request, response):
+        self.assertEqual(request['device'], response['device'])
+        self.assertEqual(request['request_id'], response['request_id'])
+        self.assertEqual(request['timestamp'], response['timestamp'])
+        self.assertNotIn('neutron_details', response)
+        self.assertNotIn('gbp_details', response)
+        self.assertNotIn('trunk_details', response)
+
+    def test_endpoint_details_bound(self):
+        self.driver.dhcp_lease_time = 100
+        host = 'host1'
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        net = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=('dns_domain',), dns_domain='example.com.')
+        net_id = net['network']['id']
+
+        dns_nameservers1 = ['192.168.1.201', '172.16.1.200']
+        host_routes1 = [
+            {'destination': '172.16.0.0/24', 'nexthop': '10.0.1.2'},
+            {'destination': '192.168.0.0/24', 'nexthop': '10.0.1.3'},
+        ]
+        subnet1 = self._make_subnet(
+            self.fmt, net, '10.0.1.1', '10.0.1.0/24',
+            dns_nameservers=dns_nameservers1,
+            host_routes=host_routes1)['subnet']
+        subnet1_id = subnet1['id']
+
+        host_routes2 = [
+            {'destination': '169.254.169.254/16', 'nexthop': '10.0.1.2'},
+        ]
+        subnet2 = self._make_subnet(
+            self.fmt, net, '10.0.2.1', '10.0.2.0/24',
+            host_routes=host_routes2)['subnet']
+        subnet2_id = subnet2['id']
+
+        subnet3 = self._make_subnet(
+            self.fmt, net, '10.0.3.1', '10.0.3.0/24')['subnet']
+        subnet3_id = subnet3['id']
+
+        # Create multiple DHCP ports and multiple subnets to exercise
+        # various combinations building dhcp_server_ids and
+        # dhcp_server_ports in subnet details. One subnet has two DHCP
+        # IPs on different DHCP ports. Another has two DHCP IPs on the
+        # same DHCP port, which does not seem very useful, but is
+        # allowed by Neutron.
+
+        dhcp1 = self._make_port(
+            self.fmt, net_id, fixed_ips=[
+                {'subnet_id': subnet1_id},
+                {'subnet_id': subnet2_id}],
+            device_owner='network:dhcp')['port']
+
+        dhcp2 = self._make_port(
+            self.fmt, net_id, fixed_ips=[
+                {'subnet_id': subnet2_id}],
+            device_owner='network:dhcp')['port']
+
+        dhcp3 = self._make_port(
+            self.fmt, net_id, fixed_ips=[
+                {'subnet_id': subnet3_id},
+                {'subnet_id': subnet3_id}],
+            device_owner='network:dhcp')['port']
+
+        subnet1['_dhcp_ports'] = [dhcp1]
+        subnet2['_dhcp_ports'] = [dhcp1, dhcp2]
+        subnet3['_dhcp_ports'] = [dhcp3]
+
+        subnets = [subnet1, subnet2, subnet3]
+        fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.10'},
+                     {'subnet_id': subnet2_id, 'ip_address': '10.0.2.20'},
+                     {'subnet_id': subnet3_id, 'ip_address': '10.0.3.30'}]
+
+        sg1 = self._make_security_group(
+            self.fmt, 'sg1', 'sg1name')['security_group']
+        sg2 = self._make_security_group(
+            self.fmt, 'sg2', 'sg2name')['security_group']
+        sg3 = self._make_security_group(
+            self.fmt, 'sg3', 'sg3name')['security_group']
+        security_groups = [sg1['id'], sg2['id'], sg3['id']]
+
+        port = self._make_port(
+            self.fmt, net_id, fixed_ips=fixed_ips,
+            security_groups=security_groups)['port']
+        port_id = port['id']
+
+        self.driver._set_vm_name(self.db_session, 'someid', 'a name')
+        port = self._bind_port_to_host(port_id, host)['port']
+        self.assertEqual('ovs', port['binding:vif_type'])
+
+        # Call the request_endpoint_details RPC handler.
+        request = {
+            'device': 'tap' + port_id,
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host=host)
+        print("request_endpoint_details response: %s" % response)
+
+        self._check_response(
+            request, response, port, net['network'], subnets, vm_name='a name')
+
+        # Call the get_vrf_details RPC handler and check its response.
+        vrf = aim_resource.VRF.from_dn(
+            net['network']['apic:distinguished_names']['VRF'])
+        vrf_id = vrf.tenant_name + ' ' + vrf.name
+        response = self.driver.get_vrf_details(
+            n_context.get_admin_context(), vrf_id=vrf_id)
+        print("get_vrf_details response: %s" % response)
+        self.assertEqual(vrf_id, response['l3_policy_id'])
+        self.assertEqual(vrf.tenant_name, response['vrf_tenant'])
+        self.assertEqual(vrf.name, response['vrf_name'])
+        self.assertEqual(sorted([sn['cidr'] for sn in subnets]),
+                         sorted(response['vrf_subnets']))
+
+    def test_endpoint_details_unbound(self):
+        host = 'host1'
+        net = self._make_network(self.fmt, 'net1', True)
+        net_id = net['network']['id']
+
+        subnet = self._make_subnet(
+            self.fmt, net, '10.0.1.1', '10.0.1.0/24')['subnet']
+
+        subnets = [subnet]
+
+        port = self._make_port(self.fmt, net_id)['port']
+        port_id = port['id']
+
+        # Not calling self._register_agent('host1', AGENT_CONF_OPFLEX)
+        # in order to force a hierarchical binding to ensure the
+        # bottom level segment info is returned from the RPC. Also,
+        # not calling self.driver._set_vm_name() to test use of
+        # device_id when name not in cache.
+        port = self._bind_port_to_host(port_id, host)['port']
+        self.assertEqual('ovs', port['binding:vif_type'])
+
+        # Unbind the port, as if binding failed, leaving it bindable.
+        self.db_session.query(ml2_models.PortBinding).filter_by(
+            port_id=port['id']).update(
+                {'vif_type': portbindings.VIF_TYPE_BINDING_FAILED})
+
+        # Call the RPC handler.
+        request = {
+            'device': 'tap' + port_id,
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host=host)
+        print("request_endpoint_details response: %s" % response)
+
+        self._check_response(
+            request, response, port, net['network'], subnets,
+            network_type='vlan')
+
+    def test_endpoint_details_nonexistent_port(self):
+        host = 'host1'
+
+        # Call the RPC handler.
+        request = {
+            'device': 'tapa9d98938-7bbe-4eae-ba2e-375f9bc3ab45',
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host=host)
+        print("request_endpoint_details response: %s" % response)
+
+        self._check_fail_response(request, response)
+
+    # REVISIT: Test with missing request, missing device, invalid
+    # device prefix, unbindable port, port bound to wrong host.
