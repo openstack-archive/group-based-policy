@@ -43,6 +43,7 @@ from neutron.db.models import l3 as l3_db
 from neutron.db.models import securitygroup as sg_models
 from neutron.db.models import segment as segments_model
 from neutron.db import models_v2
+from neutron.db.port_security import models as psec_models
 from neutron.db import provisioning_blocks
 from neutron.db import rbac_db_models
 from neutron.db import segments_db
@@ -135,6 +136,48 @@ ACI_PORT_DESCR_FORMATS = ('topology/pod-(\d+)/paths-(\d+)/pathep-'
 ACI_VPCPORT_DESCR_FORMAT = ('topology/pod-(\d+)/protpaths-(\d+)-(\d+)/pathep-'
                             '\[(.*)\]')
 
+
+EndpointPortInfo = namedtuple(
+    'EndpointPortInfo',
+    ['project_id',
+     'port_id',
+     'network_id',
+     'mac_address',
+     'admin_state_up',
+     'device_id',
+     'device_owner',
+     'host',
+     'vif_type',
+     'vif_details',
+     'port_psec_enabled',
+     'net_mtu',
+     'net_psec_enabled',
+     'nested_domain_name',
+     'nested_domain_type',
+     'nested_domain_infra_vlan',
+     'nested_domain_service_vlan',
+     'nested_domain_node_network_vlan',
+     'epg_name',
+     'epg_app_profile_name',
+     'epg_tenant_name',
+     'vrf_name',
+     'vrf_tenant_name',
+     'vm_name'])
+
+EndpointStaticIpInfo = namedtuple(
+    'EndpointStaticIpInfo',
+    ['ip_address',
+     'subnet_id',
+     'ip_version',
+     'cidr',
+     'enable_dhcp'])
+
+EndpointBindingInfo = namedtuple(
+    'EndpointBindingInfo',
+    ['host',
+     'level',
+     'network_type',
+     'physical_network'])
 
 InterfaceValidationInfo = namedtuple(
     'InterfaceValidationInfo',
@@ -261,8 +304,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
+        # REVISIT: Eliminate the following two variables, leaving a
+        # single RPC implementation.
         self.enable_raw_sql_for_device_rpc = (cfg.CONF.ml2_apic_aim.
                                               enable_raw_sql_for_device_rpc)
+        self.enable_new_rpc = cfg.CONF.ml2_apic_aim.enable_new_rpc
         self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
                                     apic_nova_vm_name_cache_update_interval)
         self._setup_nova_vm_update()
@@ -2283,6 +2329,317 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def delete_floatingip(self, context, current):
         if current['port_id']:
             self._notify_port_update_for_fip(context, current['port_id'])
+
+    # The following five methods handle RPCs from the Opflex agent.
+    #
+    # REVISIT: These handler methods are currently called by
+    # corresponding handler methods in the aim_mapping_rpc
+    # module. Once these RPC handlers are all fully implemented and
+    # tested, move the instantiation of the
+    # opflexagent.rpc.GBPServerRpcCallback class from aim_mapping_rpc
+    # to this module and eliminate the other RPC handler
+    # implementations.
+
+    def get_gbp_details(self, context, **kwargs):
+        LOG.debug("APIC AIM MD handling get_gbp_details for: %s", kwargs)
+
+        # REVISIT: This RPC is no longer invoked by the Opflex agent,
+        # and should be eliminated or should simply log an error, but
+        # it is used extensively in unit tests.
+
+        request = {'device': kwargs.get('device')}
+        host = kwargs.get('host')
+        response = self.request_endpoint_details(
+            context, request=request, host=host)
+        gbp_details = response.get('gbp_details')
+        return gbp_details or response
+
+    # REVISIT: def get_vrf_details(self, context, **kwargs):
+
+    def request_endpoint_details(self, context, **kwargs):
+        LOG.debug("APIC AIM MD handling get_endpoint_details for: %s", kwargs)
+
+        request = kwargs.get('request')
+        if not request:
+            LOG.error("Missing request in get_endpoint_details RPC: %s",
+                      kwargs)
+            return
+
+        device = request.get('device')
+        if not device:
+            LOG.error("Missing device in get_endpoint_details RPC: %s",
+                      kwargs)
+            return
+
+        host = kwargs.get('host')
+        if not host:
+            LOG.error("Missing host in get_endpoint_details RPC: %s",
+                      kwargs)
+            return
+
+        try:
+            return self._request_endpoint_details(context, request, host)
+        except Exception as e:
+            LOG.error("An exception occurred while processing "
+                      "get_endpoint_details RPC: %s", kwargs)
+            LOG.exception(e)
+            return {'device': device}
+
+    # REVISIT: def request_vrf_details(self, context, kwargs):
+
+    # REVISIT: def ip_address_owner_update(self, context, **kwargs):
+
+    @db_api.retry_if_session_inactive()
+    def _request_endpoint_details(self, context, request, host):
+        device = request['device']
+        info = {'device': device}
+        response = {
+            'device': device,
+            'request_id': request.get('request_id'),
+            'timestamp': request.get('timestamp')
+        }
+        print("_request_endpoint_details for device: %s" % device)
+
+        # Loop so we can bind the port, if necessary, outside the
+        # transaction in which we query the endpoint's state, and then
+        # retry.
+        while True:
+            # Start a read-only transaction. Separate read-write
+            # transactions will be used if needed to bind the port or
+            # assign SNAT IPs.
+            with db_api.context_manager.reader.using(context):
+                session = context.session
+
+                # Extract possibly truncated port ID from device.
+                #
+                # REVISIT: If device identifies the port by its MAC
+                # address instead of its UUID, _device_to_port_id()
+                # will query for the entire port DB object. So
+                # consider not calling _device_to_port_id() and
+                # instead removing any device prefix here and
+                # conditionally filtering in
+                # _query_endpoint_port_info() below on either the
+                # port's UUID or its mac_address.
+                port_id = self.plugin._device_to_port_id(context, device)
+
+                # Query for all the needed scalar (non-list) state
+                # associated with the port.
+                port_infos = self._query_endpoint_port_info(session, port_id)
+                print("got port_infos: %s" % port_infos)
+                if not port_infos:
+                    LOG.info("Nonexistent port %s in requent_endpoint_details "
+                             "RPC from host %s", (port_id, host))
+                    return response
+                if len(port_infos) > 1:
+                    LOG.info("Multiple ports start wtih %s in "
+                             "requent_endpoint_details RPC from host %s",
+                             (port_id, host))
+                    return response
+                port_info = port_infos[0]
+                info['port_info'] = port_info
+
+                # If port is bound, check host and do remaining
+                # queries.
+                if port_info.vif_type not in [
+                        portbindings.VIF_TYPE_UNBOUND,
+                        portbindings.VIF_TYPE_BINDING_FAILED]:
+                    print("port is  bound")
+
+                    # Check that port is bound to host making the RPC
+                    # request.
+                    if port_info.host != host:
+                        LOG.warning("Port %s bound to host %s, but "
+                                    "request_endpoint_details RPC made from "
+                                    "host %s",
+                                    (port_info.port_id, port_info.host, host))
+                        return response
+
+                    # Query for all needed state associated with each
+                    # of the port's static IPs.
+                    info['ip_info'] = self._query_endpoint_static_ip_info(
+                        session, port_info.port_id)
+                    print("got ip_info: %s" % info['ip_info'])
+
+                    # Query for list of state associated with each of
+                    # the port's binding levels, sorted by level.
+                    info['binding_info'] = self._query_endpoint_binding_info(
+                        session, port_info.port_id)
+                    print("got binding_info: %s" % info['binding_info'])
+
+                    # REVISIT: Query for SGs, etc..
+
+                    # Done with queries, so exit retry loop.
+                    break
+
+            # Attempt to bind port outside transaction.
+            print("attempting to bind port")
+            pc = self.plugin.get_bound_port_context(context, port_id)
+            if (pc.vif_type == portbindings.VIF_TYPE_BINDING_FAILED or
+                pc.vif_type == portbindings.VIF_TYPE_UNBOUND):
+                LOG.warning("The request_endpoint_details RPC handler is "
+                            "unable to bind port %(port)s on host %(host)s" %
+                            {'port': port_id, 'host': pc.host})
+                return response
+
+            # Successfully bound port, so loop to retry queries.
+
+        # Completed queries, so build up and return response.
+        response['neutron_details'] = self._build_endpoint_neutron_details(
+            info)
+        response['gbp_details'] = self._build_endpoint_gbp_details(info)
+        response['trunk_details'] = self._build_endpoint_trunk_details(info)
+        return response
+
+    def _query_endpoint_port_info(self, session, port_id):
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port.project_id,
+            models_v2.Port.id,
+            models_v2.Port.network_id,
+            models_v2.Port.mac_address,
+            models_v2.Port.admin_state_up,
+            models_v2.Port.device_id,
+            models_v2.Port.device_owner,
+            models.PortBinding.host,
+            models.PortBinding.vif_type,
+            models.PortBinding.vif_details,
+            psec_models.PortSecurityBinding.port_security_enabled,
+            models_v2.Network.mtu,
+            psec_models.NetworkSecurityBinding.port_security_enabled,
+            extension_db.NetworkExtensionDb.nested_domain_name,
+            extension_db.NetworkExtensionDb.nested_domain_type,
+            extension_db.NetworkExtensionDb.nested_domain_infra_vlan,
+            extension_db.NetworkExtensionDb.nested_domain_service_vlan,
+            extension_db.NetworkExtensionDb.
+            nested_domain_node_network_vlan,
+            db.NetworkMapping.epg_name,
+            db.NetworkMapping.epg_app_profile_name,
+            db.NetworkMapping.epg_tenant_name,
+            db.NetworkMapping.vrf_name,
+            db.NetworkMapping.vrf_tenant_name,
+            db.VMName.vm_name,
+        ))
+        query += lambda q: q.outerjoin(
+            models.PortBinding,
+            models.PortBinding.port_id == models_v2.Port.id)
+        query += lambda q: q.outerjoin(
+            psec_models.PortSecurityBinding,
+            psec_models.PortSecurityBinding.port_id == models_v2.Port.id)
+        query += lambda q: q.outerjoin(
+            models_v2.Network,
+            models_v2.Network.id == models_v2.Port.network_id)
+        query += lambda q: q.outerjoin(
+            psec_models.NetworkSecurityBinding,
+            psec_models.NetworkSecurityBinding.network_id ==
+            models_v2.Port.network_id)
+        query += lambda q: q.outerjoin(
+            extension_db.NetworkExtensionDb,
+            extension_db.NetworkExtensionDb.network_id ==
+            models_v2.Port.network_id)
+        query += lambda q: q.outerjoin(
+            db.NetworkMapping,
+            db.NetworkMapping.network_id == models_v2.Port.network_id)
+        query += lambda q: q.outerjoin(
+            db.VMName,
+            db.VMName.device_id == models_v2.Port.device_id)
+        query += lambda q: q.filter(
+            models_v2.Port.id.startswith(sa.bindparam('port_id')))
+        return [EndpointPortInfo._make(port) for port in
+                query(session).params(
+                    port_id=port_id)]
+
+    def _query_endpoint_static_ip_info(self, session, port_id):
+        query = BAKERY(lambda s: s.query(
+            models_v2.IPAllocation.ip_address,
+            models_v2.IPAllocation.subnet_id,
+            models_v2.Subnet.ip_version,
+            models_v2.Subnet.cidr,
+            models_v2.Subnet.enable_dhcp,
+        ))
+        query += lambda q: q.join(
+            models_v2.Subnet,
+            models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+        query += lambda q: q.filter(
+            models_v2.IPAllocation.port_id == sa.bindparam('port_id'))
+        return [EndpointStaticIpInfo._make(ip) for ip in
+                query(session).params(
+                    port_id=port_id)]
+
+    def _query_endpoint_binding_info(self, session, port_id):
+        query = BAKERY(lambda s: s.query(
+            models.PortBindingLevel.host,
+            models.PortBindingLevel.level,
+            segments_model.NetworkSegment.network_type,
+            segments_model.NetworkSegment.physical_network,
+        ))
+        query += lambda q: q.join(
+            segments_model.NetworkSegment,
+            segments_model.NetworkSegment.id ==
+            models.PortBindingLevel.segment_id)
+        query += lambda q: q.filter(
+            models.PortBindingLevel.port_id == sa.bindparam('port_id'))
+        query += lambda q: q.order_by(
+            models.PortBindingLevel.level)
+        return [EndpointBindingInfo._make(level) for level in
+                query(session).params(
+                    port_id=port_id)]
+
+    def _build_endpoint_neutron_details(self, info):
+        port_info = info['port_info']
+        ip_info = info['ip_info']
+        binding_info = info['binding_info']
+
+        details = {}
+        details['admin_state_up'] = port_info.admin_state_up
+        details['device_owner'] = port_info.device_owner
+        details['fixed_ips'] = [
+            {'subnet_id': ip.subnet_id, 'ip_address': ip.ip_address}
+            for ip in ip_info]
+        details['network_id'] = port_info.network_id
+        details['network_type'] = binding_info[-1].network_type
+        details['physical_network'] = binding_info[-1].physical_network
+        details['port_id'] = port_info.port_id
+
+        return details
+
+    def _build_endpoint_gbp_details(self, info):
+        port_info = info['port_info']
+
+        # Note that the GBP policy driver will replace these
+        # app_profile_name, endpoint_group_name, ptg_tenant,
+        # ... values if the port belongs to a GBP PolicyTarget.
+
+        details = {}
+        details['app_profile_name'] = port_info.epg_app_profile_name
+        details['device'] = info['device']  # Redundant.
+        details['enable_dhcp_optimization'] = self.enable_dhcp_opt
+        details['enable_metadata_optimization'] = self.enable_metadata_opt
+        details['endpoint_group_name'] = port_info.epg_name
+        details['l3_policy_id'] = ("%s %s" %
+                                   (port_info.vrf_tenant_name,
+                                    port_info.vrf_name))
+        details['mac_address'] = port_info.mac_address
+        details['port_id'] = port_info.port_id  # Redundant.
+        details['ptg_tenant'] = port_info.epg_tenant_name
+        details['subnets'] = self._build_subnet_details(info)
+        details['vm-name'] = (port_info.vm_name if
+                              port_info.device_owner.startswith('compute:') and
+                              port_info.vm_name else port_info.device_id)
+        details['vrf_name'] = port_info.vrf_name
+        details['vrf_tenant'] = port_info.vrf_tenant_name
+
+        return details
+
+    def _build_subnet_details(self, info):
+        details = []
+        for ip in info['ip_info']:
+            subnet = {}
+            subnet['cidr'] = ip.cidr
+            details.append(subnet)
+        return details
+
+    def _build_endpoint_trunk_details(self, info):
+        # REVISIT: Implement.
+        return
 
     # Topology RPC method handler
     def update_link(self, context, host, interface, mac,

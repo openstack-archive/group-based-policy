@@ -38,6 +38,7 @@ from neutron.db import api as db_api
 from neutron.db import provisioning_blocks
 from neutron.db import segments_db
 from neutron.plugins.ml2 import driver_context
+from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
@@ -45,6 +46,7 @@ from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_tracked_resources as tr_res
 from neutron.tests.unit import testlib_api
+from neutron_lib.api.definitions import portbindings
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
@@ -8231,3 +8233,154 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
             mechanism_drivers=['logger', 'apic_aim'])
         self.expected_binding_info = [('apic_aim', 'opflex'),
                                       ('apic_aim', 'vlan')]
+
+
+class TestOpflexRpc(ApicAimTestCase):
+    def setUp(self, *args, **kwargs):
+        super(TestOpflexRpc, self).setUp(*args, **kwargs)
+
+    def _check_response(self, port, net, request, response,
+                        network_type='opflex', vm_name='someid'):
+        print("checking port: %s" % port)
+        print("checking net: %s" % net)
+
+        epg = aim_resource.EndpointGroup.from_dn(
+            net['apic:distinguished_names']['EndpointGroup'])
+
+        vrf = aim_resource.VRF.from_dn(
+            net['apic:distinguished_names']['VRF'])
+
+        self.assertEqual(request['device'], response['device'])
+        self.assertEqual(request['request_id'], response['request_id'])
+        self.assertEqual(request['timestamp'], response['timestamp'])
+
+        neutron_details = response['neutron_details']
+        self.assertEqual(
+            port['admin_state_up'], neutron_details['admin_state_up'])
+        self.assertEqual(
+            port['device_owner'], neutron_details['device_owner'])
+        self.assertEqual(
+            port['fixed_ips'], neutron_details['fixed_ips'])
+        self.assertEqual(net['id'], neutron_details['network_id'])
+        self.assertEqual(network_type, neutron_details['network_type'])
+        self.assertEqual('physnet1', neutron_details['physical_network'])
+        self.assertEqual(port['id'], neutron_details['port_id'])
+
+        gbp_details = response['gbp_details']
+        self.assertEqual(epg.app_profile_name, gbp_details['app_profile_name'])
+        self.assertEqual(request['device'], gbp_details['device'])
+        # enable_dhcp_optimization tested in TestGbpDetailsForML2
+        # enable_metadata_optimization tested in TestGbpDetailsForML2
+        self.assertEqual(epg.name, gbp_details['endpoint_group_name'])
+        self.assertEqual(vrf.tenant_name + ' ' + vrf.name,
+                         gbp_details['l3_policy_id'])
+        self.assertEqual(port['mac_address'], gbp_details['mac_address'])
+        self.assertEqual(port['id'], gbp_details['port_id'])
+        self.assertEqual(epg.tenant_name, gbp_details['ptg_tenant'])
+        # subnets tested in TestGbpDetailsForML2
+        self.assertEqual(vm_name, gbp_details['vm-name'])
+        self.assertEqual(vrf.name, gbp_details['vrf_name'])
+        self.assertEqual(vrf.tenant_name, gbp_details['vrf_tenant'])
+
+        # trunk_details = response['trunk_details']
+
+    def _check_fail_response(self, request, response):
+        self.assertEqual(request['device'], response['device'])
+        self.assertEqual(request['request_id'], response['request_id'])
+        self.assertEqual(request['timestamp'], response['timestamp'])
+        self.assertNotIn('neutron_details', response)
+        self.assertNotIn('gbp_details', response)
+        self.assertNotIn('trunk_details', response)
+
+    def test_endpoint_details_bound(self):
+        host = 'host1'
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        subnet1 = self._make_subnet(
+            self.fmt, net, '10.0.1.1', '10.0.1.0/24')['subnet']
+        subnet2 = self._make_subnet(
+            self.fmt, net, '10.0.2.1', '10.0.2.0/24')['subnet']
+        subnet3 = self._make_subnet(
+            self.fmt, net, '10.0.3.1', '10.0.3.0/24')['subnet']
+        fixed_ips = [{'subnet_id': subnet1['id'], 'ip_address': '10.0.1.10'},
+                     {'subnet_id': subnet2['id'], 'ip_address': '10.0.2.20'},
+                     {'subnet_id': subnet3['id'], 'ip_address': '10.0.3.30'}]
+        sg1 = self._make_security_group(
+            self.fmt, 'sg1', 'sg1name')['security_group']
+        sg2 = self._make_security_group(
+            self.fmt, 'sg2', 'sg2name')['security_group']
+        sg3 = self._make_security_group(
+            self.fmt, 'sg3', 'sg3name')['security_group']
+        security_groups = [sg1['id'], sg2['id'], sg3['id']]
+        port = self._make_port(
+            self.fmt, net['network']['id'], fixed_ips=fixed_ips,
+            security_groups=security_groups)['port']
+        port_id = port['id']
+        self.driver._set_vm_name(self.db_session, 'someid', 'a name')
+        port = self._bind_port_to_host(port_id, host)['port']
+        self.assertEqual('ovs', port['binding:vif_type'])
+
+        # Call the RPC handler.
+        request = {
+            'device': 'tap' + port_id,
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host=host)
+        print("response: %s" % response)
+
+        self._check_response(
+            port, net['network'], request, response, vm_name='a name')
+
+    def test_endpoint_details_unbound(self):
+        host = 'host1'
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        # Not calling self._register_agent('host1', AGENT_CONF_OPFLEX)
+        # in order to force a hierarchical binding to ensure the
+        # bottom level segment info is returned from the RPC. Also,
+        # not calling self.driver._set_vm_name() to test use of
+        # device_id when name not in cache.
+        port = self._bind_port_to_host(port_id, host)['port']
+        self.assertEqual('ovs', port['binding:vif_type'])
+
+        # Unbind the port, as if binding  failed, leaving it bindable.
+        self.db_session.query(ml2_models.PortBinding).filter_by(
+            port_id=port['id']).update(
+                {'vif_type': portbindings.VIF_TYPE_BINDING_FAILED})
+        # self.db_session.query(ml2_models.PortBindingLevel).filter_by(
+        #     port_id=port_id).delete()
+
+        # Call the RPC handler.
+        request = {
+            'device': 'tap' + port_id,
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host=host)
+        print("response: %s" % response)
+
+        self._check_response(
+            port, net['network'], request, response, network_type='vlan')
+
+    def test_endpoint_details_nonexistent_port(self):
+        host = 'host1'
+
+        # Call the RPC handler.
+        request = {
+            'device': 'tapa9d98938-7bbe-4eae-ba2e-375f9bc3ab45',
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host=host)
+        print("response: %s" % response)
+
+        self._check_fail_response(request, response)
+
+    # REVISIT: Test with missing request, missing device, invalid
+    # device prefix, unbindable port, port bound to wrong host.

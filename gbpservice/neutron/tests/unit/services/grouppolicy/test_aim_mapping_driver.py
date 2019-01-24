@@ -2629,6 +2629,11 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
 class TestGbpDetailsForML2(AIMBaseTestCase,
                            test_securitygroup.SecurityGroupsTestCase):
 
+    # REVISIT: Once the new RPC handler implementation in the apic_aim
+    # mechanism driver is complete and tested, move this unit test
+    # class to test_apic_aim (or a new module) and remove the
+    # enable_raw_sql and enable_new_rpc flags.
+
     def setUp(self, *args, **kwargs):
         super(TestGbpDetailsForML2, self).setUp(*args, **kwargs)
         cfg.CONF.set_override('path_mtu', 1000, group='ml2')
@@ -2715,9 +2720,11 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
                          mapping['host_snat_ips'][0])
 
     def _do_test_get_gbp_details(self, pre_vrf=None,
-                                 enable_raw_sql=False):
+                                 enable_raw_sql=False,
+                                 enable_new_rpc=False):
         self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
                                                 enable_raw_sql)
+        self.driver.aim_mech_driver.enable_new_rpc = enable_new_rpc
         self.driver.aim_mech_driver.apic_optimized_dhcp_lease_time = 100
         ext_net1, rtr1, ext_net1_sub = self._setup_external_network(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
@@ -2892,6 +2899,9 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
     def test_get_gbp_details_with_raw_sql(self):
         self._do_test_get_gbp_details(enable_raw_sql=True)
 
+    def test_get_gbp_details_with_new_rpc(self):
+        self._do_test_get_gbp_details(enable_new_rpc=True)
+
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
         vrf = self.aim_mgr.create(
@@ -2906,6 +2916,14 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
                                       monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf,
                                       enable_raw_sql=True)
+
+    def test_get_gbp_details_pre_existing_vrf_with_new_rpc(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        vrf = self.aim_mgr.create(
+            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                      monitored=True))
+        self._do_test_get_gbp_details(pre_vrf=vrf,
+                                      enable_new_rpc=True)
 
 
 class TestPolicyTarget(AIMBaseTestCase,
