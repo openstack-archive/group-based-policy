@@ -2092,6 +2092,32 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context._plugin_context, port['id'], resources.PORT,
                 provisioning_blocks.L2_AGENT_ENTITY)
 
+    def _check_allowed_address_pairs(self, context, port):
+        if not self.gbp_driver:
+            return
+        aap_current = context.current.get('allowed_address_pairs', [])
+        aap_original = context.original.get('allowed_address_pairs', [])
+        # If there was a change in configured AAPs, then we may need
+        # to clean up the owned IPs table
+        p_context = context._plugin_context
+        if aap_current != aap_original:
+            curr_ips = [aap['ip_address'] for aap in aap_current]
+            orig_ips = [aap['ip_address'] for aap in aap_original]
+            removed = list(set(orig_ips) - set(curr_ips))
+            for aap in removed:
+                cidr = netaddr.IPNetwork(aap)
+                with db_api.context_manager.writer.using(p_context) as session:
+                    # Get all the owned IP addresses for the port, and if
+                    # they match a removed AAP entry, delete that entry
+                    # from the DB
+                    ha_handler = self.gbp_driver.ha_ip_handler
+                    ha_ips = ha_handler.get_ha_ipaddresses_for_port(port['id'],
+                        session=session)
+                    for ip in ha_ips:
+                        if ip in cidr:
+                            ha_handler.delete_port_id_for_ha_ipaddress(
+                                port['id'], ip, session=session)
+
     def update_port_precommit(self, context):
         port = context.current
         if context.original_host and context.original_host != context.host:
@@ -2110,6 +2136,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
         self._update_sg_rule_with_remote_group_set(context, port)
+        self._check_allowed_address_pairs(context, port)
         self._insert_provisioning_block(context)
         registry.notify(aim_cst.GBP_PORT, events.PRECOMMIT_UPDATE,
                         self, driver_context=context)
@@ -3445,11 +3472,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 .join(models_v2.Port,
                       models_v2.Port.id ==
                       n_addr_pair_db.AllowedAddressPair.port_id)
-                .filter(models_v2.Port.network_id == port['network_id'])
-                .filter(n_addr_pair_db.AllowedAddressPair.ip_address.in_(
-                    fixed_ips)).all())
+                .filter(models_v2.Port.network_id == port['network_id']).all())
 
-            ports_to_notify.extend([x['port_id'] for x in addr_pair])
+            notify_pairs = []
+            # In order to support use of CIDRs in allowed-address-pairs,
+            # we can't include the fxied IPs in the DB query, and instead
+            # have to qualify that with post-DB processing
+            for a_pair in addr_pair:
+                cidr = netaddr.IPNetwork(a_pair['ip_address'])
+                for addr in fixed_ips:
+                    if addr in cidr:
+                        notify_pairs.append(a_pair)
+
+            ports_to_notify.extend([x['port_id'] for x in set(notify_pairs)])
         for p in sorted(ports_to_notify):
             self._notify_port_update(plugin_context, p)
 

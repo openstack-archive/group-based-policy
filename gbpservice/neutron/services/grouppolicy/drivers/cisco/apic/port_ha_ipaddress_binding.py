@@ -80,9 +80,9 @@ class PortForHAIPAddress(object):
             ipaddress=ipaddress, network_id=network_id).first()
         return port_ha_ip
 
-    def get_ha_ipaddresses_for_port(self, port_id):
+    def get_ha_ipaddresses_for_port(self, port_id, session=None):
         """Returns the HA IP Addressses associated with a Port."""
-        session = db_api.get_reader_session()
+        session = session or db_api.get_reader_session()
 
         query = BAKERY(lambda s: s.query(
             HAIPAddressToPortAssocation))
