@@ -5666,7 +5666,15 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             host='h1')
         self.assertTrue(details['promiscuous_mode'])
 
-    def test_gbp_details_for_allowed_address_pair(self):
+    def _aap_is_cidr(self, aap):
+        cidr = netaddr.IPNetwork(aap['ip_address'])
+        if cidr.prefixlen != 32:
+            return True
+        else:
+            return False
+
+    def _test_gbp_details_for_allowed_address_pair(self, allow_addr,
+            owned_addr, update_addr, update_owned_addr):
         self._register_agent('h1', test_aim_md.AGENT_CONF_OPFLEX)
         self._register_agent('h2', test_aim_md.AGENT_CONF_OPFLEX)
         net = self._make_network(self.fmt, 'net1', True)
@@ -5674,12 +5682,8 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             'subnet']
         sub2 = self._make_subnet(self.fmt, net, '1.2.3.1', '1.2.3.0/24')[
             'subnet']
-        allow_addr = [{'ip_address': '1.2.3.250',
-                       'mac_address': '00:00:00:AA:AA:AA'},
-                      {'ip_address': '1.2.3.251',
-                       'mac_address': '00:00:00:BB:BB:BB'}]
 
-        # create 2 ports with same allowed-addresses
+        # create 2 ports configured with the same allowed-addresses
         p1 = self._make_port(self.fmt, net['network']['id'],
                              arg_list=('allowed_address_pairs',),
                              device_owner='compute:',
@@ -5692,21 +5696,62 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                              allowed_address_pairs=allow_addr)['port']
         self._bind_port_to_host(p1['id'], 'h1')
         self._bind_port_to_host(p2['id'], 'h2')
-        self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
-            p1['id'], '1.2.3.250')
-        self.driver.ha_ip_handler.set_port_id_for_ha_ipaddress(
-            p2['id'], '1.2.3.251')
-        allow_addr[0]['active'] = True
+        # Call agent => plugin RPC to get the details for each port. The
+        # results should only have the configured AAPs, with none of them
+        # active.
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         self.assertEqual(allow_addr, details['allowed_address_pairs'])
-        del allow_addr[0]['active']
-        allow_addr[1]['active'] = True
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         self.assertEqual(allow_addr, details['allowed_address_pairs'])
+
+        # Call agent => plugin RPC, requesting ownership of a /32 IP
+        ip_owner_info = {'port': p1['id'],
+                         'ip_address_v4': owned_addr[0],
+                         'network_id': p1['network_id']}
+        self.driver.update_ip_owner(ip_owner_info)
+        # Call RPC sent by the agent to get the details for p1
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+
+        # response should be a list containing both configured and owned AAPs.
+        # Only the owned entries will have the 'active' property (set to True).
+        def _get_expected_aaps(allow_addr, owned_addr):
+            extra_aaps = []
+            expected_aaps = copy.deepcopy(allow_addr)
+            for aap in expected_aaps:
+                if aap['ip_address'] == owned_addr:
+                    aap['active'] = True
+                elif self._aap_is_cidr(aap):
+                    # If the configured AAP is a CIDR, the response should
+                    # include both the CIDR (not active) and the owned IP
+                    # address (i.e. /32) from that CIDR (active)
+                    extra_aaps.append({'ip_address': owned_addr,
+                                       'mac_address': aap['mac_address'],
+                                       'active': True})
+            if extra_aaps:
+                expected_aaps.extend(extra_aaps)
+            return expected_aaps
+
+        expected_aaps1 = _get_expected_aaps(allow_addr, owned_addr[0])
+        self.assertEqual(expected_aaps1, details['allowed_address_pairs'])
+
+        # Call RPC sent by the agent, requesting ownership of a /32 IP
+        ip_owner_info = {'port': p2['id'],
+                         'ip_address_v4': owned_addr[1],
+                         'network_id': p2['network_id']}
+        self.driver.update_ip_owner(ip_owner_info)
+        # Call RPC sent by the agent to get the details for p2
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h2')
+        expected_aaps2 = _get_expected_aaps(allow_addr, owned_addr[1])
+
+        self.assertEqual(expected_aaps2, details['allowed_address_pairs'])
 
         # set allowed-address as fixed-IP of ports p3 and p4, which also have
         # floating-IPs. Verify that FIP is "stolen" by p1 and p2
@@ -5763,6 +5808,66 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self._check_call_list(
             expected_calls,
             self.driver.aim_mech_driver._notify_port_update.call_args_list)
+
+        # Change the allowed address pair, and verify that the IP(s)
+        # from the old pair are removed from the mapping table
+        p1 = self._update('ports', p1['id'],
+            {'port': {'allowed_address_pairs': update_addr}},
+            neutron_context=self._neutron_admin_context)['port']
+        ips = self.driver.ha_ip_handler.get_ha_ipaddresses_for_port(p1['id'])
+        self.assertEqual(ips, [])
+        # Request ownership of the new AAP
+        ip_owner_info = {'port': p1['id'],
+                         'ip_address_v4': update_owned_addr[0],
+                         'network_id': p1['network_id']}
+        self.driver.update_ip_owner(ip_owner_info)
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p1['id'],
+            host='h1')
+        expected_aaps3 = _get_expected_aaps(update_addr, update_owned_addr[0])
+        self.assertEqual(expected_aaps3, details['allowed_address_pairs'])
+
+        p2 = self._update('ports', p2['id'],
+            {'port': {'allowed_address_pairs': update_addr}},
+            neutron_context=self._neutron_admin_context)['port']
+        ips = self.driver.ha_ip_handler.get_ha_ipaddresses_for_port(p2['id'])
+        self.assertEqual(ips, [])
+        # Request ownership of the new AAP
+        ip_owner_info = {'port': p2['id'],
+                         'ip_address_v4': update_owned_addr[1],
+                         'network_id': p2['network_id']}
+        self.driver.update_ip_owner(ip_owner_info)
+        details = self.driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h2')
+        expected_aaps4 = _get_expected_aaps(update_addr, update_owned_addr[1])
+        self.assertEqual(expected_aaps4, details['allowed_address_pairs'])
+
+    def test_gbp_details_for_allowed_address_pair(self):
+        # 'aap' is configured, 'owned' is IP requested from agent
+        allow_addr = [{'ip_address': '1.2.3.250',
+                       'mac_address': '00:00:00:AA:AA:AA'},
+                      {'ip_address': '1.2.3.251',
+                       'mac_address': '00:00:00:BB:BB:BB'}]
+        owned_addr = ['1.2.3.250', '1.2.3.251']
+        update_addr = [{'ip_address': '2.3.4.250',
+                        'mac_address': '00:00:00:CC:CC:CC'},
+                       {'ip_address': '2.3.4.251',
+                        'mac_address': '00:00:00:DD:DD:DD'}]
+        update_owned_addr = ['2.3.4.250', '2.3.4.251']
+        self._test_gbp_details_for_allowed_address_pair(allow_addr,
+            owned_addr, update_addr, update_owned_addr)
+
+    def test_gbp_details_for_allowed_address_pair_cidr(self):
+        # 'aap' is configured, 'owned' is IP requested from agent
+        allow_addr = [{'ip_address': '1.2.3.0/24',
+                       'mac_address': '00:00:00:AA:AA:AA'}]
+        owned_addr = ['1.2.3.250', '1.2.3.251']
+        update_addr = [{'ip_address': '2.3.4.0/24',
+                        'mac_address': '00:00:00:BB:BB:BB'}]
+        update_owned_addr = ['2.3.4.250', '2.3.4.251']
+        self._test_gbp_details_for_allowed_address_pair(allow_addr,
+            owned_addr, update_addr, update_owned_addr)
 
     def test_port_bound_other_agent(self):
         self._register_agent('h1', test_aim_md.AGENT_CONF_OPFLEX)
