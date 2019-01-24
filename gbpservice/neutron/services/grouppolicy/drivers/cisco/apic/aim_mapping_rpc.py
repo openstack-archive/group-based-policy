@@ -80,13 +80,28 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             return {'l3_policy_id': vrf}
 
     def get_vrf_details(self, context, **kwargs):
+        if self.aim_mech_driver.enable_new_rpc:
+            # REVISIT: Eliminate other RPC implementations and
+            # move this handler directly to the mechanism driver.
+            return self.aim_mech_driver.get_vrf_details(
+                context, **kwargs)
         return self._get_vrf_details(context, **kwargs)
 
     def request_vrf_details(self, context, **kwargs):
+        if self.aim_mech_driver.enable_new_rpc:
+            # REVISIT: Eliminate other RPC implementations and
+            # move this handler directly to the mechanism driver.
+            return self.aim_mech_driver.request_vrf_details(
+                context, **kwargs)
         return self._get_vrf_details(context, **kwargs)
 
     def get_gbp_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_gbp_details for: %s", kwargs)
+        if self.aim_mech_driver.enable_new_rpc:
+            # REVISIT: Eliminate other RPC implementations and
+            # move this handler directly to the mechanism driver.
+            return self.aim_mech_driver.get_gbp_details(
+                context, **kwargs)
         try:
             return self._get_gbp_details(context, kwargs, kwargs.get('host'))
         except Exception as e:
@@ -98,6 +113,11 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
 
     def request_endpoint_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_endpoint_details for: %s", kwargs)
+        if self.aim_mech_driver.enable_new_rpc:
+            # REVISIT: Eliminate other RPC implementations and
+            # move this handler directly to the mechanism driver.
+            return self.aim_mech_driver.request_endpoint_details(
+                context, **kwargs)
         request = kwargs.get('request')
         try:
             return self._request_endpoint_details(context, **kwargs)
