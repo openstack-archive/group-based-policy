@@ -85,16 +85,20 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import rpc
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
 
+# REVISIT: We need the aim_mapping policy driver's config until
+# advertise_mtu and nested_host_vlan are moved to the mechanism
+# driver's own config. Also, the noqa comment has to be on the same
+# line as the entire import.
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import config as pd_config  # noqa
+
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery(500)
-
-DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
-DEVICE_OWNER_SVI_PORT = 'apic:svi'
 
 ANY_FILTER_NAME = 'AnyFilter'
 ANY_FILTER_ENTRY_NAME = 'AnyFilterEntry'
@@ -112,8 +116,6 @@ SUPPORTED_VNIC_TYPES = [portbindings.VNIC_NORMAL,
 
 AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
-PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
-                     n_constants.DEVICE_OWNER_LOADBALANCER]
 VIF_TYPE_FABRIC = 'fabric'
 FABRIC_HOST_ID = 'fabric'
 
@@ -199,7 +201,8 @@ class KeystoneNotificationEndpoint(object):
 
 class ApicMechanismDriver(api_plus.MechanismDriver,
                           db.DbMixin,
-                          extension_db.ExtensionDbMixin):
+                          extension_db.ExtensionDbMixin,
+                          rpc.ApicRpcHandlerMixin):
     NIC_NAME_LEN = 14
 
     class TopologyRpcEndpoint(object):
@@ -239,6 +242,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             cfg.CONF.ml2_apic_aim.enable_optimized_metadata)
         self.enable_dhcp_opt = (
             cfg.CONF.ml2_apic_aim.enable_optimized_dhcp)
+        # REVISIT: The following 2 items should be moved to
+        # the ml2_apic_aim group.
+        self.nested_host_vlan = cfg.CONF.aim_mapping.nested_host_vlan
+        self.advertise_mtu = cfg.CONF.aim_mapping.advertise_mtu
         self.ap_name = 'OpenStack'
         self.apic_system_id = cfg.CONF.apic_system_id
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
@@ -261,8 +268,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
+        # REVISIT: Eliminate the following two variables, leaving a
+        # single RPC implementation.
         self.enable_raw_sql_for_device_rpc = (cfg.CONF.ml2_apic_aim.
                                               enable_raw_sql_for_device_rpc)
+        self.enable_new_rpc = cfg.CONF.ml2_apic_aim.enable_new_rpc
         self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
                                     apic_nova_vm_name_cache_update_interval)
         self._setup_nova_vm_update()
@@ -663,7 +673,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 aim_ext_subnet_ipv4 = aim_resource.ExternalSubnet(
                     tenant_name=tenant_aname,
                     l3out_name=aname,
-                    external_network_name=L3OUT_EXT_EPG, cidr='0.0.0.0/0',
+                    external_network_name=L3OUT_EXT_EPG,
+                    cidr=aim_cst.IPV4_ANY_CIDR,
                     scope=scope,
                     aggregate=aggregate)
                 self.aim.create(aim_ctx, aim_ext_subnet_ipv4)
@@ -3515,7 +3526,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             snat_port_query = ("SELECT id FROM ports "
                           "WHERE network_id = '" + ext_network['id'] + "' "
                           "AND device_id = '" + host_or_vrf + "' AND "
-                          "device_owner = '" + DEVICE_OWNER_SNAT_PORT + "'")
+                          "device_owner = '" + aim_cst.DEVICE_OWNER_SNAT_PORT +
+                          "'")
             snat_port = session.execute(snat_port_query).first()
             if snat_port:
                 snat_port = dict(snat_port)
@@ -3534,7 +3546,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             query += lambda q: q.filter(
                 models_v2.Port.network_id == sa.bindparam('network_id'),
                 models_v2.Port.device_id == sa.bindparam('device_id'),
-                models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+                models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
             snat_port = query(session).params(
                 network_id=ext_network['id'],
                 device_id=host_or_vrf).first()
@@ -3573,7 +3585,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             for snat_subnet in snat_subnets:
                 try:
                     attrs = {'device_id': host_or_vrf,
-                             'device_owner': DEVICE_OWNER_SNAT_PORT,
+                             'device_owner': aim_cst.DEVICE_OWNER_SNAT_PORT,
                              'tenant_id': ext_network['tenant_id'],
                              'name': 'snat-pool-port:%s' % host_or_vrf,
                              'network_id': ext_network['id'],
@@ -3620,7 +3632,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         query += lambda q: q.filter(
             models_v2.IPAllocation.subnet_id == sa.bindparam('subnet_id'))
         query += lambda q: q.filter(
-            models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+            models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
         return query(session).params(
             subnet_id=subnet_id).first()
 
@@ -3645,7 +3657,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 models_v2.Port.id))
             query += lambda q: q.filter(
                 models_v2.Port.network_id == sa.bindparam('ext_network_id'),
-                models_v2.Port.device_owner == DEVICE_OWNER_SNAT_PORT)
+                models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
             snat_ports = query(session).params(
                 ext_network_id=ext_network_id).all()
 
@@ -3855,7 +3867,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     primary_ips.append(ip + '/' + mask)
                 else:
                     attrs = {'device_id': '',
-                             'device_owner': DEVICE_OWNER_SVI_PORT,
+                             'device_owner': aim_cst.DEVICE_OWNER_SVI_PORT,
                              'tenant_id': network['tenant_id'],
                              'name': 'apic-svi-port:node-%s' % node,
                              'network_id': network['id'],
@@ -4942,7 +4954,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # using other values requires deleting and re-creating the
             # external network.
             res_dict[cisco_apic.NAT_TYPE] = 'distributed'
-            res_dict[cisco_apic.EXTERNAL_CIDRS] = ['0.0.0.0/0']
+            res_dict[cisco_apic.EXTERNAL_CIDRS] = [aim_cst.IPV4_ANY_CIDR]
         self.set_network_extn_db(mgr.actual_session, net_db.id, res_dict)
 
     def _missing_subnet_extension_mapping(self, mgr, subnet_db):
