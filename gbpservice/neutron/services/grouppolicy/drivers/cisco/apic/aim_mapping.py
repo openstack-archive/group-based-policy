@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from collections import namedtuple
 import hashlib
 import re
 import six
@@ -34,6 +35,8 @@ from oslo_utils import excutils
 
 from gbpservice.common import utils as gbp_utils
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.db.grouppolicy.extensions import (
+    apic_segmentation_label_db as seg_label_db)
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import cisco_apic
@@ -59,6 +62,7 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     nova_client as nclient)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import config  # noqa
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 LOG = logging.getLogger(__name__)
@@ -97,47 +101,14 @@ COMMON_TENANT_AIM_RESOURCES = [aim_resource.Contract.__name__,
 # REVISIT: override add_router_interface L3 API check for now
 NO_VALIDATE = cisco_apic_l3.OVERRIDE_NETWORK_ROUTING_TOPOLOGY_VALIDATION
 
-# REVISIT: Auto-PTG is currently config driven to align with the
-# config driven behavior of the older driver but is slated for
-# removal.
-opts = [
-    cfg.BoolOpt('create_auto_ptg',
-                default=True,
-                help=_("Automatically create a PTG when a L2 Policy "
-                       "gets created. This is currently an aim_mapping "
-                       "policy driver specific feature.")),
-    cfg.BoolOpt('create_per_l3p_implicit_contracts',
-                default=True,
-                help=_("This configuration is set to True to migrate a "
-                       "deployment that has l3_policies without implicit "
-                       "AIM contracts (these are deployments which have "
-                       "AIM implicit contracts per tenant). A Neutron server "
-                       "restart is required for this configuration to take "
-                       "effect. The creation of the implicit contracts "
-                       "happens at the time of the AIM policy driver "
-                       "initialization. The configuration can be set to "
-                       "False to avoid recreating the implicit contracts "
-                       "on subsequent Neutron server restarts. This "
-                       "option will be removed in the O release")),
-    cfg.BoolOpt('advertise_mtu',
-                default=True,
-                help=_('If True, advertise network MTU values if core plugin '
-                       'calculates them. MTU is advertised to running '
-                       'instances via DHCP and RA MTU options.')),
-    cfg.IntOpt('nested_host_vlan',
-               default=4094,
-               help=_("This is a locally siginificant VLAN used to provide "
-                      "connectivity to the OpenStack VM when configured "
-                      "to host the nested domain (Kubernetes/OpenShift).  "
-                      "Any traffic originating from the VM and intended "
-                      "to go on the Neutron network, is tagged with this "
-                      "VLAN. The VLAN is stripped by the Opflex installed "
-                      "flows on the integration bridge and the traffic is "
-                      "forwarded on the Neutron network.")),
-]
 
-
-cfg.CONF.register_opts(opts, "aim_mapping")
+EndpointPtInfo = namedtuple(
+    'EndpointPtInfo',
+    ['pt_id',
+     'cluster_id',
+     'ptg_id',
+     'ptg_project_id',
+     'inject_default_route'])
 
 
 class InvalidVrfForDualStackAddressScopes(exc.GroupPolicyBadRequest):
@@ -204,6 +175,77 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def validate_state(self, repair):
         mgr = aim_validation.ValidationManager()
         return mgr.validate(repair)
+
+    def query_endpoint_rpc_info(self, session, info):
+        # This method is called within a transaction from the apic_aim
+        # MD's request_endpoint_details RPC handler to retrieve GBP
+        # state needed to build the RPC response, after the info param
+        # has already been populated with the data available within
+        # Neutron itself.
+
+        # First, query for all needed scalar (non-list) state for the
+        # policies associated with the port, and make sure the port is
+        # owned by a policy target before continuing.
+        pt_infos = self._query_pt_info(
+            session, info['port_info'].port_id)
+        print("got pt_infos: %s" % pt_infos)
+        if not pt_infos:
+            return
+        pt_info = pt_infos[0]
+        info['gbp_pt_info'] = pt_info
+
+        # Query for policy target's segmentation labels.
+        info['gbp_segmentation_labels'] = self._query_segmentation_labels(
+            session, pt_info.pt_id)
+        print("got gbp_segmentation_labels: %s" %
+              info['gbp_segmentation_labels'])
+
+    def _query_pt_info(self, session, port_id):
+        query = BAKERY(lambda s: s.query(
+            gpmdb.PolicyTargetMapping.id,
+            gpmdb.PolicyTargetMapping.cluster_id,
+            gpmdb.PolicyTargetGroupMapping.id,
+            gpmdb.PolicyTargetGroupMapping.project_id,
+            gpmdb.L2PolicyMapping.inject_default_route,
+        ))
+        query += lambda q: q.join(
+            gpmdb.PolicyTargetGroupMapping,
+            gpmdb.PolicyTargetGroupMapping.id ==
+            gpmdb.PolicyTargetMapping.policy_target_group_id)
+        query += lambda q: q.join(
+            gpmdb.L2PolicyMapping,
+            gpmdb.L2PolicyMapping.id ==
+            gpmdb.PolicyTargetGroupMapping.l2_policy_id)
+        query += lambda q: q.filter(
+            gpmdb.PolicyTargetMapping.port_id == sa.bindparam('port_id'))
+        return [EndpointPtInfo._make(row) for row in
+                query(session).params(
+                    port_id=port_id)]
+
+    def _query_segmentation_labels(self, session, pt_id):
+        query = BAKERY(lambda s: s.query(
+            seg_label_db.ApicSegmentationLabelDB.segmentation_label))
+        query += lambda q: q.filter(
+            seg_label_db.ApicSegmentationLabelDB.policy_target_id ==
+            sa.bindparam('pt_id'))
+        return [x for x, in query(session).params(
+            pt_id=pt_id)]
+
+    def update_endpoint_rpc_details(self, info, details):
+        # This method is called outside a transaction from the
+        # apic_aim MD's request_endpoint_details RPC handler to add or
+        # update details within the RPC response, using data stored in
+        # info by query_endpoint_rpc_info.
+
+        # First, make sure the port is owned by a PolicyTarget before
+        # continuing.
+        pt_info = info.get('gbp_pt_info')
+        if not pt_info:
+            return
+
+        gbp_details = details['gbp_details']
+        gbp_details['segmentation_labels'] = (
+            info.get('gbp_segmentation_labels'))
 
     @property
     def aim_mech_driver(self):
