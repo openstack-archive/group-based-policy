@@ -119,12 +119,12 @@ opts = [
                        "False to avoid recreating the implicit contracts "
                        "on subsequent Neutron server restarts. This "
                        "option will be removed in the O release")),
-    cfg.BoolOpt('advertise_mtu',
+    cfg.BoolOpt('advertise_mtu',  # REVISIT: Move to apic_aim MD.
                 default=True,
                 help=_('If True, advertise network MTU values if core plugin '
                        'calculates them. MTU is advertised to running '
                        'instances via DHCP and RA MTU options.')),
-    cfg.IntOpt('nested_host_vlan',
+    cfg.IntOpt('nested_host_vlan',  # REVISIT: Move to apic_aim MD.
                default=4094,
                help=_("This is a locally siginificant VLAN used to provide "
                       "connectivity to the OpenStack VM when configured "
@@ -204,6 +204,18 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def validate_state(self, repair):
         mgr = aim_validation.ValidationManager()
         return mgr.validate(repair)
+
+    def query_endpoint_rpc_info(self, session, info):
+        # This method is called within a transaction from the apic_aim
+        # MD's request_endpoint_details RPC handler to retrieve GBP
+        # state needed to build the RPC response, after the info param
+        # has already been populated with the data available within
+        # Neutron itself.
+
+        # Add config data that should belong to the apic_aim MD rather
+        # than this PD.
+        info['advertise_mtu'] = self.advertise_mtu
+        info['nested_host_vlan'] = self._nested_host_vlan
 
     @property
     def aim_mech_driver(self):
