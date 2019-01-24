@@ -5700,7 +5700,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             host='h1')
         self.assertTrue(details['promiscuous_mode'])
 
-    def test_gbp_details_for_allowed_address_pair(self):
+    def _test_gbp_details_for_allowed_address_pair(self, allow_addr):
         self._register_agent('h1', test_aim_md.AGENT_CONF_OPFLEX)
         self._register_agent('h2', test_aim_md.AGENT_CONF_OPFLEX)
         net = self._make_network(self.fmt, 'net1', True)
@@ -5708,10 +5708,6 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             'subnet']
         sub2 = self._make_subnet(self.fmt, net, '1.2.3.1', '1.2.3.0/24')[
             'subnet']
-        allow_addr = [{'ip_address': '1.2.3.250',
-                       'mac_address': '00:00:00:AA:AA:AA'},
-                      {'ip_address': '1.2.3.251',
-                       'mac_address': '00:00:00:BB:BB:BB'}]
 
         # create 2 ports with same allowed-addresses
         p1 = self._make_port(self.fmt, net['network']['id'],
@@ -5736,7 +5732,10 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             host='h1')
         self.assertEqual(allow_addr, details['allowed_address_pairs'])
         del allow_addr[0]['active']
-        allow_addr[1]['active'] = True
+        if len(allow_addr) > 1:
+           allow_addr[1]['active'] = True
+        else:
+           allow_addr[0]['active'] = True
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
@@ -5797,6 +5796,18 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self._check_call_list(
             expected_calls,
             self.driver.aim_mech_driver._notify_port_update.call_args_list)
+
+    def test_gbp_details_for_allowed_address_pair(self):
+        allow_addr = [{'ip_address': '1.2.3.250',
+                       'mac_address': '00:00:00:AA:AA:AA'},
+                      {'ip_address': '1.2.3.251',
+                       'mac_address': '00:00:00:BB:BB:BB'}]
+        self._test_gbp_details_for_allowed_address_pair(allow_addr)
+
+    def test_gbp_details_for_allowed_address_pair_cidr(self):
+        allow_addr = [{'ip_address': '1.2.3.0/24',
+                       'mac_address': '00:00:00:AA:AA:AA'}]
+        self._test_gbp_details_for_allowed_address_pair(allow_addr)
 
     def test_port_bound_other_agent(self):
         self._register_agent('h1', test_aim_md.AGENT_CONF_OPFLEX)

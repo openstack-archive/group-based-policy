@@ -11,6 +11,7 @@
 #    under the License.
 
 import hashlib
+import netaddr
 import re
 import six
 import sqlalchemy as sa
@@ -1939,7 +1940,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             owned_addresses = self._get_owned_addresses(
                 plugin_context, port['id'])
         for allowed in aaps:
-            if allowed['ip_address'] in owned_addresses:
+            cidr = netaddr.IPNetwork(allowed['ip_address'])
+            if cidr.prefixlen != 32:
+                for addr in owned_addresses:
+                    if addr in cidr:
+                        allowed['active'] = True
+            elif allowed['ip_address'] in owned_addresses:
                 # Signal the agent that this particular address is active
                 # on its port
                 allowed['active'] = True
@@ -2068,15 +2074,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             fips = details['_cache']['fips']
         else:
             fips_filter = [port['id']]
-            active_addrs = [a['ip_address']
-                            for a in details['allowed_address_pairs']
-                            if a.get('active')]
+            active_addrs = self._get_owned_addresses(
+                plugin_context, port['id'])
             if active_addrs:
                 others = self._get_ports(
                     plugin_context,
                     filters={'network_id': [port['network_id']],
                              'fixed_ips': {'ip_address': active_addrs}})
-                fips_filter.extend([p['id'] for p in others])
+                fips_filter.extend([p['id'] for p in others
+                                    if p['id'] != port['id']])
             fips = self._get_fips(plugin_context,
                                   filters={'port_id': fips_filter})
 

@@ -3381,14 +3381,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 models_v2.Port.id == n_addr_pair_db.AllowedAddressPair.port_id)
             query += lambda q: q.filter(
                 models_v2.Port.network_id == sa.bindparam('network_id'))
-            query += lambda q: q.filter(
-                n_addr_pair_db.AllowedAddressPair.ip_address.in_(
-                    sa.bindparam('fixed_ips', expanding=True)))
             addr_pair = query(plugin_context.session).params(
-                network_id=port['network_id'],
-                fixed_ips=fixed_ips).all()
+                network_id=port['network_id']).all()
+            notify_pairs = []
+            # In order to support use of CIDRs in allowed-address-pairs,
+            # we can't include the fxied IPs in the DB query, and instead
+            # have to qualify that with post-DB processing
+            for a_pair in addr_pair:
+                cidr = netaddr.IPNetwork(a_pair['ip_address'])
+                for addr in fixed_ips:
+                    if addr in cidr:
+                        notify_pairs.append(a_pair)
 
-            ports_to_notify.extend([x['port_id'] for x in addr_pair])
+            ports_to_notify.extend([x['port_id'] for x in set(notify_pairs)])
         for p in sorted(ports_to_notify):
             self._notify_port_update(plugin_context, p)
 
