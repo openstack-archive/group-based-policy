@@ -1927,6 +1927,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 subnet['dhcp_server_ports'] = dhcp_ports
         return subnets
 
+    def _get_nova_vm_name(self, context, port):
+        return self.aim_mech_driver._get_vm_name(context.session,
+                                                 port['device_id'])
+
     def _send_port_update_notification(self, plugin_context, port):
         self.aim_mech_driver._notify_port_update(plugin_context, port)
 

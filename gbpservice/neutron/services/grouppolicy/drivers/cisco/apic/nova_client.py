@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import datetime
 from neutron.notifiers import nova as n_nova
 from novaclient import exceptions as nova_exceptions
 from oslo_log import log as logging
@@ -41,3 +42,15 @@ class NovaClient(object):
                         server_id)
         except Exception as e:
             LOG.exception(e)
+
+    def get_servers(self, is_full_update, changes_since_in_sec):
+        if is_full_update:
+            search_opts = {'all_tenants': 1}
+        else:
+            mins_ago = (datetime.datetime.now() -
+                        datetime.timedelta(minutes=changes_since_in_sec / 60))
+            search_opts = {'all_tenants': 1,
+                           'changes-since': str(mins_ago),
+                           'deleted': 'false'}
+        return self.client.servers.list(detailed=False,
+                                        search_opts=search_opts)
