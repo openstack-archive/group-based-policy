@@ -16,9 +16,11 @@
 from collections import defaultdict
 from collections import namedtuple
 import copy
+from datetime import datetime
 import netaddr
 import os
 import re
+import socket
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
 from sqlalchemy import orm
@@ -67,6 +69,7 @@ from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log
 import oslo_messaging
+from oslo_service import loopingcall
 from oslo_utils import importutils
 
 from gbpservice.network.neutronv2 import local_api
@@ -82,6 +85,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    nova_client as nclient)
 
 LOG = log.getLogger(__name__)
 
@@ -249,6 +254,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.keystone_notification_topic = (cfg.CONF.ml2_apic_aim.
                                             keystone_notification_topic)
         self._setup_keystone_notification_listeners()
+        self._setup_nova_vm_update()
         self.apic_optimized_dhcp_lease_time = (cfg.CONF.ml2_apic_aim.
                                                apic_optimized_dhcp_lease_time)
         self.enable_keystone_notification_purge = (cfg.CONF.ml2_apic_aim.
@@ -265,6 +271,59 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
         self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
         self.apic_router_id_subnet = netaddr.IPSet([self.apic_router_id_pool])
+
+    def _setup_nova_vm_update(self):
+        self.admin_context = nctx.get_admin_context()
+        self.server_id = 'id-%s' % socket.gethostname()
+        vm_update = loopingcall.FixedIntervalLoopingCall(
+            self._get_nova_vm)
+        vm_update.start(interval=60)
+
+    def _get_nova_vm(self):
+        current_time = datetime.now()
+        session = self.admin_context.session
+        vm_name_update = self._get_vm_name_update(session)
+        # The other controller is still doing the update actively
+        if vm_name_update and vm_name_update.server_id != self.server_id:
+            delta_time = (current_time -
+                          vm_name_update.last_incremental_update_time)
+            if delta_time.total_seconds() < 120:
+                return
+        self._set_vm_name_update(session, vm_name_update, self.server_id,
+                                 current_time)
+
+        nova_vms = nclient.NovaClient().get_servers()
+        vm_list = []
+        for vm in nova_vms:
+            vm_list.append((vm.id, vm.name))
+        nova_vms = set(vm_list)
+
+        with session.begin(subtransactions=True):
+            cached_vms = self._get_vm_names(session)
+            cached_vms = set(cached_vms)
+
+            removed_vms = cached_vms - nova_vms
+            for device_id, _ in removed_vms:
+                self._delete_vm_name(session, device_id)
+
+            added_vms = nova_vms - cached_vms
+            update_ports = []
+            for device_id, name in added_vms:
+                self._set_vm_name(session, device_id, name)
+
+                # Get the port_id for this device_id
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Port.id))
+                query += lambda q: q.filter(
+                    models_v2.Port.device_id == sa.bindparam('device_id'))
+                port = query(session).params(
+                    device_id=device_id).one_or_none()
+                if port:
+                    port_id, = port
+                    update_ports.append(port_id)
+
+        if update_ports:
+            self._notify_port_update_bulk(self.admin_context, update_ports)
 
     def _query_used_apic_router_ids(self, aim_ctx):
         used_ids = netaddr.IPSet()
