@@ -80,6 +80,13 @@ class NetworkMapping(model_base.BASEV2):
     vrf_tenant_name = sa.Column(sa.String(64))
 
 
+class VMName(model_base.BASEV2):
+    __tablename__ = 'apic_aim_vm_names'
+
+    device_id = sa.Column(sa.String(36), primary_key=True)
+    vm_name = sa.Column(sa.String(64))
+
+
 class DbMixin(object):
     def _add_address_scope_mapping(self, session, scope_id, vrf,
                                    vrf_owned=True, update_scope=True):
@@ -299,3 +306,27 @@ class DbMixin(object):
     def _set_network_vrf(self, mapping, vrf):
         mapping.vrf_tenant_name = vrf.tenant_name
         mapping.vrf_name = vrf.name
+
+    def _get_vm_name(self, session, device_id, is_detailed=False):
+        if is_detailed:
+            query = BAKERY(lambda s: s.query(VMName))
+        else:
+            query = BAKERY(lambda s: s.query(VMName.vm_name))
+        query += lambda q: q.filter_by(
+            device_id=sa.bindparam('device_id'))
+        return query(session).params(
+            device_id=device_id).one_or_none()
+
+    def _get_vm_names(self, session):
+        query = BAKERY(lambda s: s.query(VMName.device_id,
+                                         VMName.vm_name))
+        return query(session).all()
+
+    def _add_vm_name(self, session, device_id, vm_name):
+        db_obj = VMName(device_id=device_id, vm_name=vm_name)
+        session.add(db_obj)
+
+    def _delete_vm_name(self, session, device_id):
+        delete_vm = self._get_vm_name(session, device_id, is_detailed=True)
+        if delete_vm:
+            session.delete(delete_vm)
