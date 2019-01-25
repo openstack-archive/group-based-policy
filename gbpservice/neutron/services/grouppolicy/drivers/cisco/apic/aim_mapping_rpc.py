@@ -28,8 +28,6 @@ from gbpservice._i18n import _LW
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    nova_client as nclient)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     port_ha_ipaddress_binding as ha_ip_db)
 
 
@@ -231,11 +229,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                        # Put per mac-address extra info
                        'extra_details': {}}
 
-            # Set VM name if needed.
-            if port['device_owner'].startswith(
-                    'compute:') and port['device_id']:
-                vm = nclient.NovaClient().get_server(port['device_id'])
-                details['vm-name'] = vm.name if vm else port['device_id']
+            self._set_nova_vm_name(context, port, details)
 
             details['_cache'] = {}
             mtu = self._get_port_mtu(context, port, details)
@@ -610,11 +604,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                        # Put per mac-address extra info
                        'extra_details': {}}
 
-            # Set VM name if needed.
-            if port['device_owner'].startswith(
-                    'compute:') and port['device_id']:
-                vm = nclient.NovaClient().get_server(port['device_id'])
-                details['vm-name'] = vm.name if vm else port['device_id']
+            self._set_nova_vm_name(context, port, details)
 
             details['_cache'] = {}
             self._build_up_details_cache(
@@ -695,6 +685,17 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
 
         LOG.debug("Details for port %s : %s", port['id'], details)
         return details
+
+    def _set_nova_vm_name(self, context, port, details):
+        # Set VM name if needed.
+        if port['device_owner'].startswith(
+                'compute:') and port['device_id']:
+            vm = self._get_nova_vm_name(context, port)
+            if vm:
+                vm_name, = vm
+            else:
+                vm_name = port['device_id']
+            details['vm-name'] = vm_name
 
     def _get_owned_addresses(self, plugin_context, port_id):
         return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
