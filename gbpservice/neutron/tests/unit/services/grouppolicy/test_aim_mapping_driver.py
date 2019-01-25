@@ -183,6 +183,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         vm = mock.Mock()
         vm.name = 'someid'
         nova_client.return_value = vm
+        nova_client1 = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.nova_client.NovaClient.get_servers').start()
+        nova_client1.return_value = []
 
         self.extension_attributes = ('router:external', DN, 'apic:svi',
                                      'apic:nat_type', 'apic:snat_host_pool',
