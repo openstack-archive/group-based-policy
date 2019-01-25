@@ -62,6 +62,10 @@ apic_opts = [
                 default=False,
                 help=("This will use those raw SQL statements to speed "
                       "up the calculation of the EP file.")),
+    cfg.IntOpt('apic_nova_vm_name_cache_update_interval', default=60,
+               help=("How many seconds for the polling thread on each "
+                     "controller should wait before it updates the nova vm "
+                     "name cache again.")),
 ]
 
 

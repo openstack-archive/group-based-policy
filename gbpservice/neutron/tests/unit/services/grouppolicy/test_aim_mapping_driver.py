@@ -123,6 +123,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, trunk_plugin=None, **kwargs):
+        self.nova_client1 = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.nova_client.NovaClient.get_servers').start()
+        self.nova_client1.return_value = []
         core_plugin = core_plugin or ML2PLUS_PLUGIN
         if not l3_plugin:
             l3_plugin = "apic_aim_l3"
