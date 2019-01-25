@@ -14,6 +14,7 @@
 #    under the License.
 
 import copy
+import datetime
 import fixtures
 import mock
 import netaddr
@@ -241,6 +242,10 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def setUp(self, mechanism_drivers=None, tenant_network_types=None,
             plugin=None, ext_mgr=None):
+        self.nova_client = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.nova_client.NovaClient.get_servers').start()
+        self.nova_client.return_value = []
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
         # driver apis.
@@ -1730,6 +1735,50 @@ class TestAimMapping(ApicAimTestCase):
             mock.call(mock.ANY, ap),
             mock.call(mock.ANY, tenant)]
         self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
+
+    def test_get_nova_vm(self):
+        # VM cache is empty to being with
+        self.assertEqual(self.driver._get_vm_names(self.db_session),
+                         [])
+        # Add one vm
+        vm = mock.Mock()
+        vm.id = 'some_id'
+        vm.name = 'some_name'
+        self.nova_client.return_value = [vm]
+        self.driver._get_nova_vm()
+        self.assertEqual(self.driver._get_vm_names(self.db_session),
+                         [('some_id', 'some_name')])
+        # Update vm name
+        vm.name = 'new_name'
+        self.nova_client.return_value = [vm]
+        self.driver._get_nova_vm()
+        self.assertEqual(self.driver._get_vm_names(self.db_session),
+                         [('some_id', 'new_name')])
+        # Simulate the polling thread from the other controller
+        # will just stand by
+        old_id = self.driver.server_id
+        self.driver.server_id = 'new_id'
+        vm.name = 'old_name'
+        self.nova_client.return_value = [vm]
+        self.driver._get_nova_vm()
+        self.assertEqual(self.driver._get_vm_names(self.db_session),
+                         [('some_id', 'new_name')])
+        # VM removal won't be triggered thru incremental update
+        self.driver.server_id = old_id
+        self.nova_client.return_value = []
+        self.driver._get_nova_vm()
+        self.assertEqual(self.driver._get_vm_names(self.db_session),
+                         [('some_id', 'new_name')])
+        # Force a full update which will take care of the VM removal
+        vm_update_obj = self.driver._get_vm_name_update(self.db_session)
+        new_full_update_time = (vm_update_obj.last_full_update_time -
+                            datetime.timedelta(minutes=11))
+        self.driver._set_vm_name_update(self.db_session, vm_update_obj,
+            old_id, new_full_update_time, new_full_update_time)
+        self.nova_client.return_value = []
+        self.driver._get_nova_vm()
+        self.assertEqual(self.driver._get_vm_names(self.db_session),
+                         [])
 
     def test_multi_scope_routing_with_unscoped_pools(self):
         self._test_multi_scope_routing(True)
