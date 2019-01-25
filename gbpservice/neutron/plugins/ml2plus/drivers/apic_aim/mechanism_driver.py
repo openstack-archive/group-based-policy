@@ -16,6 +16,7 @@
 from collections import defaultdict
 from collections import namedtuple
 import copy
+from datetime import datetime
 import netaddr
 import os
 import re
@@ -61,6 +62,7 @@ from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import directory
+from neutron_lib.utils import net
 from opflexagent import constants as ofcst
 from opflexagent import host_agent_rpc as arpc
 from opflexagent import rpc as ofrpc
@@ -68,6 +70,7 @@ from oslo_config import cfg
 from oslo_db import exception as db_exc
 from oslo_log import log
 import oslo_messaging
+from oslo_service import loopingcall
 from oslo_utils import importutils
 
 from gbpservice.network.neutronv2 import local_api
@@ -83,6 +86,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    nova_client as nclient)
 
 LOG = log.getLogger(__name__)
 
@@ -258,6 +263,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
         self.enable_raw_sql_for_device_rpc = (cfg.CONF.ml2_apic_aim.
                                               enable_raw_sql_for_device_rpc)
+        self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
+                                    apic_nova_vm_name_cache_update_interval)
+        self._setup_nova_vm_update()
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
         trunk_driver.register()
@@ -265,6 +273,76 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
         self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
         self.apic_router_id_subnet = netaddr.IPSet([self.apic_router_id_pool])
+
+    def _setup_nova_vm_update(self):
+        self.admin_context = nctx.get_admin_context()
+        self.host_id = 'id-%s' % net.get_hostname()
+        vm_update = loopingcall.FixedIntervalLoopingCall(
+            self._update_nova_vm_name_cache)
+        vm_update.start(
+            interval=self.apic_nova_vm_name_cache_update_interval)
+
+    def _update_nova_vm_name_cache(self):
+        current_time = datetime.now()
+        session = self.admin_context.session
+        vm_name_update = self._get_vm_name_update(session)
+        is_full_update = True
+        if vm_name_update:
+            # The other controller is still doing the update actively
+            if vm_name_update.host_id != self.host_id:
+                delta_time = (current_time -
+                              vm_name_update.last_incremental_update_time)
+                if (delta_time.total_seconds() <
+                        self.apic_nova_vm_name_cache_update_interval * 2):
+                    return
+            else:
+                delta_time = (current_time -
+                              vm_name_update.last_full_update_time)
+                if (delta_time.total_seconds() <
+                        self.apic_nova_vm_name_cache_update_interval * 10):
+                    is_full_update = False
+        self._set_vm_name_update(session, vm_name_update, self.host_id,
+                                 current_time,
+                                 current_time if is_full_update else None)
+
+        nova_vms = nclient.NovaClient().get_servers(
+            is_full_update, self.apic_nova_vm_name_cache_update_interval * 10)
+        vm_list = []
+        for vm in nova_vms:
+            vm_list.append((vm.id, vm.name))
+        nova_vms = set(vm_list)
+
+        with db_api.context_manager.writer.using(self.admin_context):
+            cached_vms = self._get_vm_names(session)
+            cached_vms = set(cached_vms)
+
+            # Only handle the deletion during full update otherwise we
+            # don't know if the missing VMs are being deleted or just older
+            # than 10 minutes as incremental update only queries Nova for
+            # the past 10 mins.
+            if is_full_update:
+                removed_vms = cached_vms - nova_vms
+                for device_id, _ in removed_vms:
+                    self._delete_vm_name(session, device_id)
+
+            added_vms = nova_vms - cached_vms
+            update_ports = []
+            for device_id, name in added_vms:
+                self._set_vm_name(session, device_id, name)
+
+                # Get the port_id for this device_id
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Port.id))
+                query += lambda q: q.filter(
+                    models_v2.Port.device_id == sa.bindparam('device_id'))
+                port = query(session).params(
+                    device_id=device_id).one_or_none()
+                if port:
+                    port_id, = port
+                    update_ports.append(port_id)
+
+        if update_ports:
+            self._notify_port_update_bulk(self.admin_context, update_ports)
 
     def _query_used_apic_router_ids(self, aim_ctx):
         used_ids = netaddr.IPSet()
