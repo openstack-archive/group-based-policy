@@ -41,3 +41,7 @@ class NovaClient(object):
                         server_id)
         except Exception as e:
             LOG.exception(e)
+
+    def get_servers(self):
+        return self.client.servers.list(detailed=False,
+                                        search_opts={'all_tenants': 1})
