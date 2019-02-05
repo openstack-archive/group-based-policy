@@ -87,12 +87,15 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
         if pts:
             return pts[0]
 
-    def _port_id_to_ptg(self, plugin_context, port_id):
-        pt = self._port_id_to_pt(plugin_context, port_id)
+    def _pt_to_ptg(self, plugin_context, pt):
         if pt:
             return self.gbp_plugin.get_policy_target_group(
-                plugin_context, pt['policy_target_group_id']), pt
-        return None, None
+                plugin_context, pt['policy_target_group_id'])
+        return None
+
+    def _port_id_to_ptg(self, plugin_context, port_id):
+        pt = self._port_id_to_pt(plugin_context, port_id)
+        return self._pt_to_ptg(plugin_context, pt), pt
 
     def _network_id_to_l2p(self, context, network_id):
         l2ps = self.gbp_plugin.get_l2_policies(
