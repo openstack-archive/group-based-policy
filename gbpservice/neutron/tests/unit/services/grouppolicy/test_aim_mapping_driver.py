@@ -3302,7 +3302,17 @@ class TestPolicyTarget(AIMBaseTestCase,
         fip['nat_epg_name'] = ext_epg_name
         fip['nat_epg_tenant'] = ext_epg_tenant
         fip['nat_epg_app_profile'] = ext_epg_app_profile
-        self.assertEqual(fip, mapping['floating_ip'][0])
+
+        fip_mapping = mapping['floating_ip'][0]
+        self.assertEqual(fip['id'], fip_mapping['id'])
+        self.assertEqual(fip['port_id'], fip_mapping['port_id'])
+        self.assertEqual(fip['project_id'], fip_mapping['project_id'])
+        self.assertEqual(fip['fixed_ip_address'],
+                         fip_mapping['fixed_ip_address'])
+        self.assertEqual(fip['floating_ip_address'],
+                         fip_mapping['floating_ip_address'])
+        self.assertEqual(fip['floating_network_id'],
+                         fip_mapping['floating_network_id'])
 
     def _verify_ip_mapping_details(self, mapping, ext_segment_name,
                                    ext_epg_tenant, ext_epg_name,
@@ -3323,7 +3333,9 @@ class TestPolicyTarget(AIMBaseTestCase,
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])
 
-    def _do_test_get_gbp_details(self, pre_vrf=None):
+    def _do_test_get_gbp_details(self, pre_vrf=None, enable_raw_sql=False):
+        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
+                                                            enable_raw_sql)
         self.driver.aim_mech_driver.apic_optimized_dhcp_lease_time = 100
         es1, es1_sub = self._setup_external_segment(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
@@ -3452,7 +3464,9 @@ class TestPolicyTarget(AIMBaseTestCase,
         self.assertEqual(2000, mapping['interface_mtu'])
 
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
-                                   pre_vrf=None):
+                                   pre_vrf=None, enable_raw_sql=False):
+        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
+                                                            enable_raw_sql)
         # Create port and bind it
         address_scope = self._make_address_scope_for_vrf(
             pre_vrf.dn if pre_vrf else None,
@@ -3570,6 +3584,9 @@ class TestPolicyTarget(AIMBaseTestCase,
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
 
+    def test_get_gbp_details_with_raw_sql(self):
+        self._do_test_get_gbp_details(enable_raw_sql=True)
+
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
         vrf = self.aim_mgr.create(
@@ -3577,10 +3594,22 @@ class TestPolicyTarget(AIMBaseTestCase,
                                       monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf)
 
+    def test_get_gbp_details_pre_existing_vrf_with_raw_sql(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        vrf = self.aim_mgr.create(
+            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                      monitored=True))
+        self._do_test_get_gbp_details(pre_vrf=vrf, enable_raw_sql=True)
+
     def test_get_gbp_details_no_pt(self):
         # Test that traditional Neutron ports behave correctly from the
         # RPC perspective
         self._do_test_gbp_details_no_pt()
+
+    def test_get_gbp_details_no_pt_with_raw_sql(self):
+        # Test that traditional Neutron ports behave correctly from the
+        # RPC perspective
+        self._do_test_gbp_details_no_pt(enable_raw_sql=True)
 
     def test_get_gbp_details_no_pt_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -3589,13 +3618,29 @@ class TestPolicyTarget(AIMBaseTestCase,
                                       monitored=True))
         self._do_test_gbp_details_no_pt(pre_vrf=vrf)
 
+    def test_get_gbp_details_no_pt_pre_existing_vrf_with_raw_sql(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+        vrf = self.aim_mgr.create(
+            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                      monitored=True))
+        self._do_test_gbp_details_no_pt(pre_vrf=vrf, enable_raw_sql=True)
+
     def test_get_gbp_details_no_pt_no_as(self):
         self._do_test_gbp_details_no_pt(use_as=False)
+
+    def test_get_gbp_details_no_pt_no_as_with_raw_sql(self):
+        self._do_test_gbp_details_no_pt(use_as=False, enable_raw_sql=True)
 
     def test_get_gbp_details_no_pt_no_as_unrouted(self):
         self._do_test_gbp_details_no_pt(use_as=False, routed=False)
 
-    def test_gbp_details_ext_net_no_pt(self):
+    def test_get_gbp_details_no_pt_no_as_unrouted_with_raw_sql(self):
+        self._do_test_gbp_details_no_pt(use_as=False, routed=False,
+                                        enable_raw_sql=True)
+
+    def _test_gbp_details_ext_net_no_pt(self, enable_raw_sql=False):
+        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
+                                                            enable_raw_sql)
         # Test ports created on Neutron external networks
         ext_net1, _, sn1 = self._setup_external_network(
             'l1', dn='uni/tn-common/out-l1/instP-n1')
@@ -3673,6 +3718,12 @@ class TestPolicyTarget(AIMBaseTestCase,
                 mapping, "EXT-l2", vrf_id, supernet, "t1")
             self._verify_vrf_details_assertions(
                 vrf_mapping, "EXT-l2", vrf_id, supernet, "t1")
+
+    def test_gbp_details_ext_net_no_pt(self):
+        self._test_gbp_details_ext_net_no_pt()
+
+    def test_gbp_details_ext_net_no_pt_with_raw_sql(self):
+        self._test_gbp_details_ext_net_no_pt(enable_raw_sql=True)
 
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
