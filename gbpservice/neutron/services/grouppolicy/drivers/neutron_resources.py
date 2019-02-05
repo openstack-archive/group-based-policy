@@ -86,6 +86,7 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
         if pts:
             return pts[0]
 
+    # TBD
     def _port_id_to_ptg(self, plugin_context, port_id):
         pt = self._port_id_to_pt(plugin_context, port_id)
         if pt:
