@@ -1806,11 +1806,11 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session = context._plugin_context.session
         return aim_context.AimContext(session)
 
-    def _is_port_promiscuous(self, plugin_context, port, is_gbp=True):
-        if is_gbp:
-            pt = self._port_id_to_pt(plugin_context, port['id'])
+    def _is_port_promiscuous(self, plugin_context, port, details=None):
+        if details and 'pt' in details['_cache']:
+            pt = details['_cache']['pt']
         else:
-            pt = None
+            pt = self._port_id_to_pt(plugin_context, port['id'])
         if (pt and pt.get('cluster_id') and
                 pt.get('cluster_id') != pt['id']):
             master = self._get_policy_target(plugin_context, pt['cluster_id'])
@@ -1835,9 +1835,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             details['dhcp_lease_time'] = (
                 self.aim_mech_driver.apic_optimized_dhcp_lease_time)
 
-    def _get_port_epg(self, plugin_context, port):
-        ptg, pt = self._port_id_to_ptg(plugin_context, port['id'])
+    def _get_port_epg(self, plugin_context, port, details=None):
+        if details and 'pt' in details['_cache']:
+            pt = details['_cache']['pt']
+            ptg = self._pt_to_ptg(plugin_context, pt)
+        else:
+            ptg, pt = self._port_id_to_ptg(plugin_context, port['id'])
+
         if ptg:
+            # TODO(Kent): optimize this also for GBP workflow?
             return self._get_aim_endpoint_group(plugin_context.session, ptg)
         else:
             # Return default EPG based on network
@@ -1851,12 +1857,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                               "port %s"), port['id'])
             return epg
 
-    def _get_subnet_details(self, plugin_context, port, details, is_gbp=True):
+    def _get_subnet_details(self, plugin_context, port, details):
         # L2P might not exist for a pure Neutron port
-        if is_gbp:
-            l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
+        if 'l2p' in details['_cache']:
+            l2p = details['_cache']['l2p']
         else:
-            l2p = None
+            l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
         # TODO(ivar): support shadow network
         # if not l2p and self._ptg_needs_shadow_network(context, ptg):
         #    l2p = self._get_l2_policy(context._plugin_context,
@@ -2027,10 +2033,13 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return net_ids
 
     def _get_segmentation_labels(self, plugin_context, port, details):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
-        if self.apic_segmentation_label_driver and pt and (
-                    'segmentation_labels' in pt):
-            return pt['segmentation_labels']
+        if self.apic_segmentation_label_driver:
+            if 'pt' in details['_cache']:
+                pt = details['_cache']['pt']
+            else:
+                pt = self._port_id_to_pt(plugin_context, port['id'])
+            if pt and 'segmentation_labels' in pt:
+                return pt['segmentation_labels']
 
     def _get_nat_details(self, plugin_context, port, host, details):
         """ Add information about IP mapping for DNAT/SNAT """
