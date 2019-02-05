@@ -286,7 +286,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             sg_query = ("SELECT id, project_id FROM securitygroups WHERE "
                         "id in " + in_str)
             sg_result = session.execute(sg_query)
-            details['_cache']['security_groups'] = sg_result
+            details['_cache']['security_groups'] = list(sg_result)
 
         # Get the subnet info
         subnets = []
@@ -383,6 +383,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                     "SELECT name, tenant_name FROM aim_bridge_domains "
                     "WHERE vrf_name = '" + network['vrf_name'] + "'")
                 all_vrfs_bds_result = session.execute(all_vrfs_bds_query)
+                all_vrfs_bds_result = list(all_vrfs_bds_result)
                 all_vrfs_query = (
                     "SELECT tenant_name FROM aim_vrfs WHERE "
                     "name = '" + network['vrf_name'] + "'")
@@ -411,7 +412,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                                     "network_id in " + in_str)
                 vrf_subnet_result = session.execute(vrf_subnet_query)
                 vrf_subnets = [x['cidr'] for x in vrf_subnet_result]
-        details['_cache']['address_scope'] = as_result
+        details['_cache']['address_scope'] = list(as_result)
         details['_cache']['subnetpools'] = subnetpools
         details['_cache']['vrf_subnets'] = vrf_subnets
 
@@ -466,6 +467,39 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             network['apic:nested_domain_allowed_vlans'].append(
                                                     allowed_vlan.vlan)
         details['_cache']['network'] = network
+
+        # For PT
+        pt_query = (
+            "SELECT id, policy_target_group_id, cluster_id FROM "
+            "gp_policy_targets WHERE "
+            "port_id = '" + port['id'] + "'")
+        pt = session.execute(pt_query).first()
+        if pt:
+            pt = dict(pt)
+            segmentation_label_query = (
+                "SELECT segmentation_label FROM "
+                "gp_apic_mapping_segmentation_labels WHERE "
+                "policy_target_id = '" + pt['id'] + "'")
+            st_label_result = session.execute(segmentation_label_query)
+            pt['segmentation_labels'] = [x['segmentation_label']
+                                         for x in st_label_result]
+            group_default_gw_query = (
+                "SELECT group_default_gateway FROM "
+                "gp_proxy_gateway_mappings WHERE "
+                "policy_target_id = '" + pt['id'] + "'")
+            group_default_gw = session.execute(group_default_gw_query).first()
+            if group_default_gw:
+                pt['group_default_gateway'] = group_default_gw[
+                                                    'group_default_gateway']
+        details['_cache']['pt'] = pt
+
+        # For L2P
+        l2p_query = (
+            "SELECT inject_default_route FROM "
+            "gp_l2_policies WHERE "
+            "network_id = '" + network['id'] + "'")
+        l2p = session.execute(l2p_query).first()
+        details['_cache']['l2p'] = l2p
 
     def _get_gbp_details_new(self, context, request, host):
         with context.session.begin(subtransactions=True):
@@ -597,9 +631,6 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
                        # name mapper
                        'ptg_tenant': network['epg_tenant_name'],
                        'endpoint_group_name': network['epg_name'],
-                       # TODO(kentwu): make it to support GBP workflow also
-                       'promiscuous_mode': self._is_port_promiscuous(
-                                                context, port, is_gbp=False),
                        'extra_ips': [],
                        'floating_ip': [],
                        'ip_mapping': [],
@@ -611,14 +642,19 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             details['_cache'] = {}
             self._build_up_details_cache(
                             context.session, details, port, network)
+            # EPG name is different for GBP workflow
+            if details['_cache']['pt']:
+                epg = self._get_port_epg(context, port, details)
+                details['endpoint_group_name'] = epg.name
+            details['promiscuous_mode'] = self._is_port_promiscuous(
+                                                context, port, details)
             mtu = self._get_port_mtu(context, port, details)
             if mtu:
                 details['interface_mtu'] = mtu
             details['dns_domain'] = network['dns_domain']
             if port.get('security_groups'):
                 self._add_security_group_details(context, port, details)
-            # TODO(kentwu): make it to support GBP workflow if needed
-            self._add_subnet_details(context, port, details, is_gbp=False)
+            self._add_subnet_details(context, port, details)
             self._add_allowed_address_pairs_details(context, port, details)
             details['l3_policy_id'] = '%s %s' % (
                         network['vrf_tenant_name'], network['vrf_name'])
@@ -654,9 +690,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             details['_cache']['fips'] = fips
             self._add_nat_details(context, port, host, details)
             self._add_extra_details(context, port, details)
-            # TODO(kentwu): make it to support GBP workflow also
-            self._add_segmentation_label_details(context, port, details,
-                                                 is_gbp=False)
+            self._add_segmentation_label_details(context, port, details)
             self._set_dhcp_lease_time(details)
             self._add_nested_domain_details(context, port, details)
             details.pop('_cache', None)
@@ -745,12 +779,11 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
 
     # Child class needs to support:
     # - self._get_subnet_details(context, port, details)
-    def _add_subnet_details(self, context, port, details, is_gbp=True):
+    def _add_subnet_details(self, context, port, details):
         # This method needs to define requirements for this Mixin's child
         # classes in order to fill the following result parameters:
         # - subnets;
-        details['subnets'] = self._get_subnet_details(context, port, details,
-                                                      is_gbp)
+        details['subnets'] = self._get_subnet_details(context, port, details)
 
     def _add_nat_details(self, context, port, host, details):
         # This method needs to define requirements for this Mixin's child
@@ -810,16 +843,14 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
 
     # Child class needs to support:
     # - self._get_segmentation_labels(context, port, details)
-    def _add_segmentation_label_details(self, context, port, details,
-                                        is_gbp=True):
+    def _add_segmentation_label_details(self, context, port, details):
         # This method needs to define requirements for this Mixin's child
         # classes in order to fill the following result parameters:
         # - segmentation_labels
         # apic_segmentation_label is a GBP driver extension configured
         # for the aim_mapping driver
-        if is_gbp:
-            details['segmentation_labels'] = self._get_segmentation_labels(
-                context, port, details)
+        details['segmentation_labels'] = self._get_segmentation_labels(
+            context, port, details)
 
     def _add_extra_details(self, context, port, details):
         # TODO(ivar): Extra details depend on HA and SC implementation
