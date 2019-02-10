@@ -663,9 +663,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             # network whose address is owned by this port.
             # If those ports have FIPs, then steal them.
             fips_filter = [str(port_id)]
-            active_addrs = [str(a['ip_address'])
-                            for a in details['allowed_address_pairs']
-                            if a.get('active')]
+            active_addrs = details['_cache']['owned_addresses']
             if active_addrs:
                 in_str = self._compose_in_filter_str(active_addrs)
                 ports_query = (
