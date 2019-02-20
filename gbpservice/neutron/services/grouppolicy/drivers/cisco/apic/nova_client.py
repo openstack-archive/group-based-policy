@@ -52,5 +52,8 @@ class NovaClient(object):
             search_opts = {'all_tenants': 1,
                            'changes-since': str(seconds_ago),
                            'deleted': 'false'}
-        return self.client.servers.list(detailed=False,
-                                        search_opts=search_opts)
+        try:
+            return self.client.servers.list(detailed=False,
+                                            search_opts=search_opts)
+        except Exception as e:
+            LOG.exception(e)
