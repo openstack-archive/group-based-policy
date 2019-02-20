@@ -303,12 +303,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if (delta_time.total_seconds() <
                         self.apic_nova_vm_name_cache_update_interval * 10):
                     is_full_update = False
-        self._set_vm_name_update(session, vm_name_update, self.host_id,
-                                 current_time,
-                                 current_time if is_full_update else None)
 
         nova_vms = nclient.NovaClient().get_servers(
             is_full_update, self.apic_nova_vm_name_cache_update_interval * 10)
+        # This means Nova API has thrown an exception
+        if nova_vms is None:
+            return
+
+        self._set_vm_name_update(session, vm_name_update, self.host_id,
+                                 current_time,
+                                 current_time if is_full_update else None)
         vm_list = []
         for vm in nova_vms:
             vm_list.append((vm.id, vm.name))
