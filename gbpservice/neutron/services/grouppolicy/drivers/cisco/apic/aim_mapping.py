@@ -46,6 +46,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import nova_client
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_const)
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
@@ -58,8 +59,6 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     aim_validation)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import config  # noqa
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
@@ -1051,7 +1050,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 context._plugin_context, l2p['l3_policy_id'])
             if l3p.get('allowed_vm_names'):
                 ok_to_bind = False
-                vm = nclient.NovaClient().get_server(port['device_id'])
+                vm = nova_client.NovaClient().get_server(port['device_id'])
                 for allowed_vm_name in l3p['allowed_vm_names']:
                     match = re.search(allowed_vm_name, vm.name)
                     if match:
