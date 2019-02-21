@@ -137,6 +137,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self._verify_service_plugins_requirements()
         LOG.info("Modular L2 Plugin (extended) initialization complete")
 
+    def start_rpc_listeners(self):
+        servers = super(Ml2PlusPlugin, self).start_rpc_listeners()
+        servers.extend(self.mechanism_manager.start_rpc_listeners())
+        return servers
+
     def _handle_security_group_change(self, resource, event, trigger,
                                       **kwargs):
         if 'payload' in kwargs:
