@@ -165,7 +165,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'per L2 Policy'))
         self.create_per_l3p_implicit_contracts = (
                 cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
-        self.setup_opflex_rpc_listeners()
+        # REVISIT: We cannot get this from the MD during PD
+        # initialize(), as we would if stable/newton had
+        # start_rpc_listeners(), so we access it directly. This will
+        # get cleaned up in a follow-on patch.
+        if not cfg.CONF.ml2_apic_aim.enable_new_rpc:
+            self.setup_opflex_rpc_listeners()
         self.advertise_mtu = cfg.CONF.advertise_mtu
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         if self.create_per_l3p_implicit_contracts:
