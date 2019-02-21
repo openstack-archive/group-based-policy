@@ -234,6 +234,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                attributes.PORTS + '_BULK',
                ['_ml2_md_extend_port_dict_bulk'])
 
+    def start_rpc_listeners(self):
+        servers = super(Ml2PlusPlugin, self).start_rpc_listeners()
+        servers.extend(self.mechanism_manager.start_rpc_listeners())
+        return servers
+
     def _handle_security_group_change(self, resource, event, trigger,
                                       **kwargs):
         context = kwargs.get('context')
