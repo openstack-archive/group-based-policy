@@ -35,8 +35,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     constants as md_const)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    port_ha_ipaddress_binding as ha_ip_db)
 
 
 LOG = log.getLogger(__name__)
@@ -54,7 +52,7 @@ EndpointPtInfo = namedtuple(
      'is_auto_ptg'])
 
 
-class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
+class AIMMappingRPCMixin(object):
     """RPC mixin for AIM mapping.
 
     Collection of all the RPC methods consumed by the AIM mapping.
@@ -168,7 +166,8 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
     def ip_address_owner_update(self, context, **kwargs):
         if not kwargs.get('ip_owner_info'):
             return
-        ports_to_update = self.update_ip_owner(kwargs['ip_owner_info'])
+        ports_to_update = self.aim_mech_driver.update_ip_owner(
+            kwargs['ip_owner_info'])
         for p in ports_to_update:
             LOG.debug("APIC ownership update for port %s", p)
             self._send_port_update_notification(context, p)
@@ -769,7 +768,7 @@ class AIMMappingRPCMixin(ha_ip_db.HAIPOwnerDbMixin):
             details['vm-name'] = vm_name
 
     def _get_owned_addresses(self, plugin_context, port_id):
-        return set(self.ha_ip_handler.get_ha_ipaddresses_for_port(port_id))
+        return set(self.aim_mech_driver.get_ha_ipaddresses_for_port(port_id))
 
     def _add_security_group_details(self, context, port, details):
         vif_details = port.get('binding:vif_details')
