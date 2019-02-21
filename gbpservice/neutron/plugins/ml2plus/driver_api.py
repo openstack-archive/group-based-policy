@@ -152,6 +152,15 @@ class SecurityGroupRuleContext(object):
 @six.add_metaclass(abc.ABCMeta)
 class MechanismDriver(driver_api.MechanismDriver):
 
+    def start_rpc_listeners(self):
+        """Start driver-specify RPC listeners.
+
+        If any driver-specific RPC listeners are needed, create an RPC
+        connection, create the consumers, call consume_in_threads() on
+        the connection, and return the resulting list of servers.
+        """
+        return []
+
     # REVISIT(rkukura): Is this needed for all operations, or just for
     # create operations? If its needed for all operations, should the
     # method be specific to the resource and operation, and include

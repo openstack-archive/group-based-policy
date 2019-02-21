@@ -95,6 +95,13 @@ class MechanismManager(managers.MechanismManager):
                 errors=errors
             )
 
+    def start_rpc_listeners(self):
+        servers = []
+        for driver in self.ordered_mech_drivers:
+            if isinstance(driver.obj, driver_api.MechanismDriver):
+                servers.extend(driver.obj.start_rpc_listeners())
+        return servers
+
     def ensure_tenant(self, plugin_context, tenant_id):
         for driver in self.ordered_mech_drivers:
             if isinstance(driver.obj, driver_api.MechanismDriver):
