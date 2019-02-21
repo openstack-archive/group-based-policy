@@ -124,8 +124,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, trunk_plugin=None, **kwargs):
         self.nova_client1 = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_servers').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_servers').start()
         self.nova_client1.return_value = []
         core_plugin = core_plugin or ML2PLUS_PLUGIN
         if not l3_plugin:
@@ -186,8 +186,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._name_mapper = None
         self._driver = None
         nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_server').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_server').start()
         vm = mock.Mock()
         vm.name = 'someid'
         nova_client.return_value = vm
@@ -3844,8 +3844,8 @@ class TestPolicyTarget(AIMBaseTestCase,
             policy_target_group_id=ptg['id'])['policy_target']
 
         nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_server').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_server').start()
         vm = mock.Mock()
         vm.name = 'secure_vm1'
         nova_client.return_value = vm
