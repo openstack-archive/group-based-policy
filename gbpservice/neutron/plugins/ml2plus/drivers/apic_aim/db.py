@@ -14,12 +14,19 @@
 #    under the License.
 
 from aim.api import resource as aim_resource
+from neutron.db import api as db_api
 from neutron.db.models import address_scope as as_db
 from neutron.db import models_v2
+from neutron_lib import context as n_context
 from neutron_lib.db import model_base
+from oslo_db import exception as db_exc
+from oslo_log import log
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
 from sqlalchemy import orm
+
+
+LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery()
 
@@ -75,6 +82,24 @@ class NetworkMapping(model_base.BASEV2):
     vrf_tenant_name = sa.Column(sa.String(64))
 
 
+class HAIPAddressToPortAssociation(model_base.BASEV2):
+
+    """Port Owner for HA IP Address.
+
+    This table is used to store the mapping between the HA IP Address
+    and the Port ID of the Neutron Port which currently owns this
+    IP Address.
+    """
+
+    __tablename__ = 'apic_ml2_ha_ipaddress_to_port_owner'
+
+    ha_ip_address = sa.Column(sa.String(64), nullable=False,
+                              primary_key=True)
+    port_id = sa.Column(sa.String(64), sa.ForeignKey('ports.id',
+                                                     ondelete='CASCADE'),
+                        nullable=False, primary_key=True)
+
+
 class VMName(model_base.BASEV2):
     __tablename__ = 'apic_aim_vm_names'
 
@@ -94,6 +119,9 @@ class VMNameUpdate(model_base.BASEV2):
 
 
 class DbMixin(object):
+
+    # AddressScopeMapping functions.
+
     def _add_address_scope_mapping(self, session, scope_id, vrf,
                                    vrf_owned=True, update_scope=True):
         mapping = AddressScopeMapping(
@@ -157,6 +185,8 @@ class DbMixin(object):
         return aim_resource.VRF(
             tenant_name=mapping.vrf_tenant_name,
             name=mapping.vrf_name)
+
+    # NetworkMapping functions.
 
     def _add_network_mapping(self, session, network_id, bd, epg, vrf,
                              ext_net=None, update_network=True):
@@ -309,6 +339,132 @@ class DbMixin(object):
         mapping.vrf_tenant_name = vrf.tenant_name
         mapping.vrf_name = vrf.name
 
+    # HAIPAddressToPortAssociation functions.
+
+    def _get_ha_ipaddress(self, port_id, ipaddress, session=None):
+        session = session or db_api.get_reader_session()
+
+        query = BAKERY(lambda s: s.query(
+            HAIPAddressToPortAssociation))
+        query += lambda q: q.filter_by(
+            port_id=sa.bindparam('port_id'),
+            ha_ip_address=sa.bindparam('ipaddress'))
+        return query(session).params(
+            port_id=port_id, ipaddress=ipaddress).first()
+
+    def get_port_for_ha_ipaddress(self, ipaddress, network_id,
+                                  session=None):
+        """Returns the Neutron Port ID for the HA IP Addresss."""
+        session = session or db_api.get_reader_session()
+        query = BAKERY(lambda s: s.query(
+            HAIPAddressToPortAssociation))
+        query += lambda q: q.join(
+            models_v2.Port,
+            models_v2.Port.id == HAIPAddressToPortAssociation.port_id)
+        query += lambda q: q.filter(
+            HAIPAddressToPortAssociation.ha_ip_address ==
+            sa.bindparam('ipaddress'))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id == sa.bindparam('network_id'))
+        port_ha_ip = query(session).params(
+            ipaddress=ipaddress, network_id=network_id).first()
+        return port_ha_ip
+
+    def get_ha_ipaddresses_for_port(self, port_id, session=None):
+        """Returns the HA IP Addressses associated with a Port."""
+        session = session or db_api.get_reader_session()
+
+        query = BAKERY(lambda s: s.query(
+            HAIPAddressToPortAssociation))
+        query += lambda q: q.filter_by(
+            port_id=sa.bindparam('port_id'))
+        objs = query(session).params(
+            port_id=port_id).all()
+
+        # REVISIT: Do the sorting in the UT?
+        return sorted([x['ha_ip_address'] for x in objs])
+
+    def set_port_id_for_ha_ipaddress(self, port_id, ipaddress, session=None):
+        """Stores a Neutron Port Id as owner of HA IP Addr (idempotent API)."""
+        session = session or db_api.get_writer_session()
+        try:
+            with session.begin(subtransactions=True):
+                obj = self._get_ha_ipaddress(port_id, ipaddress, session)
+                if obj:
+                    return obj
+                else:
+                    obj = HAIPAddressToPortAssociation(
+                        port_id=port_id, ha_ip_address=ipaddress)
+                    session.add(obj)
+                    return obj
+        except db_exc.DBDuplicateEntry:
+            LOG.debug('Duplicate IP ownership entry for tuple %s',
+                      (port_id, ipaddress))
+
+    def delete_port_id_for_ha_ipaddress(self, port_id, ipaddress,
+                                        session=None):
+        session = session or db_api.get_writer_session()
+        with session.begin(subtransactions=True):
+            try:
+                # REVISIT: Can this query be baked? The
+                # sqlalchemy.ext.baked.Result class does not have a
+                # delete() method, and adding delete() to the baked
+                # query before executing it seems to result in the
+                # params() not being evaluated.
+                return session.query(
+                    HAIPAddressToPortAssociation).filter_by(
+                        port_id=port_id,
+                        ha_ip_address=ipaddress).delete()
+            except orm.exc.NoResultFound:
+                return
+
+    def get_ha_port_associations(self):
+        session = db_api.get_reader_session()
+
+        query = BAKERY(lambda s: s.query(
+            HAIPAddressToPortAssociation))
+        return query(session).all()
+
+    # REVISIT: Move this method to the mechanism_driver or rpc module,
+    # as it is above the DB level. This will also require some rework
+    # of its unit tests.
+    def update_ip_owner(self, ip_owner_info):
+        ports_to_update = set()
+        port_id = ip_owner_info.get('port')
+        ipv4 = ip_owner_info.get('ip_address_v4')
+        ipv6 = ip_owner_info.get('ip_address_v6')
+        network_id = ip_owner_info.get('network_id')
+        if not port_id or (not ipv4 and not ipv6):
+            return ports_to_update
+        LOG.debug("Got IP owner update: %s", ip_owner_info)
+        # REVISIT: Just use SQLAlchemy session and models_v2.Port?
+        port = self.plugin.get_port(n_context.get_admin_context(), port_id)
+        if not port:
+            LOG.debug("Ignoring update for non-existent port: %s", port_id)
+            return ports_to_update
+        ports_to_update.add(port_id)
+        for ipa in [ipv4, ipv6]:
+            if not ipa:
+                continue
+            try:
+                # REVISIT: Why isn't this a single transaction at the
+                # top-level, so that the port itself is guaranteed to
+                # still exist.
+                session = db_api.get_writer_session()
+                with session.begin(subtransactions=True):
+                    old_owner = self.get_port_for_ha_ipaddress(
+                        ipa, network_id or port['network_id'], session=session)
+                    self.set_port_id_for_ha_ipaddress(port_id, ipa, session)
+                    if old_owner and old_owner['port_id'] != port_id:
+                        self.delete_port_id_for_ha_ipaddress(
+                            old_owner['port_id'], ipa, session=session)
+                        ports_to_update.add(old_owner['port_id'])
+            except db_exc.DBReferenceError as dbe:
+                LOG.debug("Ignoring FK error for port %s: %s", port_id, dbe)
+        return ports_to_update
+
+    # VMName functions.
+
     def _get_vm_name(self, session, device_id, is_detailed=False):
         if is_detailed:
             query = BAKERY(lambda s: s.query(VMName))
@@ -340,6 +496,8 @@ class DbMixin(object):
                                        is_detailed=True)
             if db_obj:
                 session.delete(db_obj)
+
+    # VMNameUpdate functions.
 
     def _get_vm_name_update(self, session):
         query = BAKERY(lambda s: s.query(VMNameUpdate))

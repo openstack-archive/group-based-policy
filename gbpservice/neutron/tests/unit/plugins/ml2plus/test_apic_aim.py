@@ -245,8 +245,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
     def setUp(self, mechanism_drivers=None, tenant_network_types=None,
             plugin=None, ext_mgr=None):
         self.nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_servers').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_servers').start()
         self.nova_client.return_value = []
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
@@ -8585,3 +8585,44 @@ class TestOpflexRpc(ApicAimTestCase):
 
     # REVISIT: Test with missing request, missing device, invalid
     # device prefix, unbindable port, port bound to wrong host.
+
+    def test_ip_address_owner_update(self):
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+        self._register_agent('h2', AGENT_CONF_OPFLEX)
+
+        net = self._make_network(self.fmt, 'net1', True)
+        net_id = net['network']['id']
+
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+
+        port1_id = self._make_port(self.fmt, net_id)['port']['id']
+        port2_id = self._make_port(self.fmt, net_id)['port']['id']
+
+        self._bind_port_to_host(port1_id, 'h1')
+        self._bind_port_to_host(port2_id, 'h2')
+
+        ip_owner_info = {'port': port1_id, 'ip_address_v4': '1.2.3.4'}
+        self.driver._notify_port_update = mock.Mock()
+
+        # Set new owner and check.
+        self.driver.ip_address_owner_update(
+            n_context.get_admin_context(), ip_owner_info=ip_owner_info,
+            host='h1')
+        obj = self.driver.get_port_for_ha_ipaddress('1.2.3.4', net_id)
+        self.assertEqual(port1_id, obj['port_id'])
+        self.driver._notify_port_update.assert_called_with(
+            mock.ANY, port1_id)
+
+        # Update existing owner and check.
+        self.driver._notify_port_update.reset_mock()
+        ip_owner_info['port'] = port2_id
+        self.driver.ip_address_owner_update(
+            n_context.get_admin_context(), ip_owner_info=ip_owner_info,
+            host='h2')
+        obj = self.driver.get_port_for_ha_ipaddress('1.2.3.4', net_id)
+        self.assertEqual(port2_id, obj['port_id'])
+        exp_calls = [
+            mock.call(mock.ANY, port1_id),
+            mock.call(mock.ANY, port2_id)]
+        self._check_call_list(exp_calls,
+            self.driver._notify_port_update.call_args_list)
