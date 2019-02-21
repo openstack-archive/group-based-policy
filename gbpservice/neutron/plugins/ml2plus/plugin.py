@@ -740,5 +740,10 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                                     marker_obj=marker_obj,
                                                     page_reverse=page_reverse)
 
-            subnets = self._make_subnets_dict(subnets_db, fields, context)
+            subnets_data = self._make_subnets_dict(subnets_db, fields, context)
+            subnets = [attributes.populate_project_info(subnet)
+                       for subnet in subnets_data]
+            if limit and page_reverse:
+                subnets.reverse()
+
         return [self._fields(subnet, fields) for subnet in subnets]
