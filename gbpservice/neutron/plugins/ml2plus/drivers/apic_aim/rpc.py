@@ -19,6 +19,7 @@ import netaddr
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
 
+from neutron.common import rpc as n_rpc
 from neutron.db import api as db_api
 from neutron.db.extra_dhcp_opt import models as dhcp_models
 from neutron.db.models import allowed_address_pair as aap_models
@@ -33,7 +34,10 @@ from neutron.services.trunk import models as trunk_models
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
+from opflexagent import host_agent_rpc as oa_rpc
+from opflexagent import rpc as o_rpc
 from oslo_log import log
+import oslo_messaging
 from oslo_serialization import jsonutils
 
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
@@ -150,7 +154,48 @@ EndpointTrunkInfo = namedtuple(
      'segmentation_id'])
 
 
+class TopologyRpcEndpoint(object):
+
+    target = oslo_messaging.Target(version=oa_rpc.VERSION)
+
+    def __init__(self, mechanism_driver):
+        self.md = mechanism_driver
+
+    @db_api.retry_if_session_inactive()
+    def update_link(self, context, *args, **kwargs):
+        context._session = db_api.get_writer_session()
+        return self.md.update_link(context, *args, **kwargs)
+
+    @db_api.retry_if_session_inactive()
+    def delete_link(self, context, *args, **kwargs):
+        # Don't take any action on link deletion in order to tolerate
+        # situations like fabric upgrade or flapping links. Old links
+        # are removed once a specific host is attached somewhere else.
+        # To completely decommission the host, aimctl can be used to
+        # cleanup the hostlink table.
+        return
+
+
 class ApicRpcHandlerMixin(object):
+
+    def _start_rpc_listeners(self):
+        conn = n_rpc.create_connection()
+
+        # Opflex RPC handler.
+        if self.enable_new_rpc:
+            conn.create_consumer(
+                o_rpc.TOPIC_OPFLEX,
+                [o_rpc.GBPServerRpcCallback(self, self.notifier)],
+                fanout=False)
+
+        # Topology RPC hander.
+        conn.create_consumer(
+            oa_rpc.TOPIC_APIC_SERVICE,
+            [TopologyRpcEndpoint(self)],
+            fanout=False)
+
+        # Start listeners and return list of servers.
+        return conn.consume_in_threads()
 
     # The following five methods handle RPCs from the Opflex agent.
     #
@@ -231,7 +276,12 @@ class ApicRpcHandlerMixin(object):
         # implementation from get_vrf_details() to this method.
         return self.get_vrf_details(context, kwargs)
 
-    # REVISIT: def ip_address_owner_update(self, context, **kwargs):
+    def ip_address_owner_update(self, context, **kwargs):
+        LOG.debug("APIC AIM MD handling ip_address_owner_update for: %s",
+                  kwargs)
+        # REVISIT: Move actual handler implementation to this class.
+        if self.gbp_driver:
+            self.gbp_driver.ip_address_owner_update(context, **kwargs)
 
     @db_api.retry_if_session_inactive()
     def _get_vrf_details(self, context, vrf_id):

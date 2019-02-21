@@ -64,7 +64,6 @@ from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import directory
 from neutron_lib.utils import net
 from opflexagent import constants as ofcst
-from opflexagent import host_agent_rpc as arpc
 from opflexagent import rpc as ofrpc
 from oslo_config import cfg
 from oslo_db import exception as db_exc
@@ -205,26 +204,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           rpc.ApicRpcHandlerMixin):
     NIC_NAME_LEN = 14
 
-    class TopologyRpcEndpoint(object):
-        target = oslo_messaging.Target(version=arpc.VERSION)
-
-        def __init__(self, mechanism_driver):
-            self.md = mechanism_driver
-
-        @db_api.retry_if_session_inactive()
-        def update_link(self, context, *args, **kwargs):
-            context._session = db_api.get_writer_session()
-            return self.md.update_link(context, *args, **kwargs)
-
-        @db_api.retry_if_session_inactive()
-        def delete_link(self, context, *args, **kwargs):
-            # Don't take any action on link deletion in order to tolerate
-            # situations like fabric upgrade or flapping links. Old links
-            # are removed once a specific host is attached somewhere else.
-            # To completely decommission the host, aimctl can be used to
-            # cleanup the hostlink table
-            return
-
     def __init__(self):
         LOG.info("APIC AIM MD __init__")
 
@@ -250,12 +229,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.apic_system_id = cfg.CONF.apic_system_id
         self.notifier = ofrpc.AgentNotifierApi(n_topics.AGENT)
         self.sg_enabled = securitygroups_rpc.is_firewall_enabled()
-        # setup APIC topology RPC handler
-        self.topology_conn = n_rpc.create_connection()
-        self.topology_conn.create_consumer(arpc.TOPIC_APIC_SERVICE,
-                                           [self.TopologyRpcEndpoint(self)],
-                                           fanout=False)
-        self.topology_conn.consume_in_threads()
         self.keystone_notification_exchange = (cfg.CONF.ml2_apic_aim.
                                                keystone_notification_exchange)
         self.keystone_notification_topic = (cfg.CONF.ml2_apic_aim.
@@ -283,6 +256,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
         self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
         self.apic_router_id_subnet = netaddr.IPSet([self.apic_router_id_pool])
+
+    def start_rpc_listeners(self):
+        LOG.info("APIC AIM MD starting RPC listeners")
+        return self._start_rpc_listeners()
 
     def _setup_nova_vm_update(self):
         self.admin_context = nctx.get_admin_context()

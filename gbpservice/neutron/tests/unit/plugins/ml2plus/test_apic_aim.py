@@ -285,7 +285,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = FakeKeystoneClient
         self.plugin = directory.get_plugin()
-        self.plugin.start_rpc_listeners()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
         self.l3_plugin = directory.get_plugin(n_constants.L3)
@@ -469,6 +468,37 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             self.assertFalse(plugin_context.session.is_active)
             return mock.DEFAULT
         return verify
+
+
+class TestRpcListeners(ApicAimTestCase):
+    @staticmethod
+    def _consume_in_threads(self):
+        return self.servers
+
+    # REVISIT: Remove new_rpc option with old RPC cleanup.
+    def _test_start_rpc_listeners(self, new_rpc):
+        # Override mock from
+        # neutron.tests.base.BaseTestCase.setup_rpc_mocks(), so that
+        # it returns servers, but still avoids starting them.
+        with mock.patch('neutron.common.rpc.Connection.consume_in_threads',
+                        TestRpcListeners._consume_in_threads):
+            # Call plugin method and verify that the apic_aim MD's
+            # RPC servers are returned.
+            servers = self.plugin.start_rpc_listeners()
+            topics = [server._target.topic for server in servers]
+            self.assertIn('apic-service', topics)
+            if new_rpc:
+                self.assertIn('opflex', topics)
+            else:
+                self.assertNotIn('opflex', topics)
+
+    def test_start_rpc_listeners(self):
+        self.driver.enable_new_rpc = False
+        self._test_start_rpc_listeners(False)
+
+    def test_start_rpc_listeners_new_rpc(self):
+        self.driver.enable_new_rpc = True
+        self._test_start_rpc_listeners(True)
 
 
 class TestAimMapping(ApicAimTestCase):

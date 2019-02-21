@@ -17,6 +17,8 @@ import mock
 import testtools
 
 from neutron.api import extensions
+from neutron.common import rpc as n_rpc
+from neutron.common import topics
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
@@ -52,7 +54,6 @@ class Ml2PlusPluginV2TestCase(test_address_scope.AddressScopeTestCase):
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
         self.port_create_status = 'DOWN'
         self.plugin = directory.get_plugin()
-        self.plugin.start_rpc_listeners()
 
     def exist_checker(self, getter):
         def verify(context):
@@ -60,6 +61,40 @@ class Ml2PlusPluginV2TestCase(test_address_scope.AddressScopeTestCase):
             self.assertIsNotNone(obj)
             return mock.DEFAULT
         return verify
+
+
+class TestRpcListeners(Ml2PlusPluginV2TestCase):
+    @staticmethod
+    def _consume_in_threads(self):
+        return self.servers
+
+    @staticmethod
+    def _start_rpc_listeners(self):
+        conn = n_rpc.create_connection()
+        conn.create_consumer('q-test-topic', [])
+        return conn.consume_in_threads()
+
+    def test_start_rpc_listeners(self):
+        # Override mock from
+        # neutron.tests.base.BaseTestCase.setup_rpc_mocks(), so that
+        # it returns servers, but still avoids starting them.
+        with mock.patch('neutron.common.rpc.Connection.consume_in_threads',
+                        TestRpcListeners._consume_in_threads):
+            # Mock logger MD to start an RPC listener.
+            with mock.patch(
+                    'gbpservice.neutron.tests.unit.plugins.ml2plus.drivers.'
+                    'mechanism_logger.LoggerPlusMechanismDriver.'
+                    'start_rpc_listeners',
+                    TestRpcListeners._start_rpc_listeners):
+                # Call plugin method and verify that the base ML2
+                # servers as well as the test MD server are returned.
+                servers = self.plugin.start_rpc_listeners()
+                self.assertEqual(sorted([topics.PLUGIN,
+                                         topics.SERVER_RESOURCE_VERSIONS,
+                                         topics.REPORTS,
+                                         'q-test-topic']),
+                                 sorted([server._target.topic
+                                         for server in servers]))
 
 
 class TestEnsureTenant(Ml2PlusPluginV2TestCase):
