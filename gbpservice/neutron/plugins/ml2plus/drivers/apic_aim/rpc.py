@@ -45,10 +45,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
-# REVISIT: This should be moved to the mechanism driver.
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    port_ha_ipaddress_binding as ha_ip_db)
-
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery()
@@ -205,14 +201,6 @@ class ApicRpcHandlerMixin(object):
         return conn.consume_in_threads()
 
     # The following five methods handle RPCs from the Opflex agent.
-    #
-    # REVISIT: These handler methods are currently called by
-    # corresponding handler methods in the aim_mapping_rpc
-    # module. Once these RPC handlers are all fully implemented and
-    # tested, move the instantiation of the
-    # opflexagent.rpc.GBPServerRpcCallback class from aim_mapping_rpc
-    # to this module and eliminate the other RPC handler
-    # implementations.
 
     def get_gbp_details(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling get_gbp_details for: %s", kwargs)
@@ -286,9 +274,12 @@ class ApicRpcHandlerMixin(object):
     def ip_address_owner_update(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling ip_address_owner_update for: %s",
                   kwargs)
-        # REVISIT: Move actual handler implementation to this class.
-        if self.gbp_driver:
-            self.gbp_driver.ip_address_owner_update(context, **kwargs)
+        if not kwargs.get('ip_owner_info'):
+            return
+        ports_to_update = self.update_ip_owner(kwargs['ip_owner_info'])
+        for p in ports_to_update:
+            LOG.debug("APIC ownership update for port %s", p)
+            self._notify_port_update(context, p)
 
     @db_api.retry_if_session_inactive()
     def _get_vrf_details(self, context, vrf_id):
@@ -663,17 +654,17 @@ class ApicRpcHandlerMixin(object):
 
     def _query_endpoint_haip_owned_ip_info(self, session, port_id, network_id):
         query = BAKERY(lambda s: s.query(
-            ha_ip_db.HAIPAddressToPortAssocation.ha_ip_address,
+            db.HAIPAddressToPortAssociation.ha_ip_address,
             models_v2.IPAllocation.port_id,
         ))
         query += lambda q: q.outerjoin(
             models_v2.IPAllocation,
             models_v2.IPAllocation.ip_address ==
-            ha_ip_db.HAIPAddressToPortAssocation.ha_ip_address and
+            db.HAIPAddressToPortAssociation.ha_ip_address and
             models_v2.IPAllocation.network_id ==
             sa.bindparam('network_id'))
         query += lambda q: q.filter(
-            ha_ip_db.HAIPAddressToPortAssocation.port_id ==
+            db.HAIPAddressToPortAssociation.port_id ==
             sa.bindparam('port_id'))
         return [EndpointOwnedIpInfo._make(row) for row in
                 query(session).params(

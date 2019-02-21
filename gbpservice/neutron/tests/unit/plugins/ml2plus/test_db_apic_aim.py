@@ -17,8 +17,7 @@ from oslo_db import exception as exc
 from oslo_utils import importutils
 
 from gbpservice.neutron.db import all_models  # noqa
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    port_ha_ipaddress_binding as ha)
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 
 DB_PLUGIN_KLASS = 'neutron.db.db_base_plugin_v2.NeutronDbPluginV2'
 
@@ -74,7 +73,8 @@ class PortToHAIPAddressBindingTestCase(testlib_api.SqlTestCase):
         self.port1 = self.plugin.create_port(self.context, self.port1_data)
         self.port1_2 = self.plugin.create_port(self.context, self.port1_2_data)
         self.port2 = self.plugin.create_port(self.context, self.port2_data)
-        self.port_haip = ha.PortForHAIPAddress()
+        self.port_haip = db.DbMixin()
+        self.port_haip.plugin = self.plugin
 
     def test_set_and_get_port_to_ha_ip_binding(self):
         # Test new HA IP address to port binding can be created
@@ -150,14 +150,12 @@ class PortToHAIPAddressBindingTestCase(testlib_api.SqlTestCase):
         self.assertEqual(0, result)
 
     def test_ip_owner_update(self):
-        mixin = ha.HAIPOwnerDbMixin()
-        mixin._get_plugin = mock.Mock(return_value=self.plugin)
         ip_owner_info = {'port': self.port1['id'],
                          'ip_address_v4': self.ha_ip1}
 
         # set new owner
-        ports = mixin.update_ip_owner(ip_owner_info)
-        obj = mixin.ha_ip_handler.get_port_for_ha_ipaddress(
+        ports = self.port_haip.update_ip_owner(ip_owner_info)
+        obj = self.port_haip.get_port_for_ha_ipaddress(
             self.ha_ip1, self.port1['network_id'])
         self.assertEqual(self.port1['id'], obj['port_id'])
         self.assertTrue(self.port1['id'] in ports)
@@ -169,28 +167,26 @@ class PortToHAIPAddressBindingTestCase(testlib_api.SqlTestCase):
         port3 = self.plugin.create_port(self.context, self.port2_data)
 
         ip_owner_info['port'] = port3['id']
-        ports = mixin.update_ip_owner(ip_owner_info)
-        obj = mixin.ha_ip_handler.get_port_for_ha_ipaddress(
+        ports = self.port_haip.update_ip_owner(ip_owner_info)
+        obj = self.port_haip.get_port_for_ha_ipaddress(
             self.ha_ip1, port3['network_id'])
         self.assertEqual(port3['id'], obj['port_id'])
 
     def test_ip_replaced(self):
-        mixin = ha.HAIPOwnerDbMixin()
-        mixin._get_plugin = mock.Mock(return_value=self.plugin)
         ip_owner_info = {'port': self.port1['id'],
                          'ip_address_v4': self.ha_ip1}
-        mixin.update_ip_owner(ip_owner_info)
+        self.port_haip.update_ip_owner(ip_owner_info)
         # Verify only one entry is there
-        dump = mixin.ha_ip_handler.get_ha_port_associations()
+        dump = self.port_haip.get_ha_port_associations()
         self.assertEqual(1, len(dump))
         self.assertEqual(self.port1['id'], dump[0].port_id)
         self.assertEqual(self.ha_ip1, dump[0].ha_ip_address)
 
         # Now override with port1_2
         ip_owner_info['port'] = self.port1_2['id']
-        mixin.update_ip_owner(ip_owner_info)
+        self.port_haip.update_ip_owner(ip_owner_info)
         # Verify still one entry exists
-        dump = mixin.ha_ip_handler.get_ha_port_associations()
+        dump = self.port_haip.get_ha_port_associations()
         self.assertEqual(1, len(dump))
         self.assertEqual(self.port1_2['id'], dump[0].port_id)
         self.assertEqual(self.ha_ip1, dump[0].ha_ip_address)
@@ -198,9 +194,9 @@ class PortToHAIPAddressBindingTestCase(testlib_api.SqlTestCase):
         # Override again, but with a different net_id to keep both records
         ip_owner_info['port'] = self.port1['id']
         ip_owner_info['network_id'] = 'new_net_id'
-        mixin.update_ip_owner(ip_owner_info)
+        self.port_haip.update_ip_owner(ip_owner_info)
         # Verify still one entry exists
-        dump = mixin.ha_ip_handler.get_ha_port_associations()
+        dump = self.port_haip.get_ha_port_associations()
         self.assertEqual(2, len(dump))
 
     def test_duplicate_entry_handled_gracefully(self):
