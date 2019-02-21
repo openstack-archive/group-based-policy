@@ -83,10 +83,9 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import nova_client
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import rpc
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    nova_client as nclient)
 
 # REVISIT: We need the aim_mapping policy driver's config until
 # advertise_mtu and nested_host_vlan are moved to the mechanism
@@ -289,7 +288,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         self.apic_nova_vm_name_cache_update_interval * 10):
                     is_full_update = False
 
-        nova_vms = nclient.NovaClient().get_servers(
+        nova_vms = nova_client.NovaClient().get_servers(
             is_full_update, self.apic_nova_vm_name_cache_update_interval * 10)
         # This means Nova API has thrown an exception
         if nova_vms is None:
@@ -2108,12 +2107,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     # Get all the owned IP addresses for the port, and if
                     # they match a removed AAP entry, delete that entry
                     # from the DB
-                    ha_handler = self.gbp_driver.ha_ip_handler
-                    ha_ips = ha_handler.get_ha_ipaddresses_for_port(port['id'],
-                        session=session)
+                    ha_ips = self.get_ha_ipaddresses_for_port(
+                        port['id'], session=session)
                     for ip in ha_ips:
                         if ip in cidr:
-                            ha_handler.delete_port_id_for_ha_ipaddress(
+                            self.delete_port_id_for_ha_ipaddress(
                                 port['id'], ip, session=session)
 
     def update_port_precommit(self, context):

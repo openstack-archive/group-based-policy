@@ -45,9 +45,6 @@ from gbpservice.neutron.services.grouppolicy.drivers import (  # noqa
     nsp_manager,
     resource_mapping
 )
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (  # noqa
-    port_ha_ipaddress_binding
-)
 from gbpservice.neutron.services.servicechain.plugins.ncp import (  # noqa
     model
 )

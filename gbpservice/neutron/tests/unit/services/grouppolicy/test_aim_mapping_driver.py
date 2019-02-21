@@ -121,8 +121,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
               l3_plugin=None, sc_plugin=None, trunk_plugin=None,
               qos_plugin=None, **kwargs):
         self.nova_client1 = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_servers').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_servers').start()
         self.nova_client1.return_value = []
         core_plugin = core_plugin or ML2PLUS_PLUGIN
         if not l3_plugin:
@@ -182,8 +182,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._name_mapper = None
         self._driver = None
         nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_server').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_servers').start()
         vm = mock.Mock()
         vm.name = 'someid'
         nova_client.return_value = vm
@@ -3823,7 +3823,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         # set new owner
         self.driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h1')
-        obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
+        obj = self.driver.aim_mech_driver.get_port_for_ha_ipaddress(
             '1.2.3.4', net_id)
 
         self.assertEqual(pt1['port_id'], obj['port_id'])
@@ -3835,7 +3835,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         ip_owner_info['port'] = pt2['port_id']
         self.driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h2')
-        obj = self.driver.ha_ip_handler.get_port_for_ha_ipaddress(
+        obj = self.driver.aim_mech_driver.get_port_for_ha_ipaddress(
             '1.2.3.4', net_id)
         self.assertEqual(pt2['port_id'], obj['port_id'])
         exp_calls = [
@@ -3856,8 +3856,8 @@ class TestPolicyTarget(AIMBaseTestCase,
             policy_target_group_id=ptg['id'])['policy_target']
 
         nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_server').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_servers').start()
         vm = mock.Mock()
         vm.name = 'secure_vm1'
         nova_client.return_value = vm
@@ -5895,7 +5895,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         ip_owner_info = {'port': p1['id'],
                          'ip_address_v4': owned_addr[0],
                          'network_id': p1['network_id']}
-        self.driver.update_ip_owner(ip_owner_info)
+        self.driver.aim_mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p1
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
@@ -5928,7 +5928,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         ip_owner_info = {'port': p2['id'],
                          'ip_address_v4': owned_addr[1],
                          'network_id': p2['network_id']}
-        self.driver.update_ip_owner(ip_owner_info)
+        self.driver.aim_mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p2
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
@@ -5999,13 +5999,13 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         p1 = self._update('ports', p1['id'],
             {'port': {'allowed_address_pairs': update_addr}},
             neutron_context=self._neutron_admin_context)['port']
-        ips = self.driver.ha_ip_handler.get_ha_ipaddresses_for_port(p1['id'])
+        ips = self.driver.aim_mech_driver.get_ha_ipaddresses_for_port(p1['id'])
         self.assertEqual(ips, [])
         # Request ownership of the new AAP
         ip_owner_info = {'port': p1['id'],
                          'ip_address_v4': update_owned_addr[0],
                          'network_id': p1['network_id']}
-        self.driver.update_ip_owner(ip_owner_info)
+        self.driver.aim_mech_driver.update_ip_owner(ip_owner_info)
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
@@ -6016,13 +6016,13 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         p2 = self._update('ports', p2['id'],
             {'port': {'allowed_address_pairs': update_addr}},
             neutron_context=self._neutron_admin_context)['port']
-        ips = self.driver.ha_ip_handler.get_ha_ipaddresses_for_port(p2['id'])
+        ips = self.driver.aim_mech_driver.get_ha_ipaddresses_for_port(p2['id'])
         self.assertEqual(ips, [])
         # Request ownership of the new AAP
         ip_owner_info = {'port': p2['id'],
                          'ip_address_v4': update_owned_addr[1],
                          'network_id': p2['network_id']}
-        self.driver.update_ip_owner(ip_owner_info)
+        self.driver.aim_mech_driver.update_ip_owner(ip_owner_info)
         details = self.driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
