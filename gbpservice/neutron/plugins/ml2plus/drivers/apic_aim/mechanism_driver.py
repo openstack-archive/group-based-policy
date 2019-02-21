@@ -86,10 +86,9 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import nova_client
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import rpc
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    nova_client as nclient)
 
 LOG = log.getLogger(__name__)
 
@@ -284,7 +283,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         self.apic_nova_vm_name_cache_update_interval * 10):
                     is_full_update = False
 
-        nova_vms = nclient.NovaClient().get_servers(
+        nova_vms = nova_client.NovaClient().get_servers(
             is_full_update, self.apic_nova_vm_name_cache_update_interval * 10)
         # This means Nova API has thrown an exception
         if nova_vms is None:

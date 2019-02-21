@@ -26,10 +26,10 @@ from oslo_log import log
 from oslo_utils import importutils
 
 from gbpservice._i18n import _LW
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    nova_client as nclient)
 
 
 LOG = log.getLogger(__name__)

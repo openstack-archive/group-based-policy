@@ -53,6 +53,8 @@ from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy.extensions import apic_reuse_bd_db
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    nova_client as nclient)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
@@ -63,8 +65,6 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping_lib as alib)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     name_manager as name_manager)
-from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
-    nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy import group_policy_context
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
