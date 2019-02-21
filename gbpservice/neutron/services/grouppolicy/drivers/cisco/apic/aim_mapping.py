@@ -159,6 +159,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def start_rpc_listeners(self):
+        if self.aim_mech_driver.enable_new_rpc:
+            return []
         return self.setup_opflex_rpc_listeners()
 
     def validate_state(self, repair):

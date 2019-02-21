@@ -33,6 +33,10 @@ class LoggerPlusMechanismDriver(driver_api.MechanismDriver,
     def initialize(self):
         LOG.info(_LI("initialize called"))
 
+    def start_rpc_listeners(self):
+        LOG.info("start_rpc_listeners called")
+        return []
+
     def ensure_tenant(self, plugin_context, tenant_id):
         LOG.info(_LI("ensure_tenant called with tenant_id %s"), tenant_id)
 
