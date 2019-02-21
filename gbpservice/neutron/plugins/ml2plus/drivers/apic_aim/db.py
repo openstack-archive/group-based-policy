@@ -87,6 +87,9 @@ class VMNameUpdate(model_base.BASEV2):
 
 
 class DbMixin(object):
+
+    # AddressScopeMapping functions.
+
     def _add_address_scope_mapping(self, session, scope_id, vrf,
                                    vrf_owned=True, update_scope=True):
         mapping = AddressScopeMapping(
@@ -150,6 +153,8 @@ class DbMixin(object):
         return aim_resource.VRF(
             tenant_name=mapping.vrf_tenant_name,
             name=mapping.vrf_name)
+
+    # NetworkMapping functions.
 
     def _add_network_mapping(self, session, network_id, bd, epg, vrf,
                              ext_net=None, update_network=True):
@@ -302,6 +307,8 @@ class DbMixin(object):
         mapping.vrf_tenant_name = vrf.tenant_name
         mapping.vrf_name = vrf.name
 
+    # VMName functions.
+
     def _get_vm_name(self, session, device_id, is_detailed=False):
         if is_detailed:
             query = BAKERY(lambda s: s.query(VMName))
@@ -333,6 +340,8 @@ class DbMixin(object):
                                        is_detailed=True)
             if db_obj:
                 session.delete(db_obj)
+
+    # VMNameUpdate functions.
 
     def _get_vm_name_update(self, session):
         query = BAKERY(lambda s: s.query(VMNameUpdate))

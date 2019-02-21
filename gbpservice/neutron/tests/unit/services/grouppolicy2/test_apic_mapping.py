@@ -134,8 +134,8 @@ class ApicMappingTestCase(
                    'apic.apic_mapping.ApicMappingDriver.'
                    '_setup_keystone_notification_listeners').start()
         nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_server').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_server').start()
         vm = mock.Mock()
         vm.name = 'someid'
         nova_client.return_value = vm
@@ -1880,8 +1880,8 @@ class TestPolicyTargetDvs(ApicMappingTestCase):
             policy_target_group_id=ptg['id'])['policy_target']
 
         nova_client = mock.patch(
-            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
-            'apic.nova_client.NovaClient.get_server').start()
+            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+            'nova_client.NovaClient.get_server').start()
         vm = mock.Mock()
         vm.name = 'secure_vm1'
         nova_client.return_value = vm
