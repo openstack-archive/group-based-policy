@@ -477,7 +477,7 @@ class TestRpcListeners(ApicAimTestCase):
         return self.servers
 
     # REVISIT: Remove new_rpc option with old RPC cleanup.
-    def _test_start_rpc_listeners(self, new_rpc):
+    def test_start_rpc_listeners(self):
         # Override mock from
         # neutron.tests.base.BaseTestCase.setup_rpc_mocks(), so that
         # it returns servers, but still avoids starting them.
@@ -488,17 +488,7 @@ class TestRpcListeners(ApicAimTestCase):
             servers = self.plugin.start_rpc_listeners()
             topics = [server._target.topic for server in servers]
             self.assertIn('apic-service', topics)
-            if new_rpc:
-                self.assertIn('opflex', topics)
-            else:
-                self.assertNotIn('opflex', topics)
-
-    def test_start_rpc_listeners(self):
-        self._test_start_rpc_listeners(True)
-
-    def test_start_rpc_listeners_old_rpc(self):
-        self.driver.enable_new_rpc = False
-        self._test_start_rpc_listeners(False)
+            self.assertIn('opflex', topics)
 
     def test_opflex_endpoint(self):
         self.plugin.start_rpc_listeners()
