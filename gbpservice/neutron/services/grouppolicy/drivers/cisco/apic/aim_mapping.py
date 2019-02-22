@@ -11,7 +11,6 @@
 #    under the License.
 
 import hashlib
-import netaddr
 import re
 import six
 import sqlalchemy as sa
@@ -21,7 +20,6 @@ from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
-from neutron.agent.linux import dhcp
 from neutron.db import api as db_api
 from neutron import policy
 from neutron_lib import constants as n_constants
@@ -42,8 +40,6 @@ from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_gbp as aim_ext
 from gbpservice.neutron.extensions import cisco_apic_l3
 from gbpservice.neutron.extensions import group_policy as gpolicy
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
-    exceptions as md_exc)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
@@ -80,12 +76,6 @@ AUTO_PTG_ID_PREFIX = AUTO_PTG_PREFIX + '%s'
 
 # Definitions duplicated from apicapi lib
 APIC_OWNED = 'apic_owned_'
-
-# REVISIT: Remove with original RPC implementation.
-PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
-                     n_constants.DEVICE_OWNER_LOADBALANCER]
-# REVISIT: Remove with original RPC implementation.
-PROMISCUOUS_SUFFIX = 'promiscuous'
 
 CONTRACTS = 'contracts'
 CONTRACT_SUBJECTS = 'contract_subjects'
@@ -161,9 +151,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def start_rpc_listeners(self):
-        if self.aim_mech_driver.enable_new_rpc:
-            return []
-        return self.setup_opflex_rpc_listeners()
+        return []
 
     def validate_state(self, repair):
         mgr = aim_validation.ValidationManager()
@@ -1159,12 +1147,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return self._get_aim_application_profile_from_db(
                 context._plugin_context.session, ap)
 
-    # REVISIT: Remove with original RPC implementation.
-    def _get_aim_application_profile(self, session, apg):
-        # This gets an AP from the AIM DB
-        ap = self._aim_application_profile(session, apg)
-        return self._get_aim_application_profile_from_db(session, ap)
-
     def _get_aim_application_profile_from_db(self, session, ap):
         aim_ctx = aim_context.AimContext(session)
         ap_fetched = self.aim.get(aim_ctx, ap)
@@ -1454,18 +1436,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_contract_subject = self._aim_contract_subject(
             aim_contract, in_filters, out_filters, bi_filters)
         self.aim.create(aim_ctx, aim_contract_subject, overwrite=True)
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_aim_contract(self, session, policy_rule_set):
-        # This gets a Contract from the AIM DB
-        aim_ctx = aim_context.AimContext(session)
-        contract = self._aim_contract(session, policy_rule_set)
-        contract_fetched = self.aim.get(aim_ctx, contract)
-        if not contract_fetched:
-            LOG.debug("No Contract found in AIM DB")
-        else:
-            LOG.debug("Got Contract: %s", vars(contract_fetched))
-        return contract_fetched
 
     def _get_aim_contract_names(self, session, prs_id_list):
         contract_list = []
@@ -1782,36 +1752,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session = context._plugin_context.session
         return aim_context.AimContext(session)
 
-    # REVISIT: Remove with original RPC implementation.
-    def _is_port_promiscuous(self, plugin_context, port):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
-        if (pt and pt.get('cluster_id') and
-                pt.get('cluster_id') != pt['id']):
-            master = self._get_policy_target(plugin_context, pt['cluster_id'])
-            if master.get('group_default_gateway'):
-                return True
-        if (port['device_owner'] in PROMISCUOUS_TYPES or
-                port['name'].endswith(PROMISCUOUS_SUFFIX) or
-                (pt and pt.get('group_default_gateway'))):
-            return True
-        if not port.get('port_security_enabled', True):
-            return True
-        return False
-
-    # REVISIT: Remove with original RPC implementation.
-    def _is_dhcp_optimized(self, plugin_context, port):
-        return self.aim_mech_driver.enable_dhcp_opt
-
-    # REVISIT: Remove with original RPC implementation.
-    def _is_metadata_optimized(self, plugin_context, port):
-        return self.aim_mech_driver.enable_metadata_opt
-
-    # REVISIT: Remove with original RPC implementation.
-    def _set_dhcp_lease_time(self, details):
-        if self.aim_mech_driver.apic_optimized_dhcp_lease_time > 0:
-            details['dhcp_lease_time'] = (
-                self.aim_mech_driver.apic_optimized_dhcp_lease_time)
-
     # REVISIT: Called by mechanism driver when binding a port using
     # DVS. Consider a more general way for neutron ports to be bound
     # using a non-default EPG.
@@ -1831,273 +1771,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 LOG.error("Default EPG doesn't exist for "
                           "port %s", port['id'])
             return epg
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_subnet_details(self, plugin_context, port):
-        # L2P might not exist for a pure Neutron port
-        l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
-        # TODO(ivar): support shadow network
-        # if not l2p and self._ptg_needs_shadow_network(context, ptg):
-        #    l2p = self._get_l2_policy(context._plugin_context,
-        #                              ptg['l2_policy_id'])
-
-        subnets = self._get_subnets(
-            plugin_context,
-            filters={'id': [ip['subnet_id'] for ip in port['fixed_ips']]})
-        for subnet in subnets:
-            dhcp_ports = {}
-            subnet_dhcp_ips = set()
-            for dhcp_port in self._get_ports(
-                    plugin_context,
-                    filters={
-                        'network_id': [subnet['network_id']],
-                        'device_owner': [n_constants.DEVICE_OWNER_DHCP]}):
-                dhcp_ips = set([x['ip_address'] for x in dhcp_port['fixed_ips']
-                                if x['subnet_id'] == subnet['id']])
-                dhcp_ports.setdefault(dhcp_port['mac_address'], list(dhcp_ips))
-                subnet_dhcp_ips |= dhcp_ips
-            subnet_dhcp_ips = list(subnet_dhcp_ips)
-            if not subnet['dns_nameservers']:
-                # Use DHCP namespace port IP
-                subnet['dns_nameservers'] = subnet_dhcp_ips
-            # Set Default & Metadata routes if needed
-            default_route = metadata_route = {}
-            if subnet['ip_version'] == 4:
-                for route in subnet['host_routes']:
-                    if route['destination'] == '0.0.0.0/0':
-                        default_route = route
-                    if route['destination'] == dhcp.METADATA_DEFAULT_CIDR:
-                        metadata_route = route
-                if l2p and not l2p['inject_default_route']:
-                    # In this case we do not want to send the default route
-                    # and the metadata route. We also do not want to send
-                    # the gateway_ip for the subnet.
-                    if default_route:
-                        subnet['host_routes'].remove(default_route)
-                    if metadata_route:
-                        subnet['host_routes'].remove(metadata_route)
-                    del subnet['gateway_ip']
-                else:
-                    # Set missing routes
-                    if not default_route:
-                        subnet['host_routes'].append(
-                            {'destination': '0.0.0.0/0',
-                             'nexthop': subnet['gateway_ip']})
-                    optimized = self._is_metadata_optimized(plugin_context,
-                                                            port)
-                    # REVISIT: We need to decide if we should provide
-                    # host-routes for all of the DHCP agents. For now
-                    # use the first DHCP agent in our list for the
-                    # metadata host-route next-hop IPs
-                    if not metadata_route and dhcp_ports and (
-                        not optimized or (optimized and not default_route)):
-                        for ip in dhcp_ports[dhcp_ports.keys()[0]]:
-                            subnet['host_routes'].append(
-                                {'destination': dhcp.METADATA_DEFAULT_CIDR,
-                                 'nexthop': ip})
-            subnet['dhcp_server_ips'] = subnet_dhcp_ips
-            if dhcp_ports:
-                subnet['dhcp_server_ports'] = dhcp_ports
-        return subnets
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_nova_vm_name(self, context, port):
-        return self.aim_mech_driver._get_vm_name(context.session,
-                                                 port['device_id'])
-
-    # REVISIT: Remove with original RPC implementation.
-    def _send_port_update_notification(self, plugin_context, port):
-        self.aim_mech_driver._notify_port_update(plugin_context, port)
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_aap_details(self, plugin_context, port):
-        aaps = port['allowed_address_pairs']
-        # Set the correct address ownership for this port
-        owned_addresses = self._get_owned_addresses(
-            plugin_context, port['id'])
-        extra_aaps = []
-        for allowed in aaps:
-            cidr = netaddr.IPNetwork(allowed['ip_address'])
-            if ((cidr.version == 4 and cidr.prefixlen != 32) or
-                (cidr.version == 6 and cidr.prefixlen != 128)):
-                # Never mark CIDRs as "active", but
-                # look for owned addresses in this CIDR, and
-                # if present, add them to the allowed-address-pairs
-                # list, and mark those as "active"
-                for addr in owned_addresses:
-                    entry = {'ip_address': addr,
-                             'mac_address': allowed['mac_address'],
-                             'active': True}
-                    if addr in cidr and entry not in extra_aaps:
-                        extra_aaps.append(entry)
-            elif allowed['ip_address'] in owned_addresses:
-                # Signal the agent that this particular address is active
-                # on its port
-                allowed['active'] = True
-        if extra_aaps:
-            aaps.extend(extra_aaps)
-        return aaps
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_port_vrf(self, plugin_context, port):
-        net_db = self._core_plugin._get_network(plugin_context,
-                                                port['network_id'])
-        return self.aim_mech_driver.get_vrf_for_network(
-            plugin_context.session, net_db)
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_vrf_subnets(self, plugin_context, vrf_tenant_name, vrf_name):
-        session = plugin_context.session
-        result = []
-        # get all subnets of the specified VRF
-        with session.begin(subtransactions=True):
-            # Find VRF's address_scope first
-            address_scope_ids = (
-                self.aim_mech_driver._get_address_scope_ids_for_vrf(
-                    session,
-                    aim_resource.VRF(tenant_name=vrf_tenant_name,
-                                     name=vrf_name)))
-            if address_scope_ids:
-                for address_scope_id in address_scope_ids:
-                    subnetpools = self._get_subnetpools(
-                        plugin_context,
-                        filters={'address_scope_id': [address_scope_id]})
-                    for pool in subnetpools:
-                        result.extend(pool['prefixes'])
-            else:
-                aim_ctx = aim_context.AimContext(db_session=session)
-                if vrf_tenant_name != md.COMMON_TENANT_NAME:
-                    bds = self.aim.find(aim_ctx, aim_resource.BridgeDomain,
-                                        tenant_name=vrf_tenant_name,
-                                        vrf_name=vrf_name)
-                else:
-                    bds = self.aim.find(aim_ctx, aim_resource.BridgeDomain,
-                                        vrf_name=vrf_name)
-                    other_vrfs = self.aim.find(aim_ctx, aim_resource.VRF,
-                                               name=vrf_name)
-                    bd_tenants = set([x.tenant_name for x in bds])
-                    vrf_tenants = set([x.tenant_name for x in other_vrfs
-                                       if x.tenant_name != vrf_tenant_name])
-                    valid_tenants = bd_tenants - vrf_tenants
-                    # Only keep BDs that don't have a VRF with that name
-                    # already
-                    bds = [x for x in bds if x.tenant_name in valid_tenants]
-                # Retrieve subnets from BDs
-                net_ids = self._get_net_ids_from_bds(session, bds)
-                if net_ids:
-                    subnets = self._get_subnets(plugin_context,
-                                                {'network_id': net_ids})
-                    result = [x['cidr'] for x in subnets]
-        return result
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_net_ids_from_bds(self, session, bds):
-        net_ids = []
-        for bd in bds:
-            try:
-                net_ids.append(self.name_mapper.reverse_network(
-                    session, bd.name))
-            except md_exc.InternalError:
-                # Check if BD maps to an external network
-                ext_ids = self.aim_mech_driver.get_network_ids_for_bd(
-                    session, bd)
-                net_ids.extend(ext_ids)
-                # If no external network is found, we ignore reverse
-                # mapping failures because there may be APIC BDs in the
-                # concerned VRF that Neutron is unaware of. This is
-                # especially true for VRFs in the common tenant.
-        return net_ids
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_segmentation_labels(self, plugin_context, port):
-        pt = self._port_id_to_pt(plugin_context, port['id'])
-        if self.apic_segmentation_label_driver and pt and (
-                    'segmentation_labels' in pt):
-            return pt['segmentation_labels']
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_nat_details(self, plugin_context, port, host, details):
-        """ Add information about IP mapping for DNAT/SNAT """
-
-        fips = []
-        ipms = []
-        host_snat_ips = []
-
-        # Find all external networks connected to the port.
-        # Handle them depending on whether there is a FIP on that
-        # network.
-        ext_nets = []
-
-        port_sn = set([x['subnet_id'] for x in port['fixed_ips']])
-        router_intf_ports = self._get_ports(
-            plugin_context,
-            filters={'device_owner': [n_constants.DEVICE_OWNER_ROUTER_INTF],
-                     'fixed_ips': {'subnet_id': port_sn}})
-        if router_intf_ports:
-            routers = self._get_routers(
-                plugin_context,
-                filters={'id': [x['device_id']
-                                for x in router_intf_ports]})
-            ext_nets = self._get_networks(
-                plugin_context,
-                filters={'id': [r['external_gateway_info']['network_id']
-                                for r in routers
-                                if r.get('external_gateway_info')]})
-        if not ext_nets:
-            return fips, ipms, host_snat_ips
-
-        # Handle FIPs of owned addresses - find other ports in the
-        # network whose address is owned by this port.
-        # If those ports have FIPs, then steal them.
-        fips_filter = [port['id']]
-        active_addrs = [a['ip_address']
-                        for a in details['allowed_address_pairs']
-                        if a.get('active')]
-        if active_addrs:
-            others = self._get_ports(
-                plugin_context,
-                filters={'network_id': [port['network_id']],
-                         'fixed_ips': {'ip_address': active_addrs}})
-            fips_filter.extend([p['id'] for p in others
-                                if p['id'] != port['id']])
-        fips = self._get_fips(plugin_context,
-                              filters={'port_id': fips_filter})
-
-        for ext_net in ext_nets:
-            dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
-                cisco_apic.EXTERNAL_NETWORK)
-            ext_net_epg_dn = ext_net.get(cisco_apic.DIST_NAMES, {}).get(
-                cisco_apic.EPG)
-            if not dn or not ext_net_epg_dn:
-                continue
-            if 'distributed' != ext_net.get(cisco_apic.NAT_TYPE):
-                continue
-
-            # TODO(amitbose) Handle per-tenant NAT EPG
-            ext_net_epg = aim_resource.EndpointGroup.from_dn(ext_net_epg_dn)
-
-            fips_in_ext_net = [fip for fip in fips
-                               if fip['floating_network_id'] == ext_net['id']]
-            if not fips_in_ext_net:
-                ext_segment_name = dn.replace('/', ':')
-                ipms.append({'external_segment_name': ext_segment_name,
-                             'nat_epg_name': ext_net_epg.name,
-                             'nat_epg_app_profile': (
-                                 ext_net_epg.app_profile_name),
-                             'nat_epg_tenant': ext_net_epg.tenant_name})
-                # TODO(amitbose) Set next_hop_ep_tenant for per-tenant NAT EPG
-                if host:
-                    snat_ip = self.aim_mech_driver.get_or_allocate_snat_ip(
-                        plugin_context, host, ext_net)
-                    if snat_ip:
-                        snat_ip['external_segment_name'] = ext_segment_name
-                        host_snat_ips.append(snat_ip)
-            else:
-                for f in fips_in_ext_net:
-                    f['nat_epg_name'] = ext_net_epg.name
-                    f['nat_epg_app_profile'] = ext_net_epg.app_profile_name
-                    f['nat_epg_tenant'] = ext_net_epg.tenant_name
-        return fips, ipms, host_snat_ips
 
     def _get_vrf_by_dn(self, context, vrf_dn):
         aim_context = self._get_aim_context(context)
@@ -2346,13 +2019,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         else:
             return False
 
-    # REVISIT: Remove with original RPC implementation.
-    def _get_bd_by_dn(self, context, bd_dn):
-        aim_context = self._get_aim_context(context)
-        bd = self.aim.get(
-            aim_context, aim_resource.BridgeDomain.from_dn(bd_dn))
-        return bd
-
     def _get_epg_by_dn(self, context, epg_dn):
         aim_context = self._get_aim_context(context)
         epg = self.aim.get(
@@ -2454,38 +2120,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context._plugin_context, x['id']) for x in (
                 query(context._plugin_context.session).params(
                     pr_ids=pr_ids).all())]
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_port_mtu(self, context, port):
-        if self.advertise_mtu:
-            for dhcp_opt in port.get('extra_dhcp_opts'):
-                if (dhcp_opt.get('opt_name') == 'interface-mtu' or
-                        dhcp_opt.get('opt_name') == '26'):
-                    if dhcp_opt.get('opt_value'):
-                        try:
-                            return int(dhcp_opt['opt_value'])
-                        except ValueError:
-                            continue
-            network = self._get_network(context, port['network_id'])
-            return network.get('mtu')
-        return None
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_dns_domain(self, context, port):
-        network = self._get_network(context, port['network_id'])
-        return network.get('dns_domain')
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_nested_domain(self, context, port):
-        network = self._get_network(context, port['network_id'])
-        return (network.get('apic:nested_domain_name'),
-                network.get('apic:nested_domain_type'),
-                network.get('apic:nested_domain_infra_vlan'),
-                network.get('apic:nested_domain_service_vlan'),
-                network.get('apic:nested_domain_node_network_vlan'),
-                network.get('apic:nested_domain_allowed_vlans'),
-                self._nested_host_vlan if network.get(
-                    'apic:nested_domain_infra_vlan') else None)
 
     def _create_per_l3p_implicit_contracts(self):
         admin_context = n_context.get_admin_context()
