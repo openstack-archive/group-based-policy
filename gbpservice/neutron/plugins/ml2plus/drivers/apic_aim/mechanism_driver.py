@@ -240,9 +240,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
-        # REVISIT: Eliminate the following variable, leaving a single
-        # RPC implementation.
-        self.enable_new_rpc = cfg.CONF.ml2_apic_aim.enable_new_rpc
         self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
                                     apic_nova_vm_name_cache_update_interval)
         self._setup_nova_vm_update()
@@ -2678,9 +2675,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return vrfs.values()
 
     # Used by policy driver.
-    def _get_address_scope_ids_for_vrf(self, session, vrf, mappings=None):
-        mappings = mappings or self._get_address_scope_mappings_for_vrf(
-                                                                session, vrf)
+    def _get_address_scope_ids_for_vrf(self, session, vrf):
+        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
         return [mapping.scope_id for mapping in mappings]
 
     def _get_network_ids_for_vrf(self, session, vrf):
@@ -3235,16 +3231,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mapping = self._get_network_mapping(session, network['id'])
         return mapping and self._get_network_epg(mapping)
 
-    # Used by policy driver.
-    def get_vrf_for_network(self, session, network):
-        mapping = self._get_network_mapping(session, network['id'])
-        return mapping and self._get_network_vrf(mapping)
-
-    # Used by policy driver.
-    def get_network_ids_for_bd(self, session, bd):
-        mapping = self._get_network_mappings_for_bd(session, bd)
-        return [m.network_id for m in mapping]
-
     def get_aim_domains(self, aim_ctx):
         vmms = [{'name': x.name, 'type': x.type}
                 for x in self.aim.find(aim_ctx, aim_resource.VMMDomain)
@@ -3485,6 +3471,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                  [plugin_context, port])
 
     def _notify_port_update_for_fip(self, plugin_context, port_id):
+        # REVISIT: Replace get_port() call with joins in query below.
         port = self.plugin.get_port(plugin_context.elevated(), port_id)
         ports_to_notify = [port_id]
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
@@ -3543,7 +3530,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             device_id=host_or_vrf).first()
 
         snat_ip = None
-        if not snat_port or snat_port['fixed_ips'] is None:
+        if not snat_port or snat_port.fixed_ips is None:
             # allocate SNAT port
             extn_db_sn = extension_db.SubnetExtensionDb
 
@@ -3584,7 +3571,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                              'for SNAT IP allocation',
                              snat_subnet['id'])
         else:
-            snat_ip = snat_port['fixed_ips'][0]['ip_address']
+            snat_ip = snat_port.fixed_ips[0]['ip_address']
 
             query = BAKERY(lambda s: s.query(
                 models_v2.Subnet))
@@ -3646,6 +3633,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 '%(ex)s',
                                 {'port': p, 'ex': ne})
 
+    # Called by l3_plugin.
     def check_floatingip_external_address(self, context, floatingip):
         session = context.session
         if floatingip.get('subnet_id'):
@@ -3670,6 +3658,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if floatingip['floating_ip_address'] in cidrs:
                 raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
 
+    # Called by l3_plugin.
     def get_subnets_for_fip(self, context, floatingip):
         session = context.session
         extn_db_sn = extension_db.SubnetExtensionDb
@@ -4280,10 +4269,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         return [p[0] for p in port_ids]
 
-    def _get_port_network_id(self, plugin_context, port_id):
-        port = self.plugin.get_port(plugin_context, port_id)
-        return port['network_id']
-
     def _get_svi_default_external_epg(self, network):
         if not network.get(cisco_apic.SVI):
             return None
@@ -4298,14 +4283,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return aim_resource.L3Outside(
             tenant_name=aim_ext_net.tenant_name, name=aim_ext_net.l3out_name)
 
+    # Called by sfc_driver.
     def _get_bd_by_network_id(self, session, network_id):
         net_mapping = self._get_network_mapping(session, network_id)
         return self._get_network_bd(net_mapping)
 
+    # Called by sfc_driver and its unit tests.
     def _get_epg_by_network_id(self, session, network_id):
         net_mapping = self._get_network_mapping(session, network_id)
         return self._get_network_epg(net_mapping)
 
+    # Called by sfc_driver.
     def _get_vrf_by_network(self, session, network):
         vrf_dn = network.get(cisco_apic.DIST_NAMES, {}).get(cisco_apic.VRF)
         if vrf_dn:
@@ -4322,6 +4310,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         net_mapping = self._get_network_mapping(session, network['id'])
         return self._get_network_vrf(net_mapping)
 
+    # Called by sfc_driver.
     def _get_port_static_path_info(self, plugin_context, port):
         port_id = port['id']
         path = encap = host = None
@@ -4352,6 +4341,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             path = host_links[0].path
         return path, encap, host
 
+    # Called by sfc_driver.
     def _get_port_unique_domain(self, plugin_context, port):
         """Get port domain
 
