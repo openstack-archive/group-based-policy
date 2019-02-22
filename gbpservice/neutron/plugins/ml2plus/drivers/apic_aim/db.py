@@ -230,17 +230,6 @@ class DbMixin(object):
         return query(session).params(
             network_id=network_id).one_or_none()
 
-    # REVISIT: Remove with original RPC implementation.
-    def _get_network_mapping_bulk(self, session, network_ids):
-        # REVISIT: This method is not called during any UT, and does
-        # not appear to be referenced elsewhere in this repository.
-        if not network_ids:
-            return []
-
-        # Baked queries using in_ require sqlalchemy >=1.2.
-        return session.query(NetworkMapping).filter(
-            NetworkMapping.network_id.in_(network_ids)).all()
-
     def _get_network_mappings_for_vrf(self, session, vrf):
         query = BAKERY(lambda s: s.query(
             NetworkMapping))
@@ -250,17 +239,6 @@ class DbMixin(object):
         return query(session).params(
             vrf_tenant_name=vrf.tenant_name,
             vrf_name=vrf.name).all()
-
-    # REVISIT: Remove with original RPC implementation.
-    def _get_network_mappings_for_bd(self, session, bd):
-        query = BAKERY(lambda s: s.query(
-            NetworkMapping))
-        query += lambda q: q.filter_by(
-            bd_tenant_name=sa.bindparam('bd_tenant_name'),
-            bd_name=sa.bindparam('bd_name'))
-        return query(session).params(
-            bd_tenant_name=bd.tenant_name,
-            bd_name=bd.name).all()
 
     def _is_vrf_used_by_networks(self, session, vrf):
         query = BAKERY(lambda s: s.query(
@@ -518,10 +496,3 @@ class DbMixin(object):
                     last_incremental_update_time=last_incremental_update_time,
                     last_full_update_time=last_full_update_time)
             session.add(db_obj)
-
-    # REVISIT: Remove with original RPC implementation.
-    def _delete_vm_name_update(self, session):
-        with session.begin(subtransactions=True):
-            db_obj = self._get_vm_name_update(session)
-            if db_obj:
-                session.delete(db_obj)

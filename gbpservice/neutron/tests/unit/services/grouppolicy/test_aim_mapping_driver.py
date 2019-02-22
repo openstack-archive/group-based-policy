@@ -283,13 +283,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             self._mech_driver = self.driver.aim_mech_driver
         return self._mech_driver
 
-    # REVISIT: As part of RPC cleanup, eliminate this property and
-    # globally replace self.rpc_handler with self.mech_driver.
-    @property
-    def rpc_handler(self):
-        return (self.mech_driver if self.mech_driver.enable_new_rpc
-                else self.driver)
-
     @property
     def dummy(self):
         # dummy policy driver reference
@@ -2062,7 +2055,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         with self.port(subnet=subnet) as port:
             port_id = port['port']['id']
             self._bind_port_to_host(port_id, 'h1')
-            mapping = self.rpc_handler.get_gbp_details(
+            mapping = self.mech_driver.get_gbp_details(
                 self._neutron_admin_context, device='tap%s' % port_id,
                 host='h1')
             self.assertEqual(
@@ -2097,7 +2090,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt['port_id'], 'h1')
         port = self._plugin.get_port(self._context, pt['port_id'])
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt['port_id'],
             host='h1')
         ap_name = self.driver.apic_ap_name_for_application_policy_group(
@@ -2108,7 +2101,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         ptg = self.update_policy_target_group(
             ptg['id'], expected_res_status=200,
             application_policy_group_id=new_apg['id'])['policy_target_group']
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt['port_id'],
             host='h1')
         ap_name = self.driver.apic_ap_name_for_application_policy_group(
@@ -2635,10 +2628,8 @@ class TestPolicyTargetGroupRollback(AIMBaseTestCase):
 class TestGbpDetailsForML2(AIMBaseTestCase,
                            test_securitygroup.SecurityGroupsTestCase):
 
-    # REVISIT: Once the new RPC handler implementation in the apic_aim
-    # mechanism driver is complete and tested, move this unit test
-    # class to test_apic_aim (or a new module) and remove the
-    # enable_new_rpc flag.
+    # REVISIT: Move this unit test class to the MD tests
+    # (test_apic_aim or a new module)?
 
     def setUp(self, *args, **kwargs):
         super(TestGbpDetailsForML2, self).setUp(*args, **kwargs)
@@ -2732,9 +2723,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])
 
-    def _do_test_get_gbp_details(self, pre_vrf=None,
-                                 enable_new_rpc=True):
-        self.mech_driver.enable_new_rpc = enable_new_rpc
+    def _do_test_get_gbp_details(self, pre_vrf=None):
         self.mech_driver.apic_optimized_dhcp_lease_time = 100
         ext_net1, rtr1, ext_net1_sub = self._setup_external_network(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
@@ -2794,10 +2783,10 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
         fip = self._make_floatingip(self.fmt, ext_net1_sub['network_id'],
                                     port_id=p1['id'])['floatingip']
 
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
-        req_mapping = self.rpc_handler.request_endpoint_details(
+        req_mapping = self.mech_driver.request_endpoint_details(
             nctx.get_admin_context(),
             request={'device': 'tap%s' % p1['id'],
                      'timestamp': 0, 'request_id': 'request_id'},
@@ -2852,10 +2841,10 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
                                               'opt_value': 'garbage'}]}}
         port = self._update('ports', port['id'], data)['port']
 
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
-        req_mapping = self.rpc_handler.request_endpoint_details(
+        req_mapping = self.mech_driver.request_endpoint_details(
             nctx.get_admin_context(),
             request={'device': 'tap%s' % p2['id'],
                      'timestamp': 0, 'request_id': 'request_id'},
@@ -2901,7 +2890,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
         data = {'port': {'extra_dhcp_opts': [{'opt_name': 'interface-mtu',
                                               'opt_value': '2000'}]}}
         port = self._update('ports', port['id'], data)['port']
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         self.assertEqual(2000, mapping['interface_mtu'])
@@ -2909,23 +2898,12 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
 
-    def test_get_gbp_details_with_old_rpc(self):
-        self._do_test_get_gbp_details(enable_new_rpc=False)
-
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
         vrf = self.aim_mgr.create(
             aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
                                       monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf)
-
-    def test_get_gbp_details_pre_existing_vrf_with_old_rpc(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
-        self._do_test_get_gbp_details(pre_vrf=vrf,
-                                      enable_new_rpc=False)
 
 
 class TestPolicyTarget(AIMBaseTestCase,
@@ -3360,8 +3338,7 @@ class TestPolicyTarget(AIMBaseTestCase,
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])
 
-    def _do_test_get_gbp_details(self, pre_vrf=None, enable_new_rpc=True):
-        self.mech_driver.enable_new_rpc = enable_new_rpc
+    def _do_test_get_gbp_details(self, pre_vrf=None):
         self.mech_driver.apic_optimized_dhcp_lease_time = 100
         es1, es1_sub = self._setup_external_segment(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
@@ -3393,13 +3370,13 @@ class TestPolicyTarget(AIMBaseTestCase,
         fip = self._make_floatingip(self.fmt, es1_sub['network_id'],
                                     port_id=pt1['port_id'])['floatingip']
 
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt1['port_id'],
             host='h1')
         if 'apic_segmentation_label' in self._extension_drivers:
             self.assertItemsEqual(segmentation_labels,
                                   mapping['segmentation_labels'])
-        req_mapping = self.rpc_handler.request_endpoint_details(
+        req_mapping = self.mech_driver.request_endpoint_details(
             nctx.get_admin_context(),
             request={'device': 'tap%s' % pt1['port_id'],
                      'timestamp': 0, 'request_id': 'request_id'},
@@ -3451,7 +3428,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         data = {'port': {'extra_dhcp_opts': [{'opt_name': '26',
                                               'opt_value': 'garbage'}]}}
         port = self._update('ports', port['id'], data)['port']
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt2['port_id'],
             host='h1')
         self.assertEqual(pt2['port_id'], mapping['port_id'])
@@ -3483,14 +3460,13 @@ class TestPolicyTarget(AIMBaseTestCase,
         data = {'port': {'extra_dhcp_opts': [{'opt_name': 'interface-mtu',
                                               'opt_value': '2000'}]}}
         port = self._update('ports', port['id'], data)['port']
-        mapping = self.rpc_handler.get_gbp_details(
+        mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt2['port_id'],
             host='h1')
         self.assertEqual(2000, mapping['interface_mtu'])
 
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
-                                   pre_vrf=None, enable_new_rpc=True):
-        self.mech_driver.enable_new_rpc = enable_new_rpc
+                                   pre_vrf=None):
         # Create port and bind it
         address_scope = self._make_address_scope_for_vrf(
             pre_vrf.dn if pre_vrf else None,
@@ -3544,11 +3520,11 @@ class TestPolicyTarget(AIMBaseTestCase,
                                         'port_id': port_id}})
 
                 self._bind_port_to_host(port_id, 'h1')
-                mapping = self.rpc_handler.get_gbp_details(
+                mapping = self.mech_driver.get_gbp_details(
                     self._neutron_admin_context, device='tap%s' % port_id,
                     host='h1')
                 self.assertEqual('mydomain.', mapping['dns_domain'])
-                req_mapping = self.rpc_handler.request_endpoint_details(
+                req_mapping = self.mech_driver.request_endpoint_details(
                     nctx.get_admin_context(),
                     request={'device': 'tap%s' % port_id,
                              'timestamp': 0, 'request_id': 'request_id'},
@@ -3567,7 +3543,7 @@ class TestPolicyTarget(AIMBaseTestCase,
                     vrf_tenant = self.name_mapper.project(None,
                                                           self._tenant_id)
                 vrf_id = '%s %s' % (vrf_tenant, vrf_name)
-                vrf_mapping = self.rpc_handler.get_vrf_details(
+                vrf_mapping = self.mech_driver.get_vrf_details(
                     self._neutron_admin_context, vrf_id=vrf_id)
 
                 epg_name = self.name_mapper.network(
@@ -3600,16 +3576,13 @@ class TestPolicyTarget(AIMBaseTestCase,
                 data = {'port': {'extra_dhcp_opts': [{'opt_name': '26',
                                                       'opt_value': '2100'}]}}
                 port = self._update('ports', port_id, data)['port']
-                mapping = self.rpc_handler.get_gbp_details(
+                mapping = self.mech_driver.get_gbp_details(
                     self._neutron_admin_context, device='tap%s' % port_id,
                     host='h1')
                 self.assertEqual(2100, mapping['interface_mtu'])
 
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
-
-    def test_get_gbp_details_with_old_rpc(self):
-        self._do_test_get_gbp_details(enable_new_rpc=False)
 
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -3618,22 +3591,10 @@ class TestPolicyTarget(AIMBaseTestCase,
                                       monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf)
 
-    def test_get_gbp_details_pre_existing_vrf_with_old_rpc(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
-        self._do_test_get_gbp_details(pre_vrf=vrf, enable_new_rpc=False)
-
     def test_get_gbp_details_no_pt(self):
         # Test that traditional Neutron ports behave correctly from the
         # RPC perspective
         self._do_test_gbp_details_no_pt()
-
-    def test_get_gbp_details_no_pt_with_old_rpc(self):
-        # Test that traditional Neutron ports behave correctly from the
-        # RPC perspective
-        self._do_test_gbp_details_no_pt(enable_new_rpc=False)
 
     def test_get_gbp_details_no_pt_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -3642,28 +3603,13 @@ class TestPolicyTarget(AIMBaseTestCase,
                                       monitored=True))
         self._do_test_gbp_details_no_pt(pre_vrf=vrf)
 
-    def test_get_gbp_details_no_pt_pre_existing_vrf_with_old_rpc(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
-        self._do_test_gbp_details_no_pt(pre_vrf=vrf, enable_new_rpc=False)
-
     def test_get_gbp_details_no_pt_no_as(self):
         self._do_test_gbp_details_no_pt(use_as=False)
-
-    def test_get_gbp_details_no_pt_no_as_with_old_rpc(self):
-        self._do_test_gbp_details_no_pt(use_as=False, enable_new_rpc=False)
 
     def test_get_gbp_details_no_pt_no_as_unrouted(self):
         self._do_test_gbp_details_no_pt(use_as=False, routed=False)
 
-    def test_get_gbp_details_no_pt_no_as_unrouted_with_old_rpc(self):
-        self._do_test_gbp_details_no_pt(use_as=False, routed=False,
-                                        enable_new_rpc=False)
-
-    def _test_gbp_details_ext_net_no_pt(self, enable_new_rpc=True):
-        self.mech_driver.enable_new_rpc = enable_new_rpc
+    def test_gbp_details_ext_net_no_pt(self):
         # Test ports created on Neutron external networks
         ext_net1, _, sn1 = self._setup_external_network(
             'l1', dn='uni/tn-common/out-l1/instP-n1')
@@ -3692,10 +3638,10 @@ class TestPolicyTarget(AIMBaseTestCase,
             sn1_1 = self._make_subnet(self.fmt, {'network': ext_net1},
                                       '200.200.0.1', '200.200.0.0/16')
 
-            mapping = self.rpc_handler.get_gbp_details(
+            mapping = self.mech_driver.get_gbp_details(
                 self._neutron_admin_context, device='tap%s' % port_id,
                 host='h1')
-            req_mapping = self.rpc_handler.request_endpoint_details(
+            req_mapping = self.mech_driver.request_endpoint_details(
                 self._neutron_admin_context,
                 request={'device': 'tap%s' % port_id,
                          'timestamp': 0, 'request_id': 'request_id'},
@@ -3705,7 +3651,7 @@ class TestPolicyTarget(AIMBaseTestCase,
                 map_tenant_name=False, prefix_ap_name=True)
 
             vrf_id = '%s %s' % ("common", "openstack_EXT-l1")
-            vrf_mapping = self.rpc_handler.get_vrf_details(
+            vrf_mapping = self.mech_driver.get_vrf_details(
                     self._neutron_admin_context, vrf_id=vrf_id)
 
             supernet = [sn1['subnet']['cidr'], sn1_1['subnet']['cidr']]
@@ -3720,10 +3666,10 @@ class TestPolicyTarget(AIMBaseTestCase,
             sn2_1 = self._make_subnet(self.fmt, {'network': ext_net2},
                                       '250.250.0.1', '250.250.0.0/16')
 
-            mapping = self.rpc_handler.get_gbp_details(
+            mapping = self.mech_driver.get_gbp_details(
                 self._neutron_admin_context, device='tap%s' % port_id,
                 host='h1')
-            req_mapping = self.rpc_handler.request_endpoint_details(
+            req_mapping = self.mech_driver.request_endpoint_details(
                 nctx.get_admin_context(),
                 request={'device': 'tap%s' % port_id,
                          'timestamp': 0, 'request_id': 'request_id'},
@@ -3733,7 +3679,7 @@ class TestPolicyTarget(AIMBaseTestCase,
                 map_tenant_name=False)
 
             vrf_id = '%s %s' % ("t1", "EXT-l2")
-            vrf_mapping = self.rpc_handler.get_vrf_details(
+            vrf_mapping = self.mech_driver.get_vrf_details(
                 self._neutron_admin_context, vrf_id=vrf_id)
 
             supernet = [sn2['subnet']['cidr'], sn2_1['subnet']['cidr']]
@@ -3741,12 +3687,6 @@ class TestPolicyTarget(AIMBaseTestCase,
                 mapping, "EXT-l2", vrf_id, supernet, "t1")
             self._verify_vrf_details_assertions(
                 vrf_mapping, "EXT-l2", vrf_id, supernet, "t1")
-
-    def test_gbp_details_ext_net_no_pt(self):
-        self._test_gbp_details_ext_net_no_pt()
-
-    def test_gbp_details_ext_net_no_pt_with_old_rpc(self):
-        self._test_gbp_details_ext_net_no_pt(enable_new_rpc=False)
 
     def test_ip_address_owner_update(self):
         l3p = self.create_l3_policy(name='myl3')['l3_policy']
@@ -3767,7 +3707,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         self.mech_driver._notify_port_update = mock.Mock()
 
         # set new owner
-        self.rpc_handler.ip_address_owner_update(self._context,
+        self.mech_driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h1')
         obj = self.mech_driver.get_port_for_ha_ipaddress(
             '1.2.3.4', net_id)
@@ -3779,7 +3719,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         # update existing owner
         self.mech_driver._notify_port_update.reset_mock()
         ip_owner_info['port'] = pt2['port_id']
-        self.rpc_handler.ip_address_owner_update(self._context,
+        self.mech_driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h2')
         obj = self.mech_driver.get_port_for_ha_ipaddress(
             '1.2.3.4', net_id)
@@ -5656,7 +5596,7 @@ class TestNestedDomain(AIMBaseTestCase):
         p1 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:')['port']
         p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='host1')
         self.assertEqual('myk8s', details['nested_domain_name'])
@@ -5688,7 +5628,7 @@ class TestNestedDomain(AIMBaseTestCase):
         p1 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:')['port']
         p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='host1')
         self.assertEqual('', details['nested_domain_name'])
@@ -5698,13 +5638,6 @@ class TestNestedDomain(AIMBaseTestCase):
         self.assertIsNone(details['nested_domain_node_network_vlan'])
         self.assertItemsEqual([], details['nested_domain_allowed_vlans'])
         self.assertIsNone(details['nested_host_vlan'])
-
-
-class TestNestedDomainWithOldRpc(TestNestedDomain):
-
-    def setUp(self, **kwargs):
-        super(TestNestedDomainWithOldRpc, self).setUp(**kwargs)
-        self.mech_driver.enable_new_rpc = False
 
 
 class TestNeutronPortOperation(AIMBaseTestCase):
@@ -5728,7 +5661,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         p1 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:')['port']
         p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='host1')
         self.assertFalse(details['promiscuous_mode'])
@@ -5738,7 +5671,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                              device_owner='compute:',
                              port_security_enabled=True)['port']
         p2 = self._bind_port_to_host(p2['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='host1')
         self.assertFalse(details['promiscuous_mode'])
@@ -5748,7 +5681,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                              device_owner='compute:',
                              port_security_enabled=False)['port']
         p3 = self._bind_port_to_host(p3['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p3['id'],
             host='host1')
         self.assertTrue(details['promiscuous_mode'])
@@ -5760,7 +5693,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         p1_dhcp = self._make_port(self.fmt, net['network']['id'],
             device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
         p1_dhcp = self._bind_port_to_host(p1_dhcp['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1_dhcp['id'],
             host='host1')
         self.assertTrue(details['promiscuous_mode'])
@@ -5769,7 +5702,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             arg_list=('port_security_enabled',), port_security_enabled=True,
             device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
         p2_dhcp = self._bind_port_to_host(p2_dhcp['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2_dhcp['id'],
             host='host1')
         self.assertTrue(details['promiscuous_mode'])
@@ -5778,7 +5711,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             arg_list=('port_security_enabled',), port_security_enabled=False,
             device_owner=n_constants.DEVICE_OWNER_DHCP)['port']
         p3_dhcp = self._bind_port_to_host(p3_dhcp['id'], 'host1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p3_dhcp['id'],
             host='host1')
         self.assertTrue(details['promiscuous_mode'])
@@ -5821,12 +5754,12 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         # Call agent => plugin RPC to get the details for each port. The
         # results should only have the configured AAPs, with none of them
         # active.
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         self.assertEqual(sorted(allow_addr),
                          sorted(details['allowed_address_pairs']))
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         self.assertEqual(sorted(allow_addr),
@@ -5838,7 +5771,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                          'network_id': p1['network_id']}
         self.mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p1
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
 
@@ -5871,7 +5804,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                          'network_id': p2['network_id']}
         self.mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p2
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         expected_aaps2 = _get_expected_aaps(allow_addr, owned_addr[1])
@@ -5899,14 +5832,14 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                                      port_id=p3['id'])['floatingip']
         fip2 = self._make_floatingip(self.fmt, net_ext['id'],
                                      port_id=p4['id'])['floatingip']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         self.assertEqual(1, len(details['floating_ip']))
         self.assertEqual(
             fip1['floating_ip_address'],
             details['floating_ip'][0]['floating_ip_address'])
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         self.assertEqual(1, len(details['floating_ip']))
@@ -5947,7 +5880,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                          'ip_address_v4': update_owned_addr[0],
                          'network_id': p1['network_id']}
         self.mech_driver.update_ip_owner(ip_owner_info)
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         expected_aaps3 = _get_expected_aaps(update_addr, update_owned_addr[0])
@@ -5964,7 +5897,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                          'ip_address_v4': update_owned_addr[1],
                          'network_id': p2['network_id']}
         self.mech_driver.update_ip_owner(ip_owner_info)
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         expected_aaps4 = _get_expected_aaps(update_addr, update_owned_addr[1])
@@ -6015,43 +5948,36 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         # First test an unbound port
         p1 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         self.assertEqual('', details.get('host', ''))
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h2')
         self.assertEqual('', details.get('host', ''))
 
         # Test port bound to h2, queries from h1 and h2
         p1 = self._bind_port_to_host(p1['id'], 'h2')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         self.assertEqual('h2', details.get('host', 'h2'))
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h2')
         self.assertEqual('h2', details['host'])
 
         # Test rebind of port to h1, queries from h1 and h2
         p1 = self._bind_port_to_host(p1['id'], 'h1')['port']
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         self.assertEqual('h1', details['host'])
-        details = self.rpc_handler.get_gbp_details(
+        details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h2')
         self.assertEqual('h1', details.get('host', 'h1'))
-
-
-class TestNeutronPortOperationWithOldRpc(TestNeutronPortOperation):
-
-    def setUp(self, **kwargs):
-        super(TestNeutronPortOperationWithOldRpc, self).setUp(**kwargs)
-        self.mech_driver.enable_new_rpc = False
 
 
 class TestPerL3PImplicitContractsConfig(TestL2PolicyWithAutoPTG):
@@ -6093,7 +6019,7 @@ class TestVlanAwareVM(AIMBaseTestCase):
                                         'segmentation_type': 'vlan',
                                         'segmentation_id': 100}]})
                     self._bind_port_to_host(port_id, 'h1')
-                    req_mapping = self.rpc_handler.request_endpoint_details(
+                    req_mapping = self.mech_driver.request_endpoint_details(
                         nctx.get_admin_context(),
                         request={'device': 'tap%s' % port_id,
                                  'timestamp': 0, 'request_id': 'request_id'},
@@ -6110,7 +6036,7 @@ class TestVlanAwareVM(AIMBaseTestCase):
                           'segmentation_id': 100}])
                     # Retrieve the subport
                     self._bind_port_to_host(subp_id, 'h1')
-                    req_mapping = self.rpc_handler.request_endpoint_details(
+                    req_mapping = self.mech_driver.request_endpoint_details(
                         nctx.get_admin_context(),
                         request={'device': 'tap%s' % subp_id,
                                  'timestamp': 0, 'request_id': 'request_id'},
@@ -6130,20 +6056,13 @@ class TestVlanAwareVM(AIMBaseTestCase):
         self._do_test_gbp_details_no_pt()
 
 
-class TestVlanAwareVMWithOldRpc(TestVlanAwareVM):
-
-    def setUp(self, **kwargs):
-        super(TestVlanAwareVMWithOldRpc, self).setUp(**kwargs)
-        self.mech_driver.enable_new_rpc = False
-
-
 class TestL2PolicyRouteInjection(AIMBaseTestCase):
 
     def _verify_rpc_response(self, port_id, inject, metadata):
         # Invoke request_endpoint_details RPC handler.
         request = {'device': 'tap%s' % port_id, 'timestamp': 0,
                    'request_id': 'a_request_id'}
-        response = self.rpc_handler.request_endpoint_details(
+        response = self.mech_driver.request_endpoint_details(
             nctx.get_admin_context(), request=request, host='host1')
 
         # Check subnet details.
@@ -6192,10 +6111,3 @@ class TestL2PolicyRouteInjection(AIMBaseTestCase):
 
     def test_route_injection_off(self):
         self._test_route_injection(False)
-
-
-class TestL2PolicyRouteInjectionWithOldRpc(TestL2PolicyRouteInjection):
-
-    def setUp(self, **kwargs):
-        super(TestL2PolicyRouteInjectionWithOldRpc, self).setUp(**kwargs)
-        self.mech_driver.enable_new_rpc = False
