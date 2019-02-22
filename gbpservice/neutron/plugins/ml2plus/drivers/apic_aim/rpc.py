@@ -178,13 +178,12 @@ class ApicRpcHandlerMixin(object):
         conn = n_rpc.create_connection()
 
         # Opflex RPC handler.
-        if self.enable_new_rpc:
-            self._opflex_endpoint = o_rpc.GBPServerRpcCallback(
-                self, self.notifier)
-            conn.create_consumer(
-                o_rpc.TOPIC_OPFLEX,
-                [self._opflex_endpoint],
-                fanout=False)
+        self._opflex_endpoint = o_rpc.GBPServerRpcCallback(
+            self, self.notifier)
+        conn.create_consumer(
+            o_rpc.TOPIC_OPFLEX,
+            [self._opflex_endpoint],
+            fanout=False)
 
         # Topology RPC hander.
         self._topology_endpoint = TopologyRpcEndpoint(self)
