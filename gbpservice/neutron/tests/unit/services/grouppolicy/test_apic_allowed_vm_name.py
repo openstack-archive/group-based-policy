@@ -15,7 +15,7 @@ from neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_allowed_vm_name_db as db)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_extension_driver_api as test_ext_base)
+    _test_extension_driver_api as test_ext_base)
 
 
 class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):

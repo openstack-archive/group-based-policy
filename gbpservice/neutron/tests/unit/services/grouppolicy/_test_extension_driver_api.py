@@ -17,9 +17,9 @@ from neutron.common import config as neutron_config  # noqa
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.tests.unit import common as cm
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    extensions as test_ext)
+    _test_grouppolicy_plugin as test_plugin)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_grouppolicy_plugin as test_plugin)
+    extensions as test_ext)
 
 
 class ExtensionDriverTestBase(test_plugin.GroupPolicyPluginTestCase):

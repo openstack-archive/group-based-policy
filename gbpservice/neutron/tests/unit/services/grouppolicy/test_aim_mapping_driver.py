@@ -62,9 +62,9 @@ from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.tests.unit.plugins.ml2plus import (
     test_apic_aim as test_aim_md)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_extension_driver_api as test_ext_base)
+    _test_extension_driver_api as test_ext_base)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_neutron_resources_driver as test_nr_base)
+    _test_neutron_resources_driver as test_nr_base)
 
 
 ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
@@ -2626,7 +2626,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
         super(TestGbpDetailsForML2, self).setUp(*args, **kwargs)
         cfg.CONF.set_override('path_mtu', 1000, group='ml2')
         cfg.CONF.set_override('global_physnet_mtu', 1000, None)
-        cfg.CONF.set_override('advertise_mtu', True, group='aim_mapping')
+        cfg.CONF.set_override('advertise_mtu', True, None)
 
     def _verify_gbp_details_assertions(self, mapping, req_mapping, port_id,
                                        expected_epg_name, expected_epg_tenant,
@@ -4521,6 +4521,8 @@ class NotificationTest(AIMBaseTestCase):
         local_api._enqueue = self.orig_enqueue
         local_api.send_or_queue_notification = (
             self.orig_send_or_queue_notification)
+        local_api.send_or_queue_registry_notification = (
+            self.orig_send_or_queue_registry_notification)
         local_api.post_notifications_from_queue = (
             self.orig_post_notifications_from_queue)
         local_api.discard_notifications_after_rollback = (

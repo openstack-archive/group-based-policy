@@ -21,7 +21,7 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_grouppolicy_plugin as test_plugin)
+    _test_grouppolicy_plugin as test_plugin)
 
 
 ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'

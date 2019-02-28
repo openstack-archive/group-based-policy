@@ -15,7 +15,7 @@ from oslo_config import cfg
 import webob.exc
 
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_grouppolicy_plugin as test_plugin)
+    _test_grouppolicy_plugin as test_plugin)
 
 
 class ImplicitPolicyTestCase(

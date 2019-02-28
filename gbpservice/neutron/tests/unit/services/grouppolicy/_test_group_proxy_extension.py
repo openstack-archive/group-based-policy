@@ -15,7 +15,7 @@ from sqlalchemy.orm import exc as orm_exc
 
 from gbpservice.neutron.db.grouppolicy.extensions import group_proxy_db
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_extension_driver_api as test_ext_base)
+    _test_extension_driver_api as test_ext_base)
 
 
 class ExtensionDriverTestCaseMixin(object):
