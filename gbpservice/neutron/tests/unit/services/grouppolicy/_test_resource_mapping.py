@@ -47,7 +47,7 @@ from gbpservice.neutron.services.servicechain.plugins.ncp import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_grouppolicy_plugin as test_plugin)
+    _test_grouppolicy_plugin as test_plugin)
 
 
 SERVICE_PROFILES = 'servicechain/service_profiles'
@@ -66,7 +66,7 @@ class NoL3NatSGTestPlugin(
 
 
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
-               'test_resource_mapping.NoL3NatSGTestPlugin')
+               '_test_resource_mapping.NoL3NatSGTestPlugin')
 
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
