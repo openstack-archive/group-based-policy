@@ -46,7 +46,7 @@ from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     config as sc_cfg)
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
+from gbpservice.neutron.tests.unit.services.grouppolicy2 import (
     test_grouppolicy_plugin as test_plugin)
 
 

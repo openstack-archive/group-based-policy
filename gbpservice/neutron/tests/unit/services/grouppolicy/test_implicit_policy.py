@@ -14,7 +14,7 @@
 from oslo_config import cfg
 import webob.exc
 
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
+from gbpservice.neutron.tests.unit.services.grouppolicy2 import (
     test_grouppolicy_plugin as test_plugin)
 
 
