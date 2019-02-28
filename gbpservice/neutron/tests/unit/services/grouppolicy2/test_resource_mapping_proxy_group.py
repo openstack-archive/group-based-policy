@@ -14,9 +14,9 @@ import netaddr
 import neutron.common  # noqa
 
 from gbpservice.neutron.services.grouppolicy import config
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
+from gbpservice.neutron.tests.unit.services.grouppolicy2 import (
     test_group_proxy_extension as test_gp_ext)
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
+from gbpservice.neutron.tests.unit.services.grouppolicy2 import (
     test_resource_mapping as test_resource_mapping)
 
 
