@@ -66,7 +66,7 @@ class NoL3NatSGTestPlugin(
 
 
 CORE_PLUGIN = ('gbpservice.neutron.tests.unit.services.grouppolicy.'
-               'test_resource_mapping.NoL3NatSGTestPlugin')
+               '_test_resource_mapping.NoL3NatSGTestPlugin')
 
 
 class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):

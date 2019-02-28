@@ -15,9 +15,9 @@ import neutron.common  # noqa
 
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_group_proxy_extension as test_gp_ext)
+    _test_resource_mapping as test_resource_mapping)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
-    test_resource_mapping as test_resource_mapping)
+    test_group_proxy_extension as test_gp_ext)
 
 
 class ResourceMappingProxyGroupGBPTestCase(
