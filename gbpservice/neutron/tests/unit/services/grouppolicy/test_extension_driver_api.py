@@ -18,7 +18,7 @@ from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.tests.unit import common as cm
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     extensions as test_ext)
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
+from gbpservice.neutron.tests.unit.services.grouppolicy2 import (
     test_grouppolicy_plugin as test_plugin)
 
 

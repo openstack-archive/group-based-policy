@@ -20,7 +20,7 @@ from neutron_lib import constants as q_const
 import apicapi.apic_mapper  # noqa
 
 from gbpservice.neutron.services.l3_router import l3_apic
-from gbpservice.neutron.tests.unit.services.grouppolicy import (
+from gbpservice.neutron.tests.unit.services.grouppolicy2 import (
     test_apic_mapping)
 
 
