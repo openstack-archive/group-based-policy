@@ -58,12 +58,8 @@ apic_opts = [
                 "plugin, formatted as a dictionary mapping Neutron external "
                 "network IDs (UUIDs) to ACI external network distinguished "
                 "names."),
-    # REVISIT: Eliminate the following two options, leaving a single
-    # RPC implementation.
-    cfg.BoolOpt('enable_raw_sql_for_device_rpc',
-                default=False,
-                help=("This will use those raw SQL statements to speed "
-                      "up the calculation of the EP file.")),
+    # REVISIT: Eliminate the following option, leaving a single RPC
+    # implementation.
     cfg.BoolOpt('enable_new_rpc',
                 default=False,
                 help=("Enable new RPC handler.")),
