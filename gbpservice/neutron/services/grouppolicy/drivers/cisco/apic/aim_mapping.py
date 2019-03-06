@@ -79,9 +79,11 @@ AUTO_PTG_ID_PREFIX = AUTO_PTG_PREFIX + '%s'
 
 # Definitions duplicated from apicapi lib
 APIC_OWNED = 'apic_owned_'
+
+# REVISIT: Remove with original RPC implementation.
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
-# TODO(ivar): define a proper promiscuous API
+# REVISIT: Remove with original RPC implementation.
 PROMISCUOUS_SUFFIX = 'promiscuous'
 
 CONTRACTS = 'contracts'
@@ -1038,6 +1040,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         np_db.update({'subnet_id': None})
         self._delete_subnet_on_nat_pool_delete(context)
 
+    # REVISIT: Called by mechanism driver during port
+    # binding. Consider replacing with a more general hook for the PD
+    # to participate in port binding. Or consider removing/replacing
+    # this feature, since VM names should not effect behavior.
     def check_allow_vm_names(self, context, port):
         ok_to_bind = True
         ptg, pt = self._port_id_to_ptg(context._plugin_context, port['id'])
@@ -1064,6 +1070,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                          'vm': vm.name})
         return ok_to_bind
 
+    # REVISIT: Called by mechanism driver when disassociating a
+    # domain. Consider a more general way for neutron ports to be
+    # bound using a non-default EPG.
     def get_ptg_port_ids(self, context, ptg):
         pts = self.gbp_plugin.get_policy_targets(
             context, {'id': ptg['policy_targets']})
@@ -1149,6 +1158,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return self._get_aim_application_profile_from_db(
                 context._plugin_context.session, ap)
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_aim_application_profile(self, session, apg):
         # This gets an AP from the AIM DB
         ap = self._aim_application_profile(session, apg)
@@ -1198,6 +1208,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     context._plugin_context.session)
                 self.aim.delete(aim_ctx, ap)
 
+    # REVISIT: Called by mechanism driver when associating or
+    # disassociating a domain. Consider a more general way for neutron
+    # ports to be bound using a non-default EPG.
     def _aim_endpoint_group(self, session, ptg, bd_name=None,
                             bd_tenant_name=None,
                             provided_contracts=None,
@@ -1441,6 +1454,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             aim_contract, in_filters, out_filters, bi_filters)
         self.aim.create(aim_ctx, aim_contract_subject, overwrite=True)
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_aim_contract(self, session, policy_rule_set):
         # This gets a Contract from the AIM DB
         aim_ctx = aim_context.AimContext(session)
@@ -1767,6 +1781,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session = context._plugin_context.session
         return aim_context.AimContext(session)
 
+    # REVISIT: Remove with original RPC implementation.
     def _is_port_promiscuous(self, plugin_context, port, details=None):
         if details and 'pt' in details['_cache']:
             pt = details['_cache']['pt']
@@ -1785,24 +1800,25 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return True
         return False
 
+    # REVISIT: Remove with original RPC implementation.
     def _is_dhcp_optimized(self, plugin_context, port):
         return self.aim_mech_driver.enable_dhcp_opt
 
+    # REVISIT: Remove with original RPC implementation.
     def _is_metadata_optimized(self, plugin_context, port):
         return self.aim_mech_driver.enable_metadata_opt
 
+    # REVISIT: Remove with original RPC implementation.
     def _set_dhcp_lease_time(self, details):
         if self.aim_mech_driver.apic_optimized_dhcp_lease_time > 0:
             details['dhcp_lease_time'] = (
                 self.aim_mech_driver.apic_optimized_dhcp_lease_time)
 
-    def _get_port_epg(self, plugin_context, port, details=None):
-        if details and 'pt' in details['_cache']:
-            pt = details['_cache']['pt']
-            ptg = self._pt_to_ptg(plugin_context, pt)
-        else:
-            ptg, pt = self._port_id_to_ptg(plugin_context, port['id'])
-
+    # REVISIT: Called by mechanism driver when binding a port using
+    # DVS. Consider a more general way for neutron ports to be bound
+    # using a non-default EPG.
+    def _get_port_epg(self, plugin_context, port):
+        ptg, pt = self._port_id_to_ptg(plugin_context, port['id'])
         if ptg:
             # TODO(Kent): optimize this also for GBP workflow?
             return self._get_aim_endpoint_group(plugin_context.session, ptg)
@@ -1818,6 +1834,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                           "port %s", port['id'])
             return epg
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_subnet_details(self, plugin_context, port, details):
         # L2P might not exist for a pure Neutron port
         if 'l2p' in details['_cache']:
@@ -1894,13 +1911,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 subnet['dhcp_server_ports'] = dhcp_ports
         return subnets
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_nova_vm_name(self, context, port):
         return self.aim_mech_driver._get_vm_name(context.session,
                                                  port['device_id'])
 
+    # REVISIT: Remove with original RPC implementation.
     def _send_port_update_notification(self, plugin_context, port):
         self.aim_mech_driver._notify_port_update(plugin_context, port)
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_aap_details(self, plugin_context, port, details):
         aaps = port['allowed_address_pairs']
         # Set the correct address ownership for this port
@@ -1932,20 +1952,18 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             aaps.extend(extra_aaps)
         return aaps
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_port_vrf(self, plugin_context, port, details):
         net_db = self._core_plugin._get_network(plugin_context,
                                                 port['network_id'])
         return self.aim_mech_driver.get_vrf_for_network(
             plugin_context.session, net_db)
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_vrf_subnets(self, plugin_context, vrf_tenant_name, vrf_name,
                          details):
         session = plugin_context.session
         result = []
-        if 'address_scope' in details['_cache']:
-            mappings = details['_cache']['address_scope']
-        else:
-            mappings = None
         # get all subnets of the specified VRF
         with session.begin(subtransactions=True):
             # Find VRF's address_scope first
@@ -1953,8 +1971,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 self.aim_mech_driver._get_address_scope_ids_for_vrf(
                     session,
                     aim_resource.VRF(tenant_name=vrf_tenant_name,
-                                     name=vrf_name),
-                    mappings))
+                                     name=vrf_name)))
             if address_scope_ids:
                 if 'subnetpools' in details['_cache']:
                     subnetpools = details['_cache']['subnetpools']
@@ -1992,6 +2009,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                     result = [x['cidr'] for x in subnets]
         return result
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_net_ids_from_bds(self, session, bds):
         net_ids = []
         for bd in bds:
@@ -2009,6 +2027,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 # especially true for VRFs in the common tenant.
         return net_ids
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_segmentation_labels(self, plugin_context, port, details):
         if self.apic_segmentation_label_driver:
             if 'pt' in details['_cache']:
@@ -2018,6 +2037,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             if pt and 'segmentation_labels' in pt:
                 return pt['segmentation_labels']
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_nat_details(self, plugin_context, port, host, details):
         """ Add information about IP mapping for DNAT/SNAT """
 
@@ -2361,6 +2381,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         else:
             return False
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_bd_by_dn(self, context, bd_dn):
         aim_context = self._get_aim_context(context)
         bd = self.aim.get(
@@ -2469,6 +2490,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 query(context._plugin_context.session).params(
                     pr_ids=pr_ids).all())]
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_port_mtu(self, context, port, details):
         if self.advertise_mtu:
             for dhcp_opt in port.get('extra_dhcp_opts'):
@@ -2486,10 +2508,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             return network.get('mtu')
         return None
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_dns_domain(self, context, port):
         network = self._get_network(context, port['network_id'])
         return network.get('dns_domain')
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_nested_domain(self, context, port, details):
         if 'network' in details['_cache']:
             network = details['_cache']['network']
