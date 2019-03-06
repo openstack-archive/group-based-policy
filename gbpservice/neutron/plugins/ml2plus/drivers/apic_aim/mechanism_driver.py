@@ -240,10 +240,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
-        # REVISIT: Eliminate the following two variables, leaving a
-        # single RPC implementation.
-        self.enable_raw_sql_for_device_rpc = (cfg.CONF.ml2_apic_aim.
-                                              enable_raw_sql_for_device_rpc)
+        # REVISIT: Eliminate the following variable, leaving a single
+        # RPC implementation.
         self.enable_new_rpc = cfg.CONF.ml2_apic_aim.enable_new_rpc
         self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
                                     apic_nova_vm_name_cache_update_interval)
@@ -2680,9 +2678,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return vrfs.values()
 
     # Used by policy driver.
-    def _get_address_scope_ids_for_vrf(self, session, vrf, mappings=None):
-        mappings = mappings or self._get_address_scope_mappings_for_vrf(
-                                                                session, vrf)
+    def _get_address_scope_ids_for_vrf(self, session, vrf):
+        mappings = self._get_address_scope_mappings_for_vrf(session, vrf)
         return [mapping.scope_id for mapping in mappings]
 
     def _get_network_ids_for_vrf(self, session, vrf):
@@ -3237,12 +3234,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mapping = self._get_network_mapping(session, network['id'])
         return mapping and self._get_network_epg(mapping)
 
-    # Used by policy driver.
+    # REVISIT: Remove with original RPC implementation.
     def get_vrf_for_network(self, session, network):
         mapping = self._get_network_mapping(session, network['id'])
         return mapping and self._get_network_vrf(mapping)
 
-    # Used by policy driver.
+    # REVISIT: Remove with original RPC implementation.
     def get_network_ids_for_bd(self, session, bd):
         mapping = self._get_network_mappings_for_bd(session, bd)
         return [m.network_id for m in mapping]
@@ -3487,6 +3484,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                  [plugin_context, port])
 
     def _notify_port_update_for_fip(self, plugin_context, port_id):
+        # REVISIT: Replace get_port() call with joins in query below.
         port = self.plugin.get_port(plugin_context.elevated(), port_id)
         ports_to_notify = [port_id]
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
@@ -3533,61 +3531,34 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
              'prefixlen': <prefix_length_of_subnet>}
         """
         session = plugin_context.session
-        if self.enable_raw_sql_for_device_rpc:
-            snat_port_query = ("SELECT id FROM ports "
-                          "WHERE network_id = '" + ext_network['id'] + "' "
-                          "AND device_id = '" + host_or_vrf + "' AND "
-                          "device_owner = '" + aim_cst.DEVICE_OWNER_SNAT_PORT +
-                          "'")
-            snat_port = session.execute(snat_port_query).first()
-            if snat_port:
-                snat_port = dict(snat_port)
-                ip_query = ("SELECT ip_address, subnet_id FROM "
-                            "ipallocations WHERE "
-                            "port_id = '" + snat_port['id'] + "'")
-                ip_result = session.execute(ip_query)
-                snat_port['fixed_ips'] = []
-                for ip in ip_result:
-                    snat_port['fixed_ips'].append(
-                        {'ip_address': ip['ip_address'],
-                         'subnet_id': ip['subnet_id']})
-        else:
-            query = BAKERY(lambda s: s.query(
-                models_v2.Port))
-            query += lambda q: q.filter(
-                models_v2.Port.network_id == sa.bindparam('network_id'),
-                models_v2.Port.device_id == sa.bindparam('device_id'),
-                models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
-            snat_port = query(session).params(
-                network_id=ext_network['id'],
-                device_id=host_or_vrf).first()
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port))
+        query += lambda q: q.filter(
+            models_v2.Port.network_id == sa.bindparam('network_id'),
+            models_v2.Port.device_id == sa.bindparam('device_id'),
+            models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
+        snat_port = query(session).params(
+            network_id=ext_network['id'],
+            device_id=host_or_vrf).first()
+
         snat_ip = None
-        if not snat_port or snat_port['fixed_ips'] is None:
+        if not snat_port or snat_port.fixed_ips is None:
             # allocate SNAT port
-            if self.enable_raw_sql_for_device_rpc:
-                snat_subnet_query = ("SELECT id, cidr, gateway_ip FROM "
-                                     "subnets JOIN "
-                                     "apic_aim_subnet_extensions AS "
-                                     "subnet_ext_1 ON "
-                                     "id = subnet_ext_1.subnet_id "
-                                     "WHERE network_id = '" +
-                                     ext_network['id'] + "' AND "
-                                     "subnet_ext_1.snat_host_pool = 1")
-                snat_subnets = session.execute(snat_subnet_query)
-                snat_subnets = list(snat_subnets)
-            else:
-                extn_db_sn = extension_db.SubnetExtensionDb
-                query = BAKERY(lambda s: s.query(
-                    models_v2.Subnet))
-                query += lambda q: q.join(
-                    extn_db_sn,
-                    extn_db_sn.subnet_id == models_v2.Subnet.id)
-                query += lambda q: q.filter(
-                    models_v2.Subnet.network_id == sa.bindparam('network_id'))
-                query += lambda q: q.filter(
-                    extn_db_sn.snat_host_pool.is_(True))
-                snat_subnets = query(session).params(
-                    network_id=ext_network['id']).all()
+            extn_db_sn = extension_db.SubnetExtensionDb
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet))
+            query += lambda q: q.join(
+                extn_db_sn,
+                extn_db_sn.subnet_id == models_v2.Subnet.id)
+            query += lambda q: q.filter(
+                models_v2.Subnet.network_id == sa.bindparam('network_id'))
+            query += lambda q: q.filter(
+                extn_db_sn.snat_host_pool.is_(True))
+            snat_subnets = query(session).params(
+                network_id=ext_network['id']).all()
+
             if not snat_subnets:
                 LOG.info('No subnet in external network %s is marked as '
                          'SNAT-pool',
@@ -3613,20 +3584,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                              'for SNAT IP allocation',
                              snat_subnet['id'])
         else:
-            snat_ip = snat_port['fixed_ips'][0]['ip_address']
-            if self.enable_raw_sql_for_device_rpc:
-                snat_subnet_query = ("SELECT cidr, gateway_ip FROM subnets "
-                                     "WHERE id = '" +
-                                     snat_port['fixed_ips'][0]['subnet_id'] +
-                                     "'")
-                snat_subnet = session.execute(snat_subnet_query).first()
-            else:
-                query = BAKERY(lambda s: s.query(
-                    models_v2.Subnet))
-                query += lambda q: q.filter(
-                    models_v2.Subnet.id == sa.bindparam('subnet_id'))
-                snat_subnet = query(session).params(
-                    subnet_id=snat_port.fixed_ips[0].subnet_id).one()
+            snat_ip = snat_port.fixed_ips[0]['ip_address']
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet))
+            query += lambda q: q.filter(
+                models_v2.Subnet.id == sa.bindparam('subnet_id'))
+            snat_subnet = query(session).params(
+                subnet_id=snat_port.fixed_ips[0].subnet_id).one()
+
         if snat_ip:
             return {'host_snat_ip': snat_ip,
                     'gateway_ip': snat_subnet['gateway_ip'],
@@ -3680,6 +3646,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 '%(ex)s',
                                 {'port': p, 'ex': ne})
 
+    # Called by l3_plugin.
     def check_floatingip_external_address(self, context, floatingip):
         session = context.session
         if floatingip.get('subnet_id'):
@@ -3704,6 +3671,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if floatingip['floating_ip_address'] in cidrs:
                 raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
 
+    # Called by l3_plugin.
     def get_subnets_for_fip(self, context, floatingip):
         session = context.session
         extn_db_sn = extension_db.SubnetExtensionDb
@@ -4314,6 +4282,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         return [p[0] for p in port_ids]
 
+    # REVISIT: Remove with original RPC implementation.
     def _get_port_network_id(self, plugin_context, port_id):
         port = self.plugin.get_port(plugin_context, port_id)
         return port['network_id']
@@ -4332,14 +4301,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return aim_resource.L3Outside(
             tenant_name=aim_ext_net.tenant_name, name=aim_ext_net.l3out_name)
 
+    # Called by sfc_driver.
     def _get_bd_by_network_id(self, session, network_id):
         net_mapping = self._get_network_mapping(session, network_id)
         return self._get_network_bd(net_mapping)
 
+    # Called by sfc_driver and its unit tests.
     def _get_epg_by_network_id(self, session, network_id):
         net_mapping = self._get_network_mapping(session, network_id)
         return self._get_network_epg(net_mapping)
 
+    # Called by sfc_driver.
     def _get_vrf_by_network(self, session, network):
         vrf_dn = network.get(cisco_apic.DIST_NAMES, {}).get(cisco_apic.VRF)
         if vrf_dn:
@@ -4356,6 +4328,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         net_mapping = self._get_network_mapping(session, network['id'])
         return self._get_network_vrf(net_mapping)
 
+    # Called by sfc_driver.
     def _get_port_static_path_info(self, plugin_context, port):
         port_id = port['id']
         path = encap = host = None
@@ -4386,6 +4359,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             path = host_links[0].path
         return path, encap, host
 
+    # Called by sfc_driver.
     def _get_port_unique_domain(self, plugin_context, port):
         """Get port domain
 
