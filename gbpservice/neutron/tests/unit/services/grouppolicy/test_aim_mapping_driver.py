@@ -2632,7 +2632,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
     # REVISIT: Once the new RPC handler implementation in the apic_aim
     # mechanism driver is complete and tested, move this unit test
     # class to test_apic_aim (or a new module) and remove the
-    # enable_raw_sql and enable_new_rpc flags.
+    # enable_new_rpc flag.
 
     def setUp(self, *args, **kwargs):
         super(TestGbpDetailsForML2, self).setUp(*args, **kwargs)
@@ -2727,10 +2727,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
                          mapping['host_snat_ips'][0])
 
     def _do_test_get_gbp_details(self, pre_vrf=None,
-                                 enable_raw_sql=False,
                                  enable_new_rpc=False):
-        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
-                                                enable_raw_sql)
         self.driver.aim_mech_driver.enable_new_rpc = enable_new_rpc
         self.driver.aim_mech_driver.apic_optimized_dhcp_lease_time = 100
         ext_net1, rtr1, ext_net1_sub = self._setup_external_network(
@@ -2906,9 +2903,6 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
 
-    def test_get_gbp_details_with_raw_sql(self):
-        self._do_test_get_gbp_details(enable_raw_sql=True)
-
     def test_get_gbp_details_with_new_rpc(self):
         self._do_test_get_gbp_details(enable_new_rpc=True)
 
@@ -2918,14 +2912,6 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
             aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
                                       monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf)
-
-    def test_get_gbp_details_pre_existing_vrf_with_raw_sql(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
-        self._do_test_get_gbp_details(pre_vrf=vrf,
-                                      enable_raw_sql=True)
 
     def test_get_gbp_details_pre_existing_vrf_with_new_rpc(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -3372,10 +3358,7 @@ class TestPolicyTarget(AIMBaseTestCase,
                           'prefixlen': int(prefix)},
                          mapping['host_snat_ips'][0])
 
-    def _do_test_get_gbp_details(self, pre_vrf=None, enable_raw_sql=False,
-                                 enable_new_rpc=False):
-        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
-                                                            enable_raw_sql)
+    def _do_test_get_gbp_details(self, pre_vrf=None, enable_new_rpc=False):
         self.driver.aim_mech_driver.enable_new_rpc = enable_new_rpc
         self.driver.aim_mech_driver.apic_optimized_dhcp_lease_time = 100
         es1, es1_sub = self._setup_external_segment(
@@ -3505,10 +3488,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         self.assertEqual(2000, mapping['interface_mtu'])
 
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
-                                   pre_vrf=None, enable_raw_sql=False,
-                                   enable_new_rpc=False):
-        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
-                                                            enable_raw_sql)
+                                   pre_vrf=None, enable_new_rpc=False):
         self.driver.aim_mech_driver.enable_new_rpc = enable_new_rpc
         # Create port and bind it
         address_scope = self._make_address_scope_for_vrf(
@@ -3627,9 +3607,6 @@ class TestPolicyTarget(AIMBaseTestCase,
     def test_get_gbp_details(self):
         self._do_test_get_gbp_details()
 
-    def test_get_gbp_details_with_raw_sql(self):
-        self._do_test_get_gbp_details(enable_raw_sql=True)
-
     def test_get_gbp_details_with_new_rpc(self):
         self._do_test_get_gbp_details(enable_new_rpc=True)
 
@@ -3639,13 +3616,6 @@ class TestPolicyTarget(AIMBaseTestCase,
             aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
                                       monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf)
-
-    def test_get_gbp_details_pre_existing_vrf_with_raw_sql(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
-        self._do_test_get_gbp_details(pre_vrf=vrf, enable_raw_sql=True)
 
     def test_get_gbp_details_pre_existing_vrf_with_new_rpc(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -3659,11 +3629,6 @@ class TestPolicyTarget(AIMBaseTestCase,
         # RPC perspective
         self._do_test_gbp_details_no_pt()
 
-    def test_get_gbp_details_no_pt_with_raw_sql(self):
-        # Test that traditional Neutron ports behave correctly from the
-        # RPC perspective
-        self._do_test_gbp_details_no_pt(enable_raw_sql=True)
-
     def test_get_gbp_details_no_pt_with_new_rpc(self):
         # Test that traditional Neutron ports behave correctly from the
         # RPC perspective
@@ -3676,13 +3641,6 @@ class TestPolicyTarget(AIMBaseTestCase,
                                       monitored=True))
         self._do_test_gbp_details_no_pt(pre_vrf=vrf)
 
-    def test_get_gbp_details_no_pt_pre_existing_vrf_with_raw_sql(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
-        self._do_test_gbp_details_no_pt(pre_vrf=vrf, enable_raw_sql=True)
-
     def test_get_gbp_details_no_pt_pre_existing_vrf_with_new_rpc(self):
         aim_ctx = aim_context.AimContext(self.db_session)
         vrf = self.aim_mgr.create(
@@ -3693,27 +3651,17 @@ class TestPolicyTarget(AIMBaseTestCase,
     def test_get_gbp_details_no_pt_no_as(self):
         self._do_test_gbp_details_no_pt(use_as=False)
 
-    def test_get_gbp_details_no_pt_no_as_with_raw_sql(self):
-        self._do_test_gbp_details_no_pt(use_as=False, enable_raw_sql=True)
-
     def test_get_gbp_details_no_pt_no_as_with_new_rpc(self):
         self._do_test_gbp_details_no_pt(use_as=False, enable_new_rpc=True)
 
     def test_get_gbp_details_no_pt_no_as_unrouted(self):
         self._do_test_gbp_details_no_pt(use_as=False, routed=False)
 
-    def test_get_gbp_details_no_pt_no_as_unrouted_with_raw_sql(self):
-        self._do_test_gbp_details_no_pt(use_as=False, routed=False,
-                                        enable_raw_sql=True)
-
     def test_get_gbp_details_no_pt_no_as_unrouted_with_new_rpc(self):
         self._do_test_gbp_details_no_pt(use_as=False, routed=False,
                                         enable_new_rpc=True)
 
-    def _test_gbp_details_ext_net_no_pt(self, enable_raw_sql=False,
-                                        enable_new_rpc=False):
-        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = (
-                                                            enable_raw_sql)
+    def _test_gbp_details_ext_net_no_pt(self, enable_new_rpc=False):
         self.driver.aim_mech_driver.enable_new_rpc = enable_new_rpc
         # Test ports created on Neutron external networks
         ext_net1, _, sn1 = self._setup_external_network(
@@ -3795,9 +3743,6 @@ class TestPolicyTarget(AIMBaseTestCase,
 
     def test_gbp_details_ext_net_no_pt(self):
         self._test_gbp_details_ext_net_no_pt()
-
-    def test_gbp_details_ext_net_no_pt_with_raw_sql(self):
-        self._test_gbp_details_ext_net_no_pt(enable_raw_sql=True)
 
     def test_gbp_details_ext_net_no_pt_with_new_rpc(self):
         self._test_gbp_details_ext_net_no_pt(enable_new_rpc=True)
@@ -5754,13 +5699,6 @@ class TestNestedDomain(AIMBaseTestCase):
         self.assertIsNone(details['nested_host_vlan'])
 
 
-class TestNestedDomainWithRawSql(TestNestedDomain):
-
-    def setUp(self, **kwargs):
-        super(TestNestedDomainWithRawSql, self).setUp(**kwargs)
-        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = True
-
-
 class TestNestedDomainWithNewRpc(TestNestedDomain):
 
     def setUp(self, **kwargs):
@@ -6108,24 +6046,6 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self.assertEqual('h1', details.get('host', 'h1'))
 
 
-# REVISIT: This test class is disabled because two of its tests fail
-# with the following SQL error:
-#
-# OperationalError: (sqlite3.OperationalError) near "'1.2.3.250'":
-# syntax error [SQL: u"SELECT DISTINCT id FROM ports JOIN
-# ipallocations AS ipallocations_1 ON ipallocations_1.port_id =
-# ports.id WHERE ports.network_id =
-# 'e7b26ed0-9b92-47b5-a5ca-fd9b19dd4bc2' AND
-# ipallocations_1.ip_address in (u'1.2.3.250')"] (Background on this
-# error at: http://sqlalche.me/e/e3q8)
-#
-# class TestNeutronPortOperationWithRawSql(TestNeutronPortOperation):
-#
-#     def setUp(self, **kwargs):
-#         super(TestNeutronPortOperationWithRawSql, self).setUp(**kwargs)
-#         self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = True
-
-
 class TestNeutronPortOperationWithNewRpc(TestNeutronPortOperation):
 
     def setUp(self, **kwargs):
@@ -6209,13 +6129,6 @@ class TestVlanAwareVM(AIMBaseTestCase):
         self._do_test_gbp_details_no_pt()
 
 
-class TestVlanAwareVMWithRawSql(TestVlanAwareVM):
-
-    def setUp(self, **kwargs):
-        super(TestVlanAwareVMWithRawSql, self).setUp(**kwargs)
-        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = True
-
-
 class TestVlanAwareVMWithNewRpc(TestVlanAwareVM):
 
     def setUp(self, **kwargs):
@@ -6278,13 +6191,6 @@ class TestL2PolicyRouteInjection(AIMBaseTestCase):
 
     def test_route_injection_off(self):
         self._test_route_injection(False)
-
-
-class TestL2PolicyRouteInjectionWithRawSql(TestL2PolicyRouteInjection):
-
-    def setUp(self, **kwargs):
-        super(TestL2PolicyRouteInjectionWithRawSql, self).setUp(**kwargs)
-        self.driver.aim_mech_driver.enable_raw_sql_for_device_rpc = True
 
 
 class TestL2PolicyRouteInjectionWithNewRpc(TestL2PolicyRouteInjection):
