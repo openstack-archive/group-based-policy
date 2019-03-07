@@ -493,12 +493,11 @@ class TestRpcListeners(ApicAimTestCase):
                 self.assertNotIn('opflex', topics)
 
     def test_start_rpc_listeners(self):
+        self._test_start_rpc_listeners(True)
+
+    def test_start_rpc_listeners_old_rpc(self):
         self.driver.enable_new_rpc = False
         self._test_start_rpc_listeners(False)
-
-    def test_start_rpc_listeners_new_rpc(self):
-        self.driver.enable_new_rpc = True
-        self._test_start_rpc_listeners(True)
 
 
 class TestAimMapping(ApicAimTestCase):
