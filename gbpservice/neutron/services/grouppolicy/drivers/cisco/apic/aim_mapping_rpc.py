@@ -95,28 +95,13 @@ class AIMMappingRPCMixin(object):
             return {'l3_policy_id': vrf}
 
     def get_vrf_details(self, context, **kwargs):
-        if self.aim_mech_driver.enable_new_rpc:
-            # REVISIT: Eliminate other RPC implementations and
-            # move this handler directly to the mechanism driver.
-            return self.aim_mech_driver.get_vrf_details(
-                context, **kwargs)
         return self._get_vrf_details(context, **kwargs)
 
     def request_vrf_details(self, context, **kwargs):
-        if self.aim_mech_driver.enable_new_rpc:
-            # REVISIT: Eliminate other RPC implementations and
-            # move this handler directly to the mechanism driver.
-            return self.aim_mech_driver.request_vrf_details(
-                context, **kwargs)
         return self._get_vrf_details(context, **kwargs)
 
     def get_gbp_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_gbp_details for: %s", kwargs)
-        if self.aim_mech_driver.enable_new_rpc:
-            # REVISIT: Eliminate other RPC implementations and
-            # move this handler directly to the mechanism driver.
-            return self.aim_mech_driver.get_gbp_details(
-                context, **kwargs)
         try:
             return self._get_gbp_details(context, kwargs, kwargs.get('host'))
         except Exception as e:
@@ -128,11 +113,6 @@ class AIMMappingRPCMixin(object):
 
     def request_endpoint_details(self, context, **kwargs):
         LOG.debug("APIC AIM handling get_endpoint_details for: %s", kwargs)
-        if self.aim_mech_driver.enable_new_rpc:
-            # REVISIT: Eliminate other RPC implementations and
-            # move this handler directly to the mechanism driver.
-            return self.aim_mech_driver.request_endpoint_details(
-                context, **kwargs)
         request = kwargs.get('request')
         try:
             return self._request_endpoint_details(context, **kwargs)
@@ -146,17 +126,13 @@ class AIMMappingRPCMixin(object):
     def _request_endpoint_details(self, context, **kwargs):
         request = kwargs.get('request')
         host = kwargs.get('host')
-        gbp_details = self._get_gbp_details(context, request, host)
-        if hasattr(context, 'neutron_details'):
-            neutron_details = context.neutron_details
-        else:
-            neutron_details = ml2_rpc.RpcCallbacks(None,
-                None).get_device_details(context, **request)
         result = {'device': request['device'],
                   'timestamp': request['timestamp'],
                   'request_id': request['request_id'],
-                  'gbp_details': gbp_details,
-                  'neutron_details': neutron_details,
+                  'gbp_details': self._get_gbp_details(context, request,
+                                                       host),
+                  'neutron_details': ml2_rpc.RpcCallbacks(
+                      None, None).get_device_details(context, **request),
                   'trunk_details': self._get_trunk_details(context,
                                                            request, host)}
         return result

@@ -56,7 +56,7 @@ apic_opts = [
     # REVISIT: Eliminate the following option, leaving a single RPC
     # implementation.
     cfg.BoolOpt('enable_new_rpc',
-                default=False,
+                default=True,
                 help=("Enable new RPC handler.")),
     cfg.IntOpt('apic_nova_vm_name_cache_update_interval', default=60,
                help=("How many seconds for the polling thread on each "
