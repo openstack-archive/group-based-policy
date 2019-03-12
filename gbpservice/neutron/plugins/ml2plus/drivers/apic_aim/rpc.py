@@ -170,7 +170,7 @@ class TopologyRpcEndpoint(object):
 
     @db_api.retry_if_session_inactive()
     def update_link(self, context, *args, **kwargs):
-        context._session = db_api.get_writer_session()
+        context._session = db_api.get_session()
         return self.md.update_link(context, *args, **kwargs)
 
     @db_api.retry_if_session_inactive()
