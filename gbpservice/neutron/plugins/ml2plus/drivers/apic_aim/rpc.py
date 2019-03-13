@@ -179,15 +179,18 @@ class ApicRpcHandlerMixin(object):
 
         # Opflex RPC handler.
         if self.enable_new_rpc:
+            self._opflex_endpoint = o_rpc.GBPServerRpcCallback(
+                self, self.notifier)
             conn.create_consumer(
                 o_rpc.TOPIC_OPFLEX,
-                [o_rpc.GBPServerRpcCallback(self, self.notifier)],
+                [self._opflex_endpoint],
                 fanout=False)
 
         # Topology RPC hander.
+        self._topology_endpoint = TopologyRpcEndpoint(self)
         conn.create_consumer(
             oa_rpc.TOPIC_APIC_SERVICE,
-            [TopologyRpcEndpoint(self)],
+            [self._topology_endpoint],
             fanout=False)
 
         # Start listeners and return list of servers.
@@ -256,13 +259,13 @@ class ApicRpcHandlerMixin(object):
             LOG.exception(e)
             return {'device': device}
 
-    def request_vrf_details(self, context, kwargs):
+    def request_vrf_details(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling request_vrf_details for: %s", kwargs)
 
         # REVISIT: This RPC is not currently invoked by the Opflex
         # agent, but that may be planned. Once it is, move the handler
         # implementation from get_vrf_details() to this method.
-        return self.get_vrf_details(context, kwargs)
+        return self.get_vrf_details(context, **kwargs)
 
     def ip_address_owner_update(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling ip_address_owner_update for: %s",
