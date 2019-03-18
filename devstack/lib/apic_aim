@@ -1,9 +1,10 @@
 function install_apic_aim {
     echo_summary "Installing apic_aim"
 
+    install_acitoolkit
+    install_apicapi
     install_aim
     install_opflex
-    install_apicapi
 }
 
 function configure_apic_aim {
@@ -40,6 +41,20 @@ function configure_apic_aim {
     # Service Chain (REVISIT: not overriding any defaults yet)
 
     init_aim
+}
+
+function install_acitoolkit {
+    git_clone $ACITOOLKIT_REPO $ACITOOLKIT_DIR $ACITOOLKIT_BRANCH
+    touch $ACITOOLKIT_DIR/setup.cfg
+    setup_develop $ACITOOLKIT_DIR
+}
+
+function install_apicapi {
+    git_clone $APICAPI_REPO $APICAPI_DIR $APICAPI_BRANCH
+    mv $APICAPI_DIR/test-requirements.txt $APICAPI_DIR/_test-requirements.txt
+    touch $APICAPI_DIR/setup.cfg
+    setup_develop $APICAPI_DIR
+    mv $APICAPI_DIR/_test-requirements.txt $APICAPI_DIR/test-requirements.txt
 }
 
 function install_aim {
