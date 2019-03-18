@@ -580,6 +580,42 @@ class TestNeutronMapping(AimValidationTestCase):
         self._validate_repair_validate()
         self._test_network_attrs(net)
 
+        # Delete pre-existing AIM VRF and test.
+        self.aim_mgr.delete(self.aim_ctx, vrf)
+        self._validate_unrepairable()
+
+        # Replace pre-existing AIM VRF and test.
+        self.aim_mgr.create(self.aim_ctx, vrf)
+        self._validate()
+
+        # REVISIT: Missing AIM L3Outsides, ExternalNetworks, and
+        # ExternalSubnets that were supposed to be pre-existing all
+        # get silently created by the NAT strategy code, so these are
+        # considered repairable for now, but the repair is likely to
+        # result in referencing the wrong VRF, the resource no longer
+        # being considered monitored, and other configuration
+        # errors. Consider adding validation code to check that the
+        # ExternalNetwork identified by
+        # NetworkExtensionDb.external_network_dn, along with its
+        # parent L3Outside, actually exist before calling the NAT
+        # strategy code, and failing with
+        # VALIDATION_FAILED_UNREPAIRABLE if they don't exist. The
+        # mechanism driver should probably also check that they exist
+        # when the network is created, and fail if they don't, but
+        # that might break existing use cases.
+
+        # Delete pre-existing AIM L3Outside and test.
+        self.aim_mgr.delete(self.aim_ctx, l3out)
+        self._validate_repair_validate()
+
+        # Delete pre-existing AIM ExternalNetwork and test.
+        self.aim_mgr.delete(self.aim_ctx, ext_net)
+        self._validate_repair_validate()
+
+        # Delete pre-existing AIM ExternalSubnet and test.
+        self.aim_mgr.delete(self.aim_ctx, ext_sn)
+        self._validate_repair_validate()
+
     def test_svi_network(self):
         # REVISIT: Test validation of actual mapping once implemented.
 

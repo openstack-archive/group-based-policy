@@ -60,10 +60,10 @@ function prepare_gbp_aim_devstack {
     # since the repo is already present.
     # This can be worked around by changing the job description in
     # project-config to set BRANCH_OVERRIDE to use the stable/newton branch
-    sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron checkout stable/newton
-    sudo git --git-dir=/opt/stack/new/nova/.git --work-tree=/opt/stack/new/nova checkout stable/newton
-    sudo git --git-dir=/opt/stack/new/keystone/.git --work-tree=/opt/stack/new/keystone checkout stable/newton
-    sudo git --git-dir=/opt/stack/new/cinder/.git --work-tree=/opt/stack/new/cinder checkout stable/newton
+    sudo git --git-dir=/opt/stack/new/neutron/.git --work-tree=/opt/stack/new/neutron checkout newton-eol
+    sudo git --git-dir=/opt/stack/new/nova/.git --work-tree=/opt/stack/new/nova checkout newton-eol
+    sudo git --git-dir=/opt/stack/new/keystone/.git --work-tree=/opt/stack/new/keystone checkout newton-eol
+    sudo git --git-dir=/opt/stack/new/cinder/.git --work-tree=/opt/stack/new/cinder checkout newton-eol
     sudo git --git-dir=/opt/stack/new/requirements/.git --work-tree=/opt/stack/new/requirements checkout stable/newton
     export ENABLED_SERVICES="key,rabbit,mysql"
 
