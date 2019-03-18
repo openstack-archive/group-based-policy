@@ -493,10 +493,12 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
         result = api.VALIDATION_PASSED
         for driver in self.ordered_policy_drivers:
             this_result = driver.obj.validate_state(repair)
-            if (this_result == api.VALIDATION_FAILED_UNREPAIRABLE or
-                (this_result == api.VALIDATION_FAILED_REPAIRABLE and
-                 result != api.VALIDATION_FAILED_UNREPAIRABLE) or
-                (this_result == api.VALIDATION_REPAIRED and
-                 result == api.VALIDATION_PASSED)):
+            if this_result not in api.VALIDATION_RESULT_PRECEDENCE:
+                LOG.error("Policy driver %s validate_state returned "
+                          "unrecognized result: %s" %
+                          (driver.name, this_result))
+                this_result = api.VALIDATION_FAILED_WITH_EXCEPTION
+            if (api.VALIDATION_RESULT_PRECEDENCE.index(this_result) >
+                api.VALIDATION_RESULT_PRECEDENCE.index(result)):
                 result = this_result
         return result

@@ -4636,7 +4636,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             bd = None
             epg = None
             vrf = None
-            ext_net = None
             if net_db.external:
                 bd, epg, vrf = self._validate_external_network(
                     mgr, net_db, ext_net_routers, router_dbs, router_vrfs,
@@ -4677,11 +4676,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     # EPG?
                     pass
 
-            # Expect NetworkMapping record if applicable.
-            if bd or epg or vrf or ext_net:
+            # Expect NetworkMapping record if applicable. Note that
+            # when validation of SVI networks is implemented, there
+            # will also be an ext_net resource, and when this is used,
+            # the bd and epg are not used.
+            if bd and epg and vrf:
                 self._add_network_mapping(
-                    mgr.expected_session, net_db.id, bd, epg, vrf, ext_net,
+                    mgr.expected_session, net_db.id, bd, epg, vrf,
                     update_network=False)
+            elif bd or epg or vrf:
+                mgr.validation_failed(
+                    "Missing resource(s) needed to create expected "
+                    "NetworkMapping for network %s - bd: %s, epg: %s, "
+                    "vrf: %s" % (net_db.id, bd, epg, vrf))
 
     def _get_router_ext_contracts(self, mgr):
         # Get external contracts for routers.
@@ -5003,6 +5010,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         cidrs = sorted(self.get_external_cidrs_by_ext_net_dn(
             mgr.actual_session, ext_net.dn, lock_update=False))
         ns.update_external_cidrs(mgr.expected_aim_ctx, ext_net, cidrs)
+
+        # Get the L3Outside resources, and check that there is an
+        # external VRF.
+        bd = None
+        epg = None
+        vrf = None
         for resource in ns.get_l3outside_resources(
                 mgr.expected_aim_ctx, l3out):
             if isinstance(resource, aim_resource.BridgeDomain):
@@ -5011,6 +5024,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 epg = resource
             elif isinstance(resource, aim_resource.VRF):
                 vrf = resource
+        if not vrf:
+            mgr.validation_failed(
+                "missing external VRF for external network %s" % net_db.id)
 
         for subnet_db in net_db.subnets:
             if subnet_db.gateway_ip:
