@@ -4,3 +4,10 @@
 
 pbr>=2.0.0,!=2.1.0  # Apache-2.0
 oslosphinx>=4.7.0,<4.19.0  # Apache-2.0
+
+# REVISIT: Until co-gating and/or stable branches are implemented for
+# the aci-integration-module repo, it may be necessary to pin to a
+# working commit. Also, specific branches in indirect dependencies
+# seem to be ignored, so we list them here too.
+-e git+https://github.com/noironetworks/acitoolkit.git@noiro-lite#egg=acitoolkit
+-e git+https://github.com/noironetworks/aci-integration-module.git@master#egg=aci-integration-module

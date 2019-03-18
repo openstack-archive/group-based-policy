@@ -21,8 +21,18 @@ from gbpservice.common import utils
 VALIDATION_PASSED = "passed"
 VALIDATION_REPAIRED = "repaired"
 VALIDATION_FAILED_REPAIRABLE = "failed repairable"
-VALIDATION_FAILED_UNREPAIRABLE = "failed unrepairable"
 VALIDATION_FAILED_BINDING_PORTS = "failed binding ports"
+VALIDATION_FAILED_UNREPAIRABLE = "failed unrepairable"
+VALIDATION_FAILED_WITH_EXCEPTION = "failed with exception"
+
+VALIDATION_RESULT_PRECEDENCE = [
+    VALIDATION_PASSED,
+    VALIDATION_REPAIRED,
+    VALIDATION_FAILED_REPAIRABLE,
+    VALIDATION_FAILED_BINDING_PORTS,
+    VALIDATION_FAILED_UNREPAIRABLE,
+    VALIDATION_FAILED_WITH_EXCEPTION,
+]
 
 
 @six.add_metaclass(abc.ABCMeta)
@@ -1400,8 +1410,10 @@ class PolicyDriver(object):
         Called from validation tool to validate policy driver's
         persistent state. Returns VALIDATION_PASSED,
         VALIDATION_REPAIRED (only if repair == True),
-        VALIDATION_FAILED_REPAIRABLE (only if repair == False) or
-        VALIDATION_FAILED_UNREPAIRABLE.
+        VALIDATION_FAILED_REPAIRABLE (only if repair == False),
+        VALIDATION_FAILED_UNREPAIRABLE,
+        VALIDATION_FAILED_WITH_EXCEPTION, or
+        VALIDATION_FAILED_BINDING_PORTS.
         """
         return VALIDATION_PASSED
 
