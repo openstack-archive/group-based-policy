@@ -12,6 +12,8 @@
 
 from oslo_config import cfg
 
+from gbpservice._i18n import _
+
 
 service_chain_opts = [
     cfg.ListOpt('node_drivers',

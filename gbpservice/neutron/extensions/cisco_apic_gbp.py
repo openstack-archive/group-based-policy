@@ -13,6 +13,7 @@
 from neutron_lib.api import converters as conv
 from neutron_lib.api import extensions
 
+from gbpservice._i18n import _
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import group_policy as gp
 

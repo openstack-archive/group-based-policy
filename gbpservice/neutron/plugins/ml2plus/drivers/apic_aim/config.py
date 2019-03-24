@@ -15,6 +15,8 @@
 
 from oslo_config import cfg
 
+from gbpservice._i18n import _
+
 
 apic_opts = [
     cfg.BoolOpt('enable_optimized_dhcp', default=True),

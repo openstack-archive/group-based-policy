@@ -33,6 +33,7 @@ from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice._i18n import _
 from gbpservice.common import utils as gbp_utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
