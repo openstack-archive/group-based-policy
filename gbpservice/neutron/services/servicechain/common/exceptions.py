@@ -14,6 +14,8 @@
 
 from neutron_lib import exceptions
 
+from gbpservice._i18n import _
+
 
 class ServiceChainDriverError(exceptions.NeutronException):
     """ServiceChain driver call failed."""

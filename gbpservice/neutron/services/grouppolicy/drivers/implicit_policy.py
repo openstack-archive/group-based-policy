@@ -17,6 +17,7 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 import sqlalchemy as sa
 
+from gbpservice._i18n import _
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.extensions import group_policy as gbp_ext

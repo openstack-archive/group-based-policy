@@ -32,6 +32,7 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 from sqlalchemy import inspect
 
+from gbpservice._i18n import _
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (

@@ -12,6 +12,8 @@
 
 from oslo_config import cfg
 
+from gbpservice._i18n import _
+
 
 group_policy_opts = [
     cfg.ListOpt('policy_drivers',
