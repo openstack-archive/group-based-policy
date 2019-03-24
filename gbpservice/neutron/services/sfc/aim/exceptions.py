@@ -12,6 +12,8 @@
 
 from neutron_lib import exceptions
 
+from gbpservice._i18n import _
+
 
 class UnsupportedConfiguration(exceptions.BadRequest):
     message = _("Configuration %(conf)s for object of type %(type)s is not "

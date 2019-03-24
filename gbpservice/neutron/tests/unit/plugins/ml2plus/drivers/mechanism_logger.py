@@ -41,8 +41,8 @@ class LoggerPlusMechanismDriver(driver_api.MechanismDriver,
         LOG.info(_LI("ensure_tenant called with tenant_id %s"), tenant_id)
 
     def _log_subnetpool_call(self, method_name, context):
-        LOG.info(_("%(method)s called with subnetpool settings %(current)s "
-                   "(original settings %(original)s)"),
+        LOG.info("%(method)s called with subnetpool settings %(current)s "
+                 "(original settings %(original)s)",
                  {'method': method_name,
                   'current': context.current,
                   'original': context.original})
@@ -72,8 +72,8 @@ class LoggerPlusMechanismDriver(driver_api.MechanismDriver,
                                   context)
 
     def _log_address_scope_call(self, method_name, context):
-        LOG.info(_("%(method)s called with address_scope settings %(current)s "
-                   "(original settings %(original)s)"),
+        LOG.info("%(method)s called with address_scope settings %(current)s "
+                 "(original settings %(original)s)",
                  {'method': method_name,
                   'current': context.current,
                   'original': context.original})

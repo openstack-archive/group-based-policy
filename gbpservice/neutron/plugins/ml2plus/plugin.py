@@ -16,6 +16,7 @@
 # The following is imported at the beginning to ensure
 # that the patches are applied before any of the
 # modules save a reference to the functions being patched
+from gbpservice._i18n import _
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice.neutron.extensions import patch  # noqa

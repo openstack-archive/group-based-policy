@@ -44,6 +44,7 @@ from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db.models import l3 as l3_db
 from neutron.db.models import securitygroup as sg_models
+from neutron.db.models import segment as segments_model
 from neutron.db import models_v2
 from neutron.db import provisioning_blocks
 from neutron.db import rbac_db_models
@@ -4144,11 +4145,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context.session
 
         query = BAKERY(lambda s: s.query(
-            segments_db.NetworkSegment))
+            segments_model.NetworkSegment))
         query += lambda q: q.join(
             models.PortBindingLevel,
             models.PortBindingLevel.segment_id ==
-            segments_db.NetworkSegment.id)
+            segments_model.NetworkSegment.id)
         query += lambda q: q.filter(
             models.PortBindingLevel.host == sa.bindparam('host'))
         segments = query(session).params(
