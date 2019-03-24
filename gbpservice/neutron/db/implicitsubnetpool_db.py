@@ -24,6 +24,8 @@ from neutron_lib.api import validators
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 
+from gbpservice._i18n import _
+
 
 def _subnetpool_model_hook(context, original_model, query):
     query = query.outerjoin(ImplicitSubnetpool,
