@@ -15,6 +15,7 @@ import six
 
 from neutron_lib import constants as n_constants
 
+from gbpservice._i18n import _
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc

@@ -13,6 +13,7 @@
 from oslo_log import log as logging
 import re
 
+from gbpservice._i18n import _
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_allowed_vm_name_db as db)
 from gbpservice.neutron.extensions import apic_allowed_vm_name as aavnext
