@@ -12,6 +12,7 @@
 
 from neutron.api import extensions
 
+from gbpservice._i18n import _
 from gbpservice.neutron.extensions import group_policy as gp
 
 

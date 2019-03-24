@@ -46,6 +46,7 @@ from oslo_serialization import jsonutils
 import sqlalchemy as sa
 from sqlalchemy.orm import exc as orm_exc
 
+from gbpservice._i18n import _
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice._i18n import _LW

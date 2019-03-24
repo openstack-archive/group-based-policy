@@ -21,6 +21,7 @@ from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy import orm
 
+from gbpservice._i18n import _
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import exceptions

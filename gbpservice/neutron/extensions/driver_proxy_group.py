@@ -16,6 +16,7 @@ from neutron_lib import constants as nlib_const
 from neutron_lib import exceptions as nexc
 from oslo_config import cfg
 
+from gbpservice._i18n import _
 from gbpservice.neutron.extensions import group_policy as gp
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 

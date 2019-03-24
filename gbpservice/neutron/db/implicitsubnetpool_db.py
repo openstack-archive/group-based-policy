@@ -23,6 +23,8 @@ from neutron_lib.api import validators
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 
+from gbpservice._i18n import _
+
 
 class ImplicitSubnetpool(model_base.BASEV2):
     __tablename__ = "implicit_subnetpools"

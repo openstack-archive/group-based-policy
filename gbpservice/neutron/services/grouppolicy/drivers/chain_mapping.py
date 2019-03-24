@@ -20,6 +20,7 @@ from oslo_serialization import jsonutils
 from oslo_utils import excutils
 import sqlalchemy as sa
 
+from gbpservice._i18n import _
 from gbpservice._i18n import _LE
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api

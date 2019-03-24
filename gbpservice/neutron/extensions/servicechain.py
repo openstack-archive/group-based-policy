@@ -24,6 +24,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import six
 
+from gbpservice._i18n import _
 from gbpservice.neutron import extensions as gbp_extensions
 import gbpservice.neutron.extensions.group_policy  # noqa
 from gbpservice.neutron.services.servicechain.common import constants as scc

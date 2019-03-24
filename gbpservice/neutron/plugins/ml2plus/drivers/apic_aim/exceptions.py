@@ -15,6 +15,8 @@
 
 from neutron_lib import exceptions
 
+from gbpservice._i18n import _
+
 
 class InternalError(exceptions.NeutronException):
     message = _("Internal mechanism driver error - %(details)s.")

@@ -29,6 +29,7 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 from sqlalchemy import inspect
 
+from gbpservice._i18n import _
 from gbpservice._i18n import _LE
 from gbpservice._i18n import _LI
 from gbpservice.neutron import extensions as extensions_pkg

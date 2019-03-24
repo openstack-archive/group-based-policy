@@ -38,11 +38,11 @@ from neutron.callbacks import registry
 from neutron import context as n_context
 from neutron.db import api as db_api
 from neutron.db import provisioning_blocks
+from neutron.db import segments_db
 from neutron.extensions import portbindings
 from neutron import manager
 from neutron.plugins.common import constants as service_constants
 from neutron.plugins.ml2 import config
-from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2 import driver_context
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit.api import test_extensions
@@ -6537,7 +6537,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
         return port_context.bottom_bound_segment['segmentation_id']
 
     def _check_no_dynamic_segment(self, network_id):
-        dyn_segments = ml2_db.get_network_segments(
+        dyn_segments = segments_db.get_network_segments(
             n_context.get_admin_context().session, network_id,
             filter_dynamic=True)
         self.assertEqual(0, len(dyn_segments))

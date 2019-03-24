@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from gbpservice._i18n import _
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 
 
