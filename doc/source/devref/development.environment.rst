@@ -48,7 +48,7 @@ Getting the code
 
 Grab the code::
 
-    git clone git://git.openstack.org/openstack/group-based-policy.git
+    git clone https://git.openstack.org/openstack/group-based-policy.git
     cd group-based-policy
 
 
