@@ -15,6 +15,7 @@
 
 from oslo_log import log
 
+from gbpservice._i18n import _
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 
 LOG = log.getLogger(__name__)

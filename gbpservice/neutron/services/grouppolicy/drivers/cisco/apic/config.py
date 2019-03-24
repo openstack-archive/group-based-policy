@@ -15,6 +15,8 @@
 
 from oslo_config import cfg
 
+from gbpservice._i18n import _
+
 
 # REVISIT: Auto-PTG is currently config driven to align with the
 # config driven behavior of the older driver but is slated for

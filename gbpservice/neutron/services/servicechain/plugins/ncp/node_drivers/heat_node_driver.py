@@ -24,6 +24,7 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils
 import sqlalchemy as sa
 
+from gbpservice._i18n import _
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
                                                     exceptions as exc)
 from gbpservice.neutron.services.servicechain.plugins.ncp import driver_base

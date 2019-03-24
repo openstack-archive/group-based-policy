@@ -28,6 +28,7 @@ from oslo_log import log as logging
 from oslo_utils import uuidutils
 import six
 
+from gbpservice._i18n import _
 from gbpservice.neutron import extensions as gbp_extensions
 from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.services.grouppolicy.common import (
