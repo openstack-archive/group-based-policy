@@ -13,8 +13,8 @@
 # The following two are required when running tox since the nsx packages
 # have a foreign key dependency on LBaaS tables. Those tables are not
 # getting loaded without these explicit imports.
-from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2  # noqa
-from neutron_lbaas.db.loadbalancer import models  # noqa
+#from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2  # noqa
+#from neutron_lbaas.db.loadbalancer import models  # noqa
 
 from neutron.agent import securitygroups_rpc
 from neutron.api import extensions
