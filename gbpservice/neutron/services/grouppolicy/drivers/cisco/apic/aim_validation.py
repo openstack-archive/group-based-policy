@@ -123,10 +123,8 @@ class ValidationManager(object):
         except RollbackTransaction:
             pass
         except Exception as exc:
-            self.output("Validation failed with exception: %s - see log for "
-                        "details" % exc)
-            LOG.exception(exc)
-            return api.VALIDATION_FAILED_WITH_EXCEPTION
+            self.output("Validation failed with exception: %s" % exc)
+            return api.VALIDATION_FAILED_UNREPAIRABLE
 
         # Bind unbound ports outside transaction.
         if (self.repair and

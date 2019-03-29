@@ -28,8 +28,6 @@ OPFLEX_REPO=http://github.com/noironetworks/python-opflex-agent.git
 OPFLEX_DIR=$DEST/opflexagent
 APICAPI_REPO=http://github.com/noironetworks/apicapi.git
 APICAPI_DIR=$DEST/apicapi
-ACITOOLKIT_REPO=http://github.com/noironetworks/acitoolkit.git
-ACITOOLKIT_DIR=$DEST/acitoolkit
 
 # Save trace setting
 XTRACE=$(set +o | grep xtrace)
@@ -85,6 +83,14 @@ function install_gbpui {
     cd $GBPUI_DIR
     python $HORIZON_DIR/manage.py collectstatic --noinput
     mv $GBPUI_DIR/_test-requirements.txt $GBPUI_DIR/test-requirements.txt
+}
+
+function install_apicapi {
+    git_clone $APICAPI_REPO $APICAPI_DIR $APICAPI_BRANCH
+    mv $APICAPI_DIR/test-requirements.txt $APICAPI_DIR/_test-requirements.txt
+    touch $APICAPI_DIR/setup.cfg
+    setup_develop $APICAPI_DIR
+    mv $APICAPI_DIR/_test-requirements.txt $APICAPI_DIR/test-requirements.txt
 }
 
 

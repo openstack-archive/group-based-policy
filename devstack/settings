@@ -33,7 +33,6 @@ GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-master}
 AIM_BRANCH=${AIM_BRANCH:-master}
 OPFLEX_BRANCH=${OPFLEX_BRANCH:-master}
 APICAPI_BRANCH=${APICAPI_BRANCH:-master}
-ACITOOLKIT_BRANCH=${ACITOOLKIT_BRANCH:-noiro-lite}
 
 # Enable necessary services, including group-policy (and disable others)
 disable_service n-net

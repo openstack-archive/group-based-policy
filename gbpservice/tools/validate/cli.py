@@ -54,7 +54,6 @@ def main():
 
     result = gbp_plugin.validate_state(cfg.CONF.repair)
     if result in [api.VALIDATION_FAILED_REPAIRABLE,
-                  api.VALIDATION_FAILED_UNREPAIRABLE,
-                  api.VALIDATION_FAILED_WITH_EXCEPTION]:
+                  api.VALIDATION_FAILED_UNREPAIRABLE]:
         sys.exit(result)
     return 0
