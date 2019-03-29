@@ -2,7 +2,8 @@
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
 
--e git+https://git.openstack.org/openstack/neutron.git@stable/queens#egg=neutron
+#-e git+https://git.openstack.org/openstack/neutron.git@stable/queens#egg=neutron
+-e git+https://git.openstack.org/openstack/neutron.git@8b744646264a1fda50f13739a4476cdf32172d0f#egg=neutron
 
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
@@ -13,7 +14,8 @@
 
 -e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
 -e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/queens#egg=neutron-vpnaas
--e git+https://git.openstack.org/openstack/neutron-lbaas@stable/queens#egg=neutron-lbaas
+#-e git+https://git.openstack.org/openstack/neutron-lbaas@stable/queens#egg=neutron-lbaas
+-e git+https://git.openstack.org/openstack/neutron-lbaas@b9b6b6a272ef3d9ea7606a47714d0d5ec9bd4c69#egg=neutron_lbaas
 -e git+https://git.openstack.org/openstack/neutron-fwaas@stable/queens#egg=neutron-fwaas
 -e git+https://git.openstack.org/openstack/networking-sfc@stable/queens#egg=networking-sfc
 hacking<0.12,>=0.11.0 # Apache-2.0
@@ -41,7 +43,8 @@ pyOpenSSL>=16.2.0  # Apache-2.0
 # Since version numbers for these are specified in
 # https://git.openstack.org/cgit/openstack/requirements/plain/upper-constraints.txt,
 #  they cannot be refernced as GIT URLs
-python-heatclient
+python-heatclient==1.14.0
+#python-heatclient
 python-keystoneclient
 
 # REVISIT: Until co-gating and/or stable branches are implemented for
