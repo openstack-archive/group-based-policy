@@ -27,8 +27,7 @@ from gbpservice.neutron.services.grouppolicy import (
 
 LOG = logging.getLogger(__name__)
 
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 
 class AIMExtensionDriver(api.ExtensionDriver,

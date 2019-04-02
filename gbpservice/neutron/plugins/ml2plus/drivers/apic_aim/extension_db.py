@@ -15,7 +15,6 @@
 
 from neutron.db import models_v2
 from neutron_lib.db import model_base
-from oslo_log import log
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
 from sqlalchemy import orm
@@ -24,10 +23,7 @@ from sqlalchemy.sql.expression import true
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3
 
-LOG = log.getLogger(__name__)
-
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 
 class NetworkExtensionDb(model_base.BASEV2):
@@ -125,29 +121,15 @@ class ExtensionDbMixin(object):
         if not network_ids:
             return {}
 
-        query = BAKERY(lambda s: s.query(
-            NetworkExtensionDb))
-        query += lambda q: q.filter(
-            NetworkExtensionDb.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        db_objs = query(session).params(
-            network_ids=network_ids).all()
-
-        query = BAKERY(lambda s: s.query(
-            NetworkExtensionCidrDb))
-        query += lambda q: q.filter(
-            NetworkExtensionCidrDb.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        db_cidrs = query(session).params(
-            network_ids=network_ids).all()
-
-        query = BAKERY(lambda s: s.query(
-            NetworkExtNestedDomainAllowedVlansDb))
-        query += lambda q: q.filter(
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        db_objs = (session.query(NetworkExtensionDb).filter(
+            NetworkExtensionDb.network_id.in_(network_ids)).all())
+        db_cidrs = (session.query(NetworkExtensionCidrDb).filter(
+            NetworkExtensionCidrDb.network_id.in_(network_ids)).all())
+        db_vlans = (session.query(
+            NetworkExtNestedDomainAllowedVlansDb).filter(
             NetworkExtNestedDomainAllowedVlansDb.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        db_vlans = query(session).params(
-            network_ids=network_ids).all()
+                network_ids)).all())
 
         cidrs_by_net_id = {}
         vlans_by_net_id = {}

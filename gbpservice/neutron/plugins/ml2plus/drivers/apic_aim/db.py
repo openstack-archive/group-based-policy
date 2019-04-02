@@ -28,8 +28,7 @@ from sqlalchemy import orm
 
 LOG = log.getLogger(__name__)
 
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 
 class AddressScopeMapping(model_base.BASEV2):
@@ -242,13 +241,9 @@ class DbMixin(object):
         if not network_ids:
             return []
 
-        query = BAKERY(lambda s: s.query(
-            NetworkMapping))
-        query += lambda q: q.filter(
-            NetworkMapping.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        return query(session).params(
-            network_ids=network_ids).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        return session.query(NetworkMapping).filter(
+            NetworkMapping.network_id.in_(network_ids)).all()
 
     def _get_network_mappings_for_vrf(self, session, vrf):
         query = BAKERY(lambda s: s.query(

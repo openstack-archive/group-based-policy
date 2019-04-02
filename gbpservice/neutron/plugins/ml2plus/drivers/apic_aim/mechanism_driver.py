@@ -95,8 +95,7 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import config as
 
 LOG = log.getLogger(__name__)
 
-BAKERY = baked.bakery(500, _size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery(500)
 
 ANY_FILTER_NAME = 'AnyFilter'
 ANY_FILTER_ENTRY_NAME = 'AnyFilterEntry'
@@ -988,13 +987,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     session, l3out.dn, lock_update=True))
             other_nets.discard(network_id)
             if other_nets:
-                query = BAKERY(lambda s: s.query(
-                    models_v2.Subnet.cidr))
-                query += lambda q: q.filter(
-                    models_v2.Subnet.network_id.in_(sa.bindparam(
-                        'other_nets', expanding=True)))
-                cidrs = query(session).params(
-                    other_nets=list(other_nets)).all()
+                # Baked queries using in_ require sqlalchemy >=1.2.
+                cidrs = (session.query(models_v2.Subnet.cidr).filter(
+                    models_v2.Subnet.network_id.in_(other_nets)).all())
 
                 cidrs = netaddr.IPSet([c[0] for c in cidrs])
                 if cidrs & netaddr.IPSet([current['cidr']]):
@@ -2023,13 +2018,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
 
-        query = BAKERY(lambda s: s.query(
-            sg_models.SecurityGroupRule))
-        query += lambda q: q.filter(
-            sg_models.SecurityGroupRule.remote_group_id.in_(
-                sa.bindparam('security_groups', expanding=True)))
-        sg_rules = query(session).params(
-            security_groups=list(security_groups)).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        sg_rules = (session.query(sg_models.SecurityGroupRule).
+                    filter(sg_models.SecurityGroupRule.remote_group_id.
+                           in_(security_groups)).
+                    all())
 
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
         for sg_rule in sg_rules:
@@ -2691,50 +2684,39 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         scope_ids = self._get_address_scope_ids_for_vrf(session, vrf)
         if scope_ids:
-            query = BAKERY(lambda s: s.query(
-                l3_db.Router))
-            query += lambda q: q.join(
-                l3_db.RouterPort,
-                l3_db.RouterPort.router_id == l3_db.Router.id)
-            query += lambda q: q.join(
-                models_v2.IPAllocation,
-                models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id)
-            query += lambda q: q.join(
-                models_v2.Subnet,
-                models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
-            query += lambda q: q.join(
-                models_v2.SubnetPool,
-                models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
-            query += lambda q: q.filter(
-                l3_db.RouterPort.port_type ==
-                n_constants.DEVICE_OWNER_ROUTER_INTF)
-            query += lambda q: q.filter(
-                models_v2.SubnetPool.address_scope_id.in_(
-                    sa.bindparam('scope_ids', expanding=True)))
-            query += lambda q: q.distinct()
-            rtr_dbs = query(session).params(
-                scope_ids=scope_ids)
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            rtr_dbs = (session.query(l3_db.Router)
+                       .join(l3_db.RouterPort,
+                             l3_db.RouterPort.router_id == l3_db.Router.id)
+                       .join(models_v2.IPAllocation,
+                             models_v2.IPAllocation.port_id ==
+                             l3_db.RouterPort.port_id)
+                       .join(models_v2.Subnet,
+                             models_v2.Subnet.id ==
+                             models_v2.IPAllocation.subnet_id)
+                       .join(models_v2.SubnetPool,
+                             models_v2.SubnetPool.id ==
+                             models_v2.Subnet.subnetpool_id)
+                       .filter(l3_db.RouterPort.port_type ==
+                               n_constants.DEVICE_OWNER_ROUTER_INTF)
+                       .filter(models_v2.SubnetPool.address_scope_id.in_(
+                           scope_ids))
+                       .distinct())
         else:
             net_ids = self._get_network_ids_for_vrf(session, vrf)
             if not net_ids:
                 return []
 
-            query = BAKERY(lambda s: s.query(
-                l3_db.Router))
-            query += lambda q: q.join(
-                l3_db.RouterPort,
-                l3_db.RouterPort.router_id == l3_db.Router.id)
-            query += lambda q: q.join(
-                models_v2.Port,
-                models_v2.Port.id == l3_db.RouterPort.port_id)
-            query += lambda q: q.filter(
-                models_v2.Port.network_id.in_(
-                    sa.bindparam('net_ids', expanding=True)),
-                l3_db.RouterPort.port_type ==
-                n_constants.DEVICE_OWNER_ROUTER_INTF)
-            query += lambda q: q.distinct()
-            rtr_dbs = query(session).params(
-                net_ids=net_ids)
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            rtr_dbs = (session.query(l3_db.Router).
+                       join(l3_db.RouterPort,
+                            l3_db.RouterPort.router_id == l3_db.Router.id).
+                       join(models_v2.Port,
+                            models_v2.Port.id == l3_db.RouterPort.port_id).
+                       filter(models_v2.Port.network_id.in_(net_ids),
+                              l3_db.RouterPort.port_type ==
+                              n_constants.DEVICE_OWNER_ROUTER_INTF).
+                       distinct())
         return rtr_dbs
 
     def _associate_network_with_vrf(self, ctx, aim_ctx, network_db, new_vrf,
@@ -2996,32 +2978,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.debug("Querying for networks interfaced to routers %s",
                       added_ids)
 
-            query = BAKERY(lambda s: s.query(
-                models_v2.Network,
-                models_v2.Subnet))
-            query += lambda q: q.join(
-                models_v2.Subnet,
-                models_v2.Subnet.network_id == models_v2.Network.id)
-            query += lambda q: q.join(
-                models_v2.IPAllocation,
-                models_v2.IPAllocation.subnet_id == models_v2.Subnet.id)
-            query += lambda q: q.join(
-                l3_db.RouterPort,
-                l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
-            query += lambda q: q.filter(
-                l3_db.RouterPort.router_id.in_(
-                    sa.bindparam('added_ids', expanding=True)))
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            query = (session.query(models_v2.Network, models_v2.Subnet).
+                     join(models_v2.Subnet,
+                          models_v2.Subnet.network_id == models_v2.Network.id).
+                     join(models_v2.IPAllocation,
+                          models_v2.IPAllocation.subnet_id ==
+                          models_v2.Subnet.id).
+                     join(l3_db.RouterPort,
+                          l3_db.RouterPort.port_id ==
+                          models_v2.IPAllocation.port_id).
+                     filter(l3_db.RouterPort.router_id.in_(added_ids)))
             if visited_networks:
-                query += lambda q: q.filter(
-                    ~models_v2.Network.id.in_(
-                        sa.bindparam('visited_networks', expanding=True)))
-            query += lambda q: q.filter(
-                l3_db.RouterPort.port_type ==
-                n_constants.DEVICE_OWNER_ROUTER_INTF)
-            query += lambda q: q.distinct()
-            results = query(session).params(
-                added_ids=list(added_ids),
-                visited_networks=visited_networks.keys()).all()
+                query = query.filter(
+                    ~models_v2.Network.id.in_(visited_networks.keys()))
+            results = (query.filter(l3_db.RouterPort.port_type ==
+                                    n_constants.DEVICE_OWNER_ROUTER_INTF).
+                       distinct().
+                       all())
 
             self._expand_topology_for_networks(
                 session, visited_networks, visited_router_ids,
@@ -3041,25 +3015,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.debug("Querying for routers interfaced to networks %s",
                       added_ids)
 
-            query = BAKERY(lambda s: s.query(
-                l3_db.RouterPort.router_id))
-            query += lambda q: q.join(
-                models_v2.Port,
-                models_v2.Port.id == l3_db.RouterPort.port_id)
-            query += lambda q: q.filter(
-                models_v2.Port.network_id.in_(
-                    sa.bindparam('added_ids', expanding=True)))
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            query = (session.query(l3_db.RouterPort.router_id).
+                     join(models_v2.Port,
+                          models_v2.Port.id == l3_db.RouterPort.port_id).
+                     filter(models_v2.Port.network_id.in_(added_ids)))
             if visited_router_ids:
-                query += lambda q: q.filter(
-                    ~l3_db.RouterPort.router_id.in_(
-                        sa.bindparam('visited_router_ids', expanding=True)))
-            query += lambda q: q.filter(
-                l3_db.RouterPort.port_type ==
-                n_constants.DEVICE_OWNER_ROUTER_INTF)
-            query += lambda q: q.distinct()
-            results = query(session).params(
-                added_ids=list(added_ids),
-                visited_router_ids=list(visited_router_ids)).all()
+                query = query.filter(
+                    ~l3_db.RouterPort.router_id.in_(visited_router_ids))
+            results = (query.filter(l3_db.RouterPort.port_type ==
+                                    n_constants.DEVICE_OWNER_ROUTER_INTF).
+                       distinct().
+                       all())
 
             self._expand_topology_for_routers(
                 session, visited_networks, visited_router_ids,
@@ -3366,29 +3333,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if not scope_ids:
                 return 0
 
-            query = BAKERY(lambda s: s.query(
-                l3_db.RouterPort))
-            query += lambda q: q.join(
-                models_v2.IPAllocation,
-                models_v2.IPAllocation.port_id == l3_db.RouterPort.port_id)
-            query += lambda q: q.join(
-                models_v2.Subnet,
-                models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
-            query += lambda q: q.join(
-                models_v2.SubnetPool,
-                models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
-            query += lambda q: q.filter(
-                l3_db.RouterPort.router_id == sa.bindparam('router_id'))
-            query += lambda q: q.filter(
-                l3_db.RouterPort.port_type ==
-                n_constants.DEVICE_OWNER_ROUTER_INTF)
-            query += lambda q: q.filter(
-                models_v2.SubnetPool.address_scope_id.in_(
-                    sa.bindparam('scope_ids', expanding=True)))
-            result = query(session).params(
-                router_id=router['id'],
-                scope_ids=scope_ids).count()
-
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            result = (session.query(l3_db.RouterPort).
+                      join(models_v2.IPAllocation,
+                           models_v2.IPAllocation.port_id ==
+                           l3_db.RouterPort.port_id).
+                      join(models_v2.Subnet,
+                           models_v2.Subnet.id ==
+                           models_v2.IPAllocation.subnet_id).
+                      join(models_v2.SubnetPool,
+                           models_v2.SubnetPool.id ==
+                           models_v2.Subnet.subnetpool_id).
+                      filter(l3_db.RouterPort.router_id == router['id']).
+                      filter(l3_db.RouterPort.port_type ==
+                             n_constants.DEVICE_OWNER_ROUTER_INTF).
+                      filter(models_v2.SubnetPool.address_scope_id.in_(
+                          scope_ids)).
+                      count())
         return result
 
     def _get_address_scope_id_for_subnets(self, context, subnets):
@@ -3489,15 +3450,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         ports_to_notify = [port_id]
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
         if fixed_ips:
-            query = BAKERY(lambda s: s.query(
-                n_addr_pair_db.AllowedAddressPair))
-            query += lambda q: q.join(
-                models_v2.Port,
-                models_v2.Port.id == n_addr_pair_db.AllowedAddressPair.port_id)
-            query += lambda q: q.filter(
-                models_v2.Port.network_id == sa.bindparam('network_id'))
-            addr_pair = query(plugin_context.session).params(
-                network_id=port['network_id']).all()
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            addr_pair = (
+                plugin_context.session.query(
+                    n_addr_pair_db.AllowedAddressPair)
+                .join(models_v2.Port,
+                      models_v2.Port.id ==
+                      n_addr_pair_db.AllowedAddressPair.port_id)
+                .filter(models_v2.Port.network_id == port['network_id']).all())
+
             notify_pairs = []
             # In order to support use of CIDRs in allowed-address-pairs,
             # we can't include the fxied IPs in the DB query, and instead
@@ -4142,20 +4103,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     port_context._plugin_context, port['id'])
 
             def _bound_port_query(session, port, hosts=None):
-                query = BAKERY(lambda s: s.query(
-                    models.PortBindingLevel))
-                query += lambda q: q.join(
-                    models_v2.Port, models_v2.Port.id ==
-                    models.PortBindingLevel.port_id)
+                # Baked queries using in_ require sqlalchemy >=1.2.
+                ports = (session.query(models.PortBindingLevel).
+                         join(models_v2.Port, models_v2.Port.id ==
+                              models.PortBindingLevel.port_id))
                 if hosts:
-                    query += lambda q: q.filter(
-                        models.PortBindingLevel.host.in_(
-                            sa.bindparam('hosts', expanding=True)))
-                query += lambda q: q.filter(
-                    models.PortBindingLevel.port_id != sa.bindparam('port_id'))
-                ports = query(session).params(
-                    hosts=hosts,
-                    port_id=port['id'])
+                    ports = ports.filter(
+                        models.PortBindingLevel.host.in_(hosts))
+                ports = ports.filter(
+                    models.PortBindingLevel.port_id != port['id'])
                 return ports
 
             if ptg:
@@ -4249,19 +4205,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not subnet_ids:
             return []
 
-        query = BAKERY(lambda s: s.query(
-            models_v2.IPAllocation.port_id))
-        query += lambda q: q.join(
-            models_v2.Port,
-            models_v2.Port.id == models_v2.IPAllocation.port_id)
-        query += lambda q: q.filter(
-            models_v2.IPAllocation.subnet_id.in_(
-                sa.bindparam('subnet_ids', expanding=True)))
-        query += lambda q: q.filter(
-            models_v2.Port.device_owner !=
-            n_constants.DEVICE_OWNER_ROUTER_INTF)
-        port_ids = query(session).params(
-            subnet_ids=subnet_ids).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        port_ids = (session.query(models_v2.IPAllocation.port_id)
+                    .join(models_v2.Port,
+                          models_v2.Port.id == models_v2.IPAllocation.port_id)
+                    .filter(models_v2.IPAllocation.subnet_id.in_(subnet_ids))
+                    .filter(models_v2.Port.device_owner !=
+                            n_constants.DEVICE_OWNER_ROUTER_INTF)
+                    .all())
 
         return [p[0] for p in port_ids]
 
@@ -4269,16 +4220,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not network_ids:
             return []
 
-        query = BAKERY(lambda s: s.query(
-            models_v2.Port.id))
-        query += lambda q: q.filter(
-            models_v2.Port.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        query += lambda q: q.filter(
-            models_v2.Port.device_owner !=
-            n_constants.DEVICE_OWNER_ROUTER_INTF)
-        port_ids = query(session).params(
-            network_ids=list(network_ids)).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        port_ids = (session.query(models_v2.Port.id).
+                    filter(models_v2.Port.network_id.in_(network_ids)).
+                    filter(models_v2.Port.device_owner !=
+                           n_constants.DEVICE_OWNER_ROUTER_INTF).
+                    all())
 
         return [p[0] for p in port_ids]
 

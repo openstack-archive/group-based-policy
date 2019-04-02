@@ -11,14 +11,10 @@
 #    under the License.
 
 from neutron_lib.db import model_base
-from oslo_log import log
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
 
-LOG = log.getLogger(__name__)
-
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 
 class ApicAllowedVMNameDB(model_base.BASEV2):

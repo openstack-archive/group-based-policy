@@ -53,8 +53,7 @@ SUPPORTED_DOM_TYPES = [PHYSDOM_TYPE]
 DEFAULT_SUBNETS = ['128.0.0.0/1', '0.0.0.0/1', '8000::/1', '::/1']
 MAX_PPGS_PER_CHAIN = 3
 
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 
 class SfcAIMDriverBase(base.SfcDriverBase):
@@ -692,13 +691,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
             return []
         context = plugin_context
         with db_api.context_manager.writer.using(context):
-            query = BAKERY(lambda s: s.query(
-                sfc_db.ChainGroupAssoc))
-            query += lambda q: q.filter(
-                sfc_db.ChainGroupAssoc.portpairgroup_id.in_(
-                    sa.bindparam('ppg_ids', expanding=True)))
-            chain_ids = [x.portchain_id for x in query(context.session).params(
-                ppg_ids=ppg_ids).all()]
+            # Baked queries using in_ require sqlalchemy >=1.2.
+            chain_ids = [x.portchain_id for x in context.session.query(
+                sfc_db.ChainGroupAssoc).filter(
+                sfc_db.ChainGroupAssoc.portpairgroup_id.in_(ppg_ids)).all()]
 
             return self.sfc_plugin.get_port_chains(plugin_context,
                                                    filters={'id': chain_ids})
@@ -718,18 +714,14 @@ class SfcAIMDriver(SfcAIMDriverBase):
             return []
         session = plugin_context.session
 
-        query = BAKERY(lambda s: s.query(
-            sfc_db.PortPair))
-        query += lambda q: q.join(
-            models_v2.Port,
-            or_(models_v2.Port.id == sfc_db.PortPair.ingress,
-                models_v2.Port.id == sfc_db.PortPair.egress))
-        query += lambda q: q.filter(
-            models_v2.Port.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        return [x.portpairgroup_id for x in
-                query(session).params(
-                    network_ids=network_ids).all()]
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        return [
+            x.portpairgroup_id for x in
+            session.query(sfc_db.PortPair).join(
+                models_v2.Port,
+                or_(models_v2.Port.id == sfc_db.PortPair.ingress,
+                    models_v2.Port.id == sfc_db.PortPair.egress)).filter(
+                models_v2.Port.network_id.in_(network_ids)).all()]
 
     def _should_regenerate_pp(self, context):
         attrs = [INGRESS, EGRESS, 'name']
