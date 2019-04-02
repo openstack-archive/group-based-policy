@@ -65,8 +65,7 @@ from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 LOG = logging.getLogger(__name__)
 
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 FORWARD = 'Forward'
 REVERSE = 'Reverse'
@@ -2439,21 +2438,18 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if not pr_ids:
             return []
 
-        query = BAKERY(lambda s: s.query(
-            gpdb.PolicyRuleSet))
-        query += lambda q: q.join(
-            gpdb.PRSToPRAssociation,
-            gpdb.PRSToPRAssociation.policy_rule_set_id ==
-            gpdb.PolicyRuleSet.id)
-        query += lambda q: q.join(
-            gpdb.PolicyRule,
-            gpdb.PRSToPRAssociation.policy_rule_id == gpdb.PolicyRule.id)
-        query += lambda q: q.filter(
-            gpdb.PolicyRule.id.in_(sa.bindparam('pr_ids', expanding=True)))
+        # Baked queries using in_ require sqlalchemy >=1.2.
         return [self._get_policy_rule_set(
             context._plugin_context, x['id']) for x in (
-                query(context._plugin_context.session).params(
-                    pr_ids=pr_ids).all())]
+                context._plugin_context.session.query(
+                    gpdb.PolicyRuleSet).join(
+                        gpdb.PRSToPRAssociation,
+                        gpdb.PRSToPRAssociation.policy_rule_set_id ==
+                        gpdb.PolicyRuleSet.id).join(
+                            gpdb.PolicyRule,
+                            gpdb.PRSToPRAssociation.policy_rule_id ==
+                            gpdb.PolicyRule.id).filter(
+                                gpdb.PolicyRule.id.in_(pr_ids)).all())]
 
     # REVISIT: Remove with original RPC implementation.
     def _get_port_mtu(self, context, port):

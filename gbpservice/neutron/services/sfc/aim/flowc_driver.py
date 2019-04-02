@@ -30,8 +30,7 @@ from gbpservice.neutron.services.sfc.aim import exceptions as sfc_exc
 LOG = logging.getLogger(__name__)
 flowclassifier.SUPPORTED_L7_PARAMETERS.update(sfc_cts.AIM_FLC_L7_PARAMS)
 
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 
 class FlowclassifierAIMDriverBase(base.FlowClassifierDriverBase):

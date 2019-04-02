@@ -46,8 +46,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 
 LOG = log.getLogger(__name__)
 
-BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+BAKERY = baked.bakery()
 
 EndpointPortInfo = namedtuple(
     'EndpointPortInfo',
@@ -657,7 +656,8 @@ class ApicRpcHandlerMixin(object):
         # aliases can be used with baked queries.
         if not subnet_ids:
             return {}
-        query = BAKERY(lambda s: s.query(
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        query = session.query(
             models_v2.Network.id,
             models_v2.Network.project_id,
             db.NetworkMapping.epg_name,
@@ -665,51 +665,48 @@ class ApicRpcHandlerMixin(object):
             db.NetworkMapping.epg_tenant_name,
             extension_db.NetworkExtensionDb.external_network_dn,
             extension_db.NetworkExtensionDb.nat_type,
-        ))
-        query += lambda q: q.join(
+        )
+        query = query.join(
             models_v2.Port,  # router's gw_port
             models_v2.Port.network_id == models_v2.Network.id)
-        query += lambda q: q.join(
+        query = query.join(
             l3_models.Router,
             l3_models.Router.gw_port_id == models_v2.Port.id)
-        query += lambda q: q.join(
+        query = query.join(
             l3_models.RouterPort,
             l3_models.RouterPort.router_id == l3_models.Router.id and
             l3_models.RouterPort.port_type ==
             n_constants.DEVICE_OWNER_ROUTER_INTF)
-        query += lambda q: q.join(
+        query = query.join(
             models_v2.IPAllocation,  # router interface IP
             models_v2.IPAllocation.port_id == l3_models.RouterPort.port_id)
-        query += lambda q: q.join(
+        query = query.join(
             db.NetworkMapping,  # mapping of gw_port's network
             db.NetworkMapping.network_id == models_v2.Port.network_id)
-        query += lambda q: q.outerjoin(
+        query = query.outerjoin(
             extension_db.NetworkExtensionDb,
             extension_db.NetworkExtensionDb.network_id ==
             models_v2.Port.network_id)
-        query += lambda q: q.filter(
-            models_v2.IPAllocation.subnet_id.in_(
-                sa.bindparam('subnet_ids', expanding=True)))
-        query += lambda q: q.distinct()
+        query = query.filter(
+            models_v2.IPAllocation.subnet_id.in_(subnet_ids))
+        query = query.distinct()
         return {row[0]: EndpointExternalNetworkInfo._make(row) for row in
-                query(session).params(
-                    subnet_ids=list(subnet_ids))}
+                query}
 
     def _query_endpoint_fip_info(self, session, port_ids):
         if not port_ids:
             return []
-        query = BAKERY(lambda s: s.query(
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        query = session.query(
             l3_models.FloatingIP.id,
             l3_models.FloatingIP.floating_ip_address,
             l3_models.FloatingIP.floating_network_id,
             l3_models.FloatingIP.fixed_ip_address,
-        ))
-        query += lambda q: q.filter(
-            l3_models.FloatingIP.fixed_port_id.in_(sa.bindparam(
-                'port_ids', expanding=True)))
+        )
+        query = query.filter(
+            l3_models.FloatingIP.fixed_port_id.in_(port_ids))
         return [EndpointFipInfo._make(row) for row in
-                query(session).params(
-                    port_ids=port_ids)]
+                query]
 
     def _query_endpoint_snat_info(self, session, host, ext_net_ids):
         # REVISIT: Consider replacing this query with additional joins
@@ -720,27 +717,25 @@ class ApicRpcHandlerMixin(object):
         # queries.
         if not ext_net_ids:
             return {}
-        query = BAKERY(lambda s: s.query(
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        query = session.query(
             models_v2.Port.network_id,
             models_v2.IPAllocation.ip_address,
             models_v2.Subnet.cidr,
             models_v2.Subnet.gateway_ip,
-        ))
-        query += lambda q: q.join(
+        )
+        query = query.join(
             models_v2.IPAllocation,
             models_v2.IPAllocation.port_id == models_v2.Port.id)
-        query += lambda q: q.join(
+        query = query.join(
             models_v2.Subnet,
             models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
-        query += lambda q: q.filter(
-            models_v2.Port.network_id.in_(sa.bindparam(
-                'ext_net_ids', expanding=True)),
-            models_v2.Port.device_id == sa.bindparam('host'),
+        query = query.filter(
+            models_v2.Port.network_id.in_(ext_net_ids),
+            models_v2.Port.device_id == host,
             models_v2.Port.device_owner == constants.DEVICE_OWNER_SNAT_PORT)
         return {row[0]: EndpointSnatInfo._make(row) for row in
-                query(session).params(
-                    host=host,
-                    ext_net_ids=ext_net_ids)}
+                query}
 
     def _query_endpoint_trunk_info(self, session, trunk_id):
         query = BAKERY(lambda s: s.query(
