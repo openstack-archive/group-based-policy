@@ -19,6 +19,7 @@ import fixtures
 import mock
 import netaddr
 import six
+from sqlalchemy.orm import exc as sql_exc
 import testtools
 
 from aim.aim_lib import nat_strategy
@@ -1951,6 +1952,13 @@ class TestAimMapping(ApicAimTestCase):
         self.driver._update_nova_vm_name_cache()
         self.assertEqual(self.driver._get_vm_names(self.db_session),
                          [])
+
+        # This should throw an exception as there will be only one
+        # entry in this DB table at any given time.
+        current_time = datetime.datetime.now()
+        self.assertRaises(sql_exc.FlushError,
+                          self.driver._set_vm_name_update,
+                          self.db_session, None, 'host_id1', current_time)
 
     def test_multi_scope_routing_with_unscoped_pools(self):
         self._test_multi_scope_routing(True)
