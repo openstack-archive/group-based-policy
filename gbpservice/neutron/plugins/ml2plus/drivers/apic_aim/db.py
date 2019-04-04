@@ -25,6 +25,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext import baked
 from sqlalchemy import orm
 
+VM_UPDATE_PURPOSE = 'VmUpdate'
 
 LOG = log.getLogger(__name__)
 
@@ -101,12 +102,14 @@ class VMName(model_base.BASEV2):
 
 
 # At any point of time, there should only be one entry in this table.
-# That entry is used to make sure only one controller is actively updating
-# the VMName table.
+# We will enforce that by using the same value for the purpose column which
+# is the primary key. That entry is used to make sure only one controller is
+# actively updating the VMName table.
 class VMNameUpdate(model_base.BASEV2):
     __tablename__ = 'apic_aim_vm_name_updates'
 
-    host_id = sa.Column(sa.String(36), primary_key=True)
+    purpose = sa.Column(sa.String(36), primary_key=True)
+    host_id = sa.Column(sa.String(36))
     last_incremental_update_time = sa.Column(sa.DateTime)
     last_full_update_time = sa.Column(sa.DateTime)
 
@@ -510,7 +513,8 @@ class DbMixin(object):
                 if last_full_update_time:
                     db_obj.last_full_update_time = last_full_update_time
             else:
-                db_obj = VMNameUpdate(host_id=host_id,
+                db_obj = VMNameUpdate(
+                    purpose=VM_UPDATE_PURPOSE, host_id=host_id,
                     last_incremental_update_time=last_incremental_update_time,
                     last_full_update_time=last_full_update_time)
             session.add(db_obj)
