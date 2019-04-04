@@ -35,8 +35,9 @@ def upgrade():
     )
     op.create_table(
         'apic_aim_vm_name_updates',
+        sa.Column('purpose', sa.String(36), nullable=False),
+        sa.PrimaryKeyConstraint('purpose'),
         sa.Column('host_id', sa.String(36), nullable=False),
-        sa.PrimaryKeyConstraint('host_id'),
         sa.Column('last_incremental_update_time', sa.DateTime()),
         sa.Column('last_full_update_time', sa.DateTime()),
     )

@@ -287,9 +287,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if nova_vms is None:
             return
 
-        self._set_vm_name_update(session, vm_name_update, self.host_id,
-                                 current_time,
-                                 current_time if is_full_update else None)
+        try:
+            self._set_vm_name_update(session, vm_name_update, self.host_id,
+                                     current_time,
+                                     current_time if is_full_update else None)
+        # This means another controller is also adding an entry at the same
+        # time and he has beat us. This is fine so we will just return.
+        except Exception as e:
+            LOG.warning(e)
+            return
+
         vm_list = []
         for vm in nova_vms:
             vm_list.append((vm.id, vm.name))
