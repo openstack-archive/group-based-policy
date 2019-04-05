@@ -1023,8 +1023,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if subnets_size > 1:
                 raise exceptions.OnlyOneSubnetInSVINetwork()
 
+        # Provide VRF notifications if creating subnets in
+        # unscoped networks
+        # REVISIT: We may need to handle VRF notifications for
+        #          external networks as well
+        vrf = self._get_network_vrf(network_db.aim_mapping)
+        if (vrf and (self._is_unrouted_vrf(vrf) or self._is_default_vrf(vrf))
+                and not network_db.external):
+            vrfs_to_notify = self._add_vrf_notification(vrf)
+            self._notify_vrf_update(context._plugin_context,
+                                    vrfs_to_notify)
+
         # Neutron subnets in non-external networks are mapped to AIM
         # Subnets as they are added to routers as interfaces.
+
+    def _is_unrouted_vrf(self, vrf):
+        return (vrf.tenant_name == COMMON_TENANT_NAME and
+                vrf.name == self.apic_system_id + '_' + UNROUTED_VRF_NAME)
+
+    def _is_default_vrf(self, vrf):
+        return vrf.name == DEFAULT_VRF_NAME
 
     def update_subnet_precommit(self, context):
         current = context.current
@@ -1097,6 +1115,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ns.delete_subnet(aim_ctx, l3out,
                              self._subnet_to_gw_ip_mask(current))
 
+        # Provide VRF notifications if deleting subnets from
+        # unscoped networks
+        # REVISIT: We may need to handle VRF notifications for
+        #          external networks as well
+        vrf = self._get_network_vrf(network_db.aim_mapping)
+        if vrf and self._is_unrouted_vrf(vrf) and not network_db.external:
+            vrfs_to_notify = self._add_vrf_notification(vrf)
+            self._notify_vrf_update(context._plugin_context,
+                                    vrfs_to_notify)
+
         # Non-external neutron subnets are unmapped from AIM Subnets as
         # they are removed from routers.
 
@@ -1166,6 +1194,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         self.extend_subnet_dict_bulk(session, [(result, subnet_db)])
 
+    def _notify_vrf_for_scope_id(self, context):
+        session = context._plugin_context.session
+        scope_id = context.current['address_scope_id']
+        mapping = self._get_address_scope_mapping(session, scope_id)
+        if mapping:
+            vrf = self._get_address_scope_vrf(mapping)
+            if vrf:
+                vrfs_to_notify = self._add_vrf_notification(vrf)
+                self._notify_vrf_update(context._plugin_context,
+                                        vrfs_to_notify)
+
+    def create_subnetpool_precommit(self, context):
+        self._notify_vrf_for_scope_id(context)
+
     def update_subnetpool_precommit(self, context):
         current = context.current
         original = context.original
@@ -1215,6 +1257,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # overlap within a Tenant's default VRF. For now, we
                 # just reject the update.
                 raise exceptions.ScopeUpdateNotSupported()
+
+        current_prefixes = set(current['prefixes'])
+        original_prefixes = set(original['prefixes'])
+        if current_scope_id and current_prefixes != original_prefixes:
+            self._notify_vrf_for_scope_id(context)
+
+    def delete_subnetpool_precommit(self, context):
+        self._notify_vrf_for_scope_id(context)
 
     def create_address_scope_precommit(self, context):
         current = context.current
@@ -1637,6 +1687,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     raise exceptions.NonIsomorphicNetworkRoutingUnsupported()
 
         nets_to_notify = set()
+        vrfs_to_notify = set()
         ports_to_notify = set()
         router_topo_moved = False
 
@@ -1677,7 +1728,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
                         context, aim_ctx, router_topology, router_vrf, vrf,
-                        nets_to_notify)
+                        nets_to_notify, vrfs_to_notify)
                     router_topo_moved = True
                     self._cleanup_default_vrf(aim_ctx, router_vrf)
                 elif router_shared_net:
@@ -1688,7 +1739,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     if net_intfs:
                         self._move_topology(
                             context, aim_ctx, intf_topology, intf_vrf, vrf,
-                            nets_to_notify)
+                            nets_to_notify, vrfs_to_notify)
                         self._cleanup_default_vrf(aim_ctx, intf_vrf)
                 else:
                     # This should never happen.
@@ -1708,10 +1759,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # First interface for network.
             if network_db.aim_mapping.epg_name:
                 bd, epg = self._associate_network_with_vrf(
-                    context, aim_ctx, network_db, vrf, nets_to_notify)
+                    context, aim_ctx, network_db, vrf, nets_to_notify,
+                    scope_id, vrfs_to_notify)
             elif network_db.aim_mapping.l3out_name:
                 l3out, epg = self._associate_network_with_vrf(
-                    context, aim_ctx, network_db, vrf, nets_to_notify)
+                    context, aim_ctx, network_db, vrf, nets_to_notify,
+                    scope_id, vrfs_to_notify)
         else:
             # Network is already routed.
             #
@@ -1795,6 +1848,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ports_to_notify.update(port_ids)
         if ports_to_notify:
             self._notify_port_update_bulk(context, ports_to_notify)
+        if vrfs_to_notify:
+            self._notify_vrf_update(context, vrfs_to_notify)
 
     def remove_router_interface(self, context, router_id, port, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
@@ -1867,6 +1922,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                   provided_contract_names=contracts)
 
         nets_to_notify = set()
+        vrfs_to_notify = set()
         ports_to_notify = set()
         router_topo_moved = False
 
@@ -1888,7 +1944,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     intf_vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
                         context, aim_ctx, intf_topology, old_vrf, intf_vrf,
-                        nets_to_notify)
+                        nets_to_notify, vrfs_to_notify)
 
             # See if the router's topology must be moved.
             router_topology = self._router_topology(session, router_db.id)
@@ -1901,14 +1957,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     router_vrf = self._ensure_default_vrf(aim_ctx, router_vrf)
                     self._move_topology(
                         context, aim_ctx, router_topology, old_vrf, router_vrf,
-                        nets_to_notify)
+                        nets_to_notify, vrfs_to_notify)
                     router_topo_moved = True
 
         # If network is no longer connected to any router, make the
         # network's BD unrouted.
         if not router_ids:
             self._dissassociate_network_from_vrf(
-                context, aim_ctx, network_db, old_vrf, nets_to_notify)
+                context, aim_ctx, network_db, old_vrf, nets_to_notify,
+                scope_id, vrfs_to_notify)
             if scope_id == NO_ADDR_SCOPE:
                 self._cleanup_default_vrf(aim_ctx, old_vrf)
 
@@ -1957,6 +2014,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ports_to_notify.update(port_ids)
         if ports_to_notify:
             self._notify_port_update_bulk(context, ports_to_notify)
+        if vrfs_to_notify:
+            self._notify_vrf_update(context, vrfs_to_notify)
 
     def bind_port(self, context):
         port = context.current
@@ -2745,7 +2804,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return rtr_dbs
 
     def _associate_network_with_vrf(self, ctx, aim_ctx, network_db, new_vrf,
-                                    nets_to_notify):
+                                    nets_to_notify, scope_id, vrfs_to_notify):
         LOG.debug("Associating previously unrouted network %(net_id)s named "
                   "'%(net_name)s' in project %(net_tenant)s with VRF %(vrf)s",
                   {'net_id': network_db.id, 'net_name': network_db.name,
@@ -2817,6 +2876,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Tenants have changed.
         nets_to_notify.add(network_db.id)
 
+        # Notify VRFs not associated with address_scopes that the
+        # subnet CIDRs within them have changed
+        old_vrf = self._get_network_vrf(network_db.aim_mapping)
+        if self._is_default_vrf(new_vrf):
+            self._add_vrf_notification(new_vrf, vrfs_to_notify)
+        self._add_vrf_notification(old_vrf, vrfs_to_notify)
+
         if not self._is_svi_db(network_db):
             return bd, epg
         else:
@@ -2824,7 +2890,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return l3out, ext_net
 
     def _dissassociate_network_from_vrf(self, ctx, aim_ctx, network_db,
-                                        old_vrf, nets_to_notify):
+                                        old_vrf, nets_to_notify, scope_id,
+                                        vrfs_to_notify):
         LOG.debug("Dissassociating network %(net_id)s named '%(net_name)s' in "
                   "project %(net_tenant)s from VRF %(vrf)s",
                   {'net_id': network_db.id, 'net_name': network_db.name,
@@ -2896,8 +2963,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Tenants have changed.
         nets_to_notify.add(network_db.id)
 
+        # Notify VRFs not associated with address_scopes that the
+        # subnet CIDRs within them have changed
+        if self._is_default_vrf(old_vrf):
+            self._add_vrf_notification(old_vrf, vrfs_to_notify)
+        self._add_vrf_notification(new_vrf, vrfs_to_notify)
+
+    def _add_vrf_notification(self, vrf, vrfs_to_notify=None):
+        vrfs_to_notify = set() if vrfs_to_notify is None else vrfs_to_notify
+        vrf_to_notify = '%s %s' % (vrf.tenant_name, vrf.name)
+        vrfs_to_notify.add(vrf_to_notify)
+        return vrfs_to_notify
+
     def _move_topology(self, ctx, aim_ctx, topology, old_vrf, new_vrf,
-                       nets_to_notify):
+                       nets_to_notify, vrfs_to_notify):
         LOG.info("Moving routed networks %(topology)s from VRF "
                  "%(old_vrf)s to VRF %(new_vrf)s",
                  {'topology': topology.keys(),
@@ -2975,6 +3054,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # notified since their BDs' VRFs and possibly their BDs' and
         # EPGs' Tenants have changed.
         nets_to_notify.update(topology.keys())
+
+        self._add_vrf_notification(old_vrf, vrfs_to_notify)
+        self._add_vrf_notification(new_vrf, vrfs_to_notify)
 
     def _router_topology(self, session, router_id):
         LOG.debug("Getting topology for router %s", router_id)
@@ -3480,6 +3562,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             portbindings.VIF_TYPE_BINDING_FAILED]
 
     def _notify_port_update(self, plugin_context, port_id):
+        # REVISIT: Avoid getting the port resource, if possible.
         port = self.plugin.get_port(plugin_context.elevated(), port_id)
         if self._is_port_bound(port):
             LOG.debug("Enqueing notify for port %s", port['id'])
@@ -3523,6 +3606,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # REVISIT: Is a single query for all ports possible?
         for p_id in port_ids:
             self._notify_port_update(plugin_context, p_id)
+
+    def _notify_vrf_update(self, plugin_context, vrfs_to_notify):
+        txn = local_api.get_outer_transaction(
+            plugin_context.session.transaction)
+        for vrf in vrfs_to_notify:
+            local_api.send_or_queue_notification(plugin_context.session,
+                                                 txn, self.notifier,
+                                                 'opflex_notify_vrf',
+                                                 [plugin_context, vrf])
 
     def get_or_allocate_snat_ip(self, plugin_context, host_or_vrf,
                                 ext_network):
