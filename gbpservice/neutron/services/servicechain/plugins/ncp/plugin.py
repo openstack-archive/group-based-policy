@@ -60,9 +60,9 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         super(NodeCompositionPlugin, self).__init__()
         self.driver_manager.initialize()
         plumber_klass = cfg.CONF.node_composition_plugin.node_plumber
-        self.plumber = utils.load_plugin(
-            PLUMBER_NAMESPACE, plumber_klass)
-        self.plumber.initialize()
+        #self.plumber = utils.load_plugin(
+        #    PLUMBER_NAMESPACE, plumber_klass)
+        #self.plumber.initialize()
         LOG.info("Initialized node plumber '%s'", plumber_klass)
 
     @log.log_method_call
