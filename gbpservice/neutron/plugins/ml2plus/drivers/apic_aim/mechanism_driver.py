@@ -1637,6 +1637,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     raise exceptions.NonIsomorphicNetworkRoutingUnsupported()
 
         nets_to_notify = set()
+        vrfs_to_notify = set()
         ports_to_notify = set()
         router_topo_moved = False
 
@@ -1677,7 +1678,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
                         context, aim_ctx, router_topology, router_vrf, vrf,
-                        nets_to_notify)
+                        nets_to_notify, vrfs_to_notify)
                     router_topo_moved = True
                     self._cleanup_default_vrf(aim_ctx, router_vrf)
                 elif router_shared_net:
@@ -1688,7 +1689,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     if net_intfs:
                         self._move_topology(
                             context, aim_ctx, intf_topology, intf_vrf, vrf,
-                            nets_to_notify)
+                            nets_to_notify, vrfs_to_notify)
                         self._cleanup_default_vrf(aim_ctx, intf_vrf)
                 else:
                     # This should never happen.
@@ -1728,6 +1729,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         if network_db.aim_mapping.epg_name:
             # Create AIM Subnet(s) for each added Neutron subnet.
+            vrf = self._get_network_vrf(network_db.aim_mapping)
+            self._add_vrf_notification(vrfs_to_notify, vrf)
             for subnet in subnets:
                 gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
 
@@ -1795,12 +1798,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ports_to_notify.update(port_ids)
         if ports_to_notify:
             self._notify_port_update_bulk(context, ports_to_notify)
+        if vrfs_to_notify:
+            self._notify_vrf_update(context, vrfs_to_notify)
 
     def remove_router_interface(self, context, router_id, port, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
                   "%(router)s as interface port %(port)s",
                   {'subnets': subnets, 'router': router_id, 'port': port})
 
+        vrfs_to_notify = set()
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
@@ -1828,6 +1834,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             bd = self._get_network_bd(network_db.aim_mapping)
             epg = self._get_network_epg(network_db.aim_mapping)
             # Remove AIM Subnet(s) for each removed Neutron subnet.
+            vrf = self._get_network_vrf(network_db.aim_mapping)
+            self._add_vrf_notification(vrfs_to_notify, vrf)
             for subnet in subnets:
                 gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
                 sn = self._map_subnet(subnet, gw_ip, bd)
@@ -1888,7 +1896,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     intf_vrf = self._ensure_default_vrf(aim_ctx, intf_vrf)
                     self._move_topology(
                         context, aim_ctx, intf_topology, old_vrf, intf_vrf,
-                        nets_to_notify)
+                        nets_to_notify, vrfs_to_notify)
 
             # See if the router's topology must be moved.
             router_topology = self._router_topology(session, router_db.id)
@@ -1901,7 +1909,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     router_vrf = self._ensure_default_vrf(aim_ctx, router_vrf)
                     self._move_topology(
                         context, aim_ctx, router_topology, old_vrf, router_vrf,
-                        nets_to_notify)
+                        nets_to_notify, vrfs_to_notify)
                     router_topo_moved = True
 
         # If network is no longer connected to any router, make the
@@ -1957,6 +1965,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ports_to_notify.update(port_ids)
         if ports_to_notify:
             self._notify_port_update_bulk(context, ports_to_notify)
+        if vrfs_to_notify:
+            self._notify_vrf_update(context, vrfs_to_notify)
 
     def bind_port(self, context):
         port = context.current
@@ -2896,8 +2906,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Tenants have changed.
         nets_to_notify.add(network_db.id)
 
+    def _add_vrf_notification(self, vrfs_to_notify, vrf):
+        vrf_to_notify = '%s %s' % (vrf.tenant_name, vrf.name)
+        vrfs_to_notify.add(vrf_to_notify)
+
     def _move_topology(self, ctx, aim_ctx, topology, old_vrf, new_vrf,
-                       nets_to_notify):
+                       nets_to_notify, vrfs_to_notify):
         LOG.info("Moving routed networks %(topology)s from VRF "
                  "%(old_vrf)s to VRF %(new_vrf)s",
                  {'topology': topology.keys(),
@@ -2916,6 +2930,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                           {'net': network_db.id,
                            'old': old_vrf.tenant_name,
                            'new': new_vrf.tenant_name})
+                self._add_vrf_notification(vrfs_to_notify, old_vrf)
+                self._add_vrf_notification(vrfs_to_notify, new_vrf)
                 if network_db.aim_mapping.epg_name:
                     bd = self._get_network_bd(network_db.aim_mapping)
                     old_bd = self.aim.get(aim_ctx, bd)
@@ -3523,6 +3539,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # REVISIT: Is a single query for all ports possible?
         for p_id in port_ids:
             self._notify_port_update(plugin_context, p_id)
+
+    def _notify_vrf_update(self, context, vrfs_to_notify):
+        for vrf in vrfs_to_notify:
+            self.notifier.opflex_notify_vrf(context, vrf)
 
     def get_or_allocate_snat_ip(self, plugin_context, host_or_vrf,
                                 ext_network):
