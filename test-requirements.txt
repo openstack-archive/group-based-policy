@@ -2,51 +2,218 @@
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
 
--e git+https://git.openstack.org/openstack/neutron.git@stable/queens#egg=neutron
 
--e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
--e git+https://github.com/noironetworks/python-opflex-agent.git@master#egg=python-opflexagent-agent
 
--e git+https://github.com/openstack/vmware-nsx.git@stable/queens#egg=vmware_nsx
--e git+https://github.com/openstack/vmware-nsxlib.git@stable/queens#egg=vmware_nsxlib
 
--e git+https://git.openstack.org/openstack/python-group-based-policy-client@master#egg=gbpclient
--e git+https://git.openstack.org/openstack/neutron-vpnaas@stable/queens#egg=neutron-vpnaas
--e git+https://git.openstack.org/openstack/neutron-lbaas@stable/queens#egg=neutron-lbaas
--e git+https://git.openstack.org/openstack/neutron-fwaas@stable/queens#egg=neutron-fwaas
--e git+https://git.openstack.org/openstack/networking-sfc@stable/queens#egg=networking-sfc
-hacking<0.12,>=0.11.0 # Apache-2.0
 
-cliff>=2.8.0,!=2.9.0  # Apache-2.0
-coverage!=4.4,>=4.0 # Apache-2.0
-fixtures>=3.0.0 # Apache-2.0/BSD
-httplib2>=0.9.1  # MIT
-mock>=2.0 # BSD
-python-subunit>=1.0.0 # Apache-2.0/BSD
-requests-mock>=1.1 # Apache-2.0
+-e git+https://git.openstack.org/openstack/requirements.git@c52e5770591539c843d0466a32a96c368fdb4cc4#egg=openstack-requirements
 sphinx!=1.6.6,>=1.6.2 # BSD
-ordereddict
-testtools>=2.2.0 # MIT
-testresources>=2.0.0 # Apache-2.0/BSD
-testscenarios>=0.4 # Apache-2.0/BSD
-WebTest>=2.0.27 # MIT
-oslotest>=3.2.0 # Apache-2.0
-os-testr>=1.0.0 # Apache-2.0
-ddt>=1.0.1 # MIT
-pylint==1.4.5 # GPLv2
-reno>=2.5.0 # Apache-2.0
-pyOpenSSL>=16.2.0  # Apache-2.0
 
 # Since version numbers for these are specified in
 # https://git.openstack.org/cgit/openstack/requirements/plain/upper-constraints.txt,
 #  they cannot be refernced as GIT URLs
-python-heatclient
-python-keystoneclient
 
 # REVISIT: Until co-gating and/or stable branches are implemented for
 # the aci-integration-module repo, it may be necessary to pin to a
 # working commit. Also, specific branches in indirect dependencies
 # seem to be ignored, so we list them here too.
--e git+https://github.com/noironetworks/acitoolkit.git@noiro-lite#egg=acitoolkit
--e git+https://github.com/noironetworks/aci-integration-module.git@master#egg=aci-integration-module
+-e git+https://github.com/noironetworks/aci-integration-module.git@fe8399c1c19661560abb5f542b7cf9186ab03a7a#egg=aci_integration_module
+-e git+https://github.com/noironetworks/acitoolkit.git@8b68a943735396b06909b6969f468182072dc3e4#egg=acitoolkit
+alabaster==0.7.10
+alembic==0.9.7
+amqp==2.3.2
+-e git+https://github.com/noironetworks/apicapi.git@acb403691389f2077639c522e5fdbcab0bf92cc5#egg=apicapi
+appdirs==1.4.3
+asn1crypto==0.24.0
+astroid==1.3.8
+Babel==2.5.3
+beautifulsoup4==4.6.0
+cachetools==2.0.1
+certifi==2018.1.18
+cffi==1.11.4
+chardet==3.0.4
+click==6.7
+cliff==2.11.1
+cmd2==0.7.9
+contextlib2==0.5.5
+coverage==4.4.2
+cryptography==2.1.4
+ddt==1.1.1
+debtcollector==1.19.0
+decorator==4.2.1
+deprecation==1.0.1
+docutils==0.14
+dogpile.cache==0.6.4
+dulwich==0.18.6
+enum-compat==0.0.2
+enum34==1.1.6
+eventlet==0.20.0
+extras==1.0.0
+fasteners==0.14.1
+fixtures==3.0.0
+flake8==2.5.5
+funcsigs==1.0.2
+functools32==3.2.3.post2
+future==0.16.0
+futures==3.2.0
+futurist==1.6.0
+google-auth==1.3.0
+greenlet==0.4.15
+hacking==0.11.0
+httplib2==0.10.3
+idna==2.6
+imagesize==0.7.1
+ipaddress==1.0.19
+iso8601==0.1.12
+Jinja2==2.10
+jmespath==0.9.3
+jsonpatch==1.21
+jsonpointer==2.0
+jsonschema==2.6.0
+keystoneauth1==3.4.0
+keystonemiddleware==4.21.0
+kombu==4.1.0
+kubernetes==4.0.0
+linecache2==1.0.0
+logilab-common==1.4.2
+logutils==0.3.5
+lxml==4.1.1
+Mako==1.0.7
+MarkupSafe==1.0
+mccabe==0.2.1
+mock==2.0.0
+monotonic==1.4
+mox3==0.24.0
+msgpack==0.5.1
+msgpack-python==0.5.6
+munch==2.2.0
+netaddr==0.7.19
+netifaces==0.10.6
+networking-l2gw==12.0.1
+-e git+https://git.openstack.org/openstack/networking-sfc@31265a7a5f1e23ba50e4e9cf58d35685c6bbf27d#egg=networking_sfc
+-e git+https://git.openstack.org/openstack/neutron.git@1ea1c59805056316d71fab4b09b6289cc6544bd9#egg=neutron
+neutron-dynamic-routing==12.0.1
+-e git+https://git.openstack.org/openstack/neutron-fwaas@a3c335a9c6a1672337fa3de72c5f31157f5eeaa1#egg=neutron_fwaas
+-e git+https://git.openstack.org/openstack/neutron-lbaas@6c8e0678370bcc60e7881a25b8637de06c1cf8dd#egg=neutron_lbaas
+neutron-lib==1.13.0
+-e git+https://github.com/noironetworks/python-opflex-agent.git@76a4093872e5b9689402a12d918b2997aea3c279#egg=neutron_opflex_agent
+-e git+https://git.openstack.org/openstack/neutron-vpnaas@01b9cd4b0157c5510b633184bfd0c825d2429c09#egg=neutron_vpnaas
+oauthlib==2.0.6
+openstacksdk==0.11.3
+ordereddict==1.1
+os-client-config==1.29.0
+os-service-types==1.1.0
+os-testr==1.0.0
+os-xenapi==0.3.1
+osc-lib==1.9.0
+oslo.cache==1.28.0
+oslo.concurrency==3.25.1
+oslo.config==5.2.1
+oslo.context==2.20.0
+oslo.db==4.33.2
+oslo.i18n==3.19.0
+oslo.log==3.36.0
+oslo.messaging==5.35.4
+oslo.middleware==3.34.0
+oslo.policy==1.33.2
+oslo.privsep==1.27.0
+oslo.reports==1.26.0
+oslo.rootwrap==5.13.0
+oslo.serialization==2.24.0
+oslo.service==1.29.0
+oslo.utils==3.35.1
+oslo.versionedobjects==1.31.3
+oslo.vmware==2.26.0
+oslosphinx==4.18.0
+oslotest==3.2.0
+osprofiler==1.15.2
+ovs==2.8.1
+ovsdbapp==0.10.3
+Paste==2.0.3
+PasteDeploy==1.5.2
+pbr==3.1.1
+pecan==1.2.1
+pep8==1.5.7
+pika==0.10.0
+pika-pool==0.1.3
+prettytable==0.7.2
+psutil==5.4.3
+pyasn1==0.4.2
+pyasn1-modules==0.2.1
+pycadf==2.7.0
+pycparser==2.18
+pyflakes==0.8.1
+Pygments==2.2.0
+pyinotify==0.9.6
+pylint==1.4.5
+pyOpenSSL==17.5.0
+pyparsing==2.2.0
+pyperclip==1.6.0
+pyroute2==0.4.21
+python-barbicanclient==4.6.1
+python-cinderclient==3.5.0
+python-dateutil==2.6.1
+python-designateclient==2.9.0
+python-editor==1.0.3
+python-glanceclient==2.10.1
+-e git+https://git.openstack.org/openstack/python-group-based-policy-client@e78b8b33cf29c956fe0346f8a6aca261c6479062#egg=python_group_based_policy_client
+python-heatclient==1.14.1
+python-keystoneclient==3.15.0
+python-mimeparse==1.6.0
+python-neutronclient==6.7.0
+python-novaclient==10.1.0
+python-openstackclient==3.14.3
+python-subunit==1.2.0
+python-swiftclient==3.5.0
+pytz==2017.3
+PyYAML==3.12
+reno==2.7.0
+repoze.lru==0.7
+requests==2.18.4
+requests-mock==1.4.0
+requests-oauthlib==0.8.0
+requestsexceptions==1.4.0
+rfc3986==1.1.0
+Routes==2.4.1
+rsa==3.4.2
+ryu==4.21
+semantic-version==2.6.0
+simplejson==3.13.2
+singledispatch==3.4.0.3
+six==1.11.0
+snowballstemmer==1.2.1
+Sphinx==1.6.5
+sphinxcontrib-websupport==1.0.1
+SQLAlchemy==1.2.1
+sqlalchemy-migrate==0.11.0
+sqlparse==0.2.4
+statsd==3.2.2
+stestr==2.0.0
+stevedore==1.28.0
+suds-jurko==0.6
+tabulate==0.8.2
+Tempita==0.5.2
+tenacity==4.8.0
+testrepository==0.0.20
+testresources==2.0.1
+testscenarios==0.5.0
+testtools==2.3.0
+tinyrpc==0.8
+tooz==1.60.2
+traceback2==1.4.0
+typing==3.6.2
+unicodecsv==0.14.1
+unittest2==1.1.0
+urllib3==1.22
+vine==1.1.4
+-e git+https://github.com/openstack/vmware-nsx.git@9be505e65d3e16ac91f8c326b6146246b81a4518#egg=vmware_nsx
+-e git+https://github.com/openstack/vmware-nsxlib.git@540bbc2f7ba2e08338d503c87984d7e2fd2a9f09#egg=vmware_nsxlib
+voluptuous==0.10.5
+waitress==1.1.0
+warlock==1.2.0
+weakrefmethod==1.0.3
+WebOb==1.7.4
+websocket-client==0.40.0
+WebTest==2.0.29
+wrapt==1.10.11

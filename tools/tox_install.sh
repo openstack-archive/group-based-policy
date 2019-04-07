@@ -6,8 +6,10 @@
 # pip install {opts} {packages}
 
 DIR=/home/zuul/src/git.openstack.org/openstack/requirements
+echo "running Tox Install1!!"
 if [ -d "$DIR" ]; then
     cd $DIR
+    echo "Checking out stable/queens!!!"
     git checkout stable/queens
 fi
 
