@@ -7,8 +7,9 @@
 
 DIR=/home/zuul/src/git.openstack.org/openstack/requirements
 if [ -d "$DIR" ]; then
-    cd $DIR
+    pushd $DIR
     git checkout stable/queens
+    popd
 fi
 
 set -e
