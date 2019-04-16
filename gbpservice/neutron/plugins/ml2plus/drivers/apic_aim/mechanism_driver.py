@@ -188,11 +188,8 @@ class KeystoneNotificationEndpoint(object):
             session = db_api.get_writer_session()
             tenant_aname = self._driver.name_mapper.project(session, tenant_id)
             aim_ctx = aim_context.AimContext(session)
-            ap = aim_resource.ApplicationProfile(tenant_name=tenant_aname,
-                                                 name=self._driver.ap_name)
-            self._driver.aim.delete(aim_ctx, ap)
             tenant = aim_resource.Tenant(name=tenant_aname)
-            self._driver.aim.delete(aim_ctx, tenant)
+            self._driver.aim.delete(aim_ctx, tenant, cascade=True)
 
             return oslo_messaging.NotificationResult.HANDLED
 
@@ -299,7 +296,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # This means another controller is also adding an entry at the same
         # time and he has beat us. This is fine so we will just return.
         except Exception as e:
-            LOG.warning(e)
+            LOG.info(e)
             return
 
         vm_list = []
