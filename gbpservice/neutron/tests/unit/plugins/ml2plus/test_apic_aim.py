@@ -2023,12 +2023,9 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual(keystone_ep.tenant, 'test-tenant')
         self.driver.project_name_cache.purge_gbp.assert_called_once_with(
                                                                 keystone_ep)
-        ap = aim_resource.ApplicationProfile(tenant_name=tenant_name,
-                                             name=self.driver.ap_name)
         tenant = aim_resource.Tenant(name=tenant_name)
         exp_calls = [
-            mock.call(mock.ANY, ap),
-            mock.call(mock.ANY, tenant)]
+            mock.call(mock.ANY, tenant, cascade=True)]
         self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
 
     def test_update_nova_vm_name_cache(self):
