@@ -1,7 +1,0 @@
-[run]
-branch = True
-source = gbpservice
-omit = gbpservice/tests/*,gbpservice/neutron/tests/*,gbpservice/neutron/db/migration/*
-
-[report]
-ignore_errors = True
